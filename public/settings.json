@@ -1,0 +1,57 @@
+{
+    "wxupdateintervalmsec": 480000,
+    "keepaliveintervalmsec": 30000,
+    "httpport": 8500,
+    "wsport": 8550,
+    "startupzoom": 5,
+    "useOSMonlinemap": true,
+    "debug": false,
+    "externalcharts": "/home/bro/Sources/chartmaker/public/charts/08-07-2025",
+    "uselocaltime": true,
+    "distanceunit": "sm",
+    "usestratux": true,
+    "stratuxip": "127.0.0.1",
+    "savepositionhistory": false,
+    "histintervalmsec": 10000,
+    "historyDb": "positionhistory.db",
+    "gpsintervalmsec": 1000,
+    "stratuxsituationws": "ws://[stratuxip]/situation",
+    "stratuxtrafficws": "ws://[stratuxip]/traffic",
+    "stratuxweatherws": "ws://[stratuxip]/weather",
+    "stratuxmaxmetarcount": 800,
+    "animatedwxurl": "https://mesonet.agron.iastate.edu/cgi-bin/wms/nexrad/n0r-t.cgi",
+    "addswxurl": "https://aviationweather.gov/api/data/###?&format=xml&hours=1.5",
+    "addscurrentxmlurl": "https://aviationweather.gov/data/cache/###.cache.xml",
+    "showattribution": true,
+    "lockownshiptocenter": true,
+    "ownshipimage": "airplane.png",
+    "trafficimage": "red-yellow-traffic.png",
+    "usemetricunits": false,
+    "distanceunits": {
+        "kilometers": "km",
+        "nauticalmiles": "nm",
+        "statutemiles": "sm"
+    },
+    "messagetypes": {
+        "metars": {
+            "type": "metars",
+            "token": "###"
+        },
+        "tafs": {
+            "type": "tafs",
+            "token": "###"
+        },
+        "pireps": {
+            "type": "aircraftreports",
+            "token": "###"
+        },
+        "airports": {
+            "type": "airports",
+            "token": ""
+        },
+        "keepalive": {
+            "type": "keepalive",
+            "token": "((💜))"
+        }
+    }
+}

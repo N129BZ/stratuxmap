@@ -1,0 +1,16 @@
+{
+  "name": "stratuxmap",
+  "version": "1.0.0",
+  "scripts": {
+    "start": "vite",
+    "build": "vite build",
+    "serve": "vite preview"
+  },
+  "devDependencies": {
+    "vite": "^7.0.6"
+  },
+  "dependencies": {
+    "ol": "latest",
+    "ol-layerswitcher": "^4.1.2"
+  }
+}
