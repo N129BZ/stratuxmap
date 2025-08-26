@@ -1,5 +1,3 @@
-'use strict';
-
 import 'ol/ol.css';
 import 'ol-layerswitcher/dist/ol-layerswitcher.css';
 import './style.css';
@@ -27,12 +25,16 @@ const URL_GET_AIRPORTLIST = `http://localhost:8500/airportlist`;
 
 const urlsituation = "ws://127.0.0.1/situation";
 const urltraffic = "ws://127.0.0.1/traffic";
-const urlweather = "ws://127.0.0.1:6090"; ///weather";
+const urlweather = "ws://127.0.0.1:8550"; ///weather";
 
 let airports = {};
 let ownshipLayer;
 let last_longitude = 0.0;
 let last_latitude = 0.0;
+let metars = [];
+let tafs = [];
+let pireps = [];
+let traffic = [];
 
 /**
  * Controls for dropdown select when viewing all airports
@@ -74,7 +76,36 @@ setupStratuxWebsockets();
  */
 let airportNameKeymap = new Map();
 
-    
+function getWeatherIconStyle(type, resolution) {
+    const baseRadius = 24;
+    const referenceResolution = 76.43702828517625;
+    let scale = baseRadius * (referenceResolution / resolution);
+    // Clamp scale for icons
+    const iconScale = Math.max(0.0025, Math.min(scale / 100, 0.05));
+    let src = '';
+    switch (type) {
+        case 'TAF':
+        case 'TAF.AMD':
+            src = '/images/taf.svg';
+            break;
+        case 'PIREP':
+            src = '/images/pirep.svg';
+            break;
+        default:
+            src = '/images/metar.svg'; // fallback
+            break;
+    }
+    return new Style({
+        image: new Icon({
+            src: src,
+            scale: iconScale,
+            anchor: [0.5, 0.5],
+            anchorXUnits: 'fraction',
+            anchorYUnits: 'fraction'
+        })
+    });
+}
+
 function parseFlightCategory() {
     let vis = this.visibility; // in meters, convert to miles
     let cond = "VFR" // default
@@ -132,10 +163,12 @@ class Cloud {
 /**
  * The map object that gets put in index.html <div> element
  */
+const chicagoCoords = fromLonLat([-87.6298, 41.8781]); // Chicago: lon, lat
+
 const map = new OLMap({
     target: 'map',
     view: new View({
-        center: viewposition,        
+        center: chicagoCoords,        
         zoom: settings.startupzoom,
         enableRotation: false,
         minZoom: 1,
@@ -173,62 +206,172 @@ let airportMarker = new Icon({
 
 
 
-let metarVectorLayer = new VectorLayer({
-    source: new VectorSource(),
-    title: "Metars",
-    visible: false,
-    zIndex: 12
-});
+//let metarVectorLayer = ;
 
-let viewextent = [-180, -85, 180, 85];
+let viewextent = [-180, -85];
 let offset = [-18, -18];
 let extent = transformExtent(viewextent, 'EPSG:4326', 'EPSG:3857')
+
 
 let airportVectorLayer = new VectorLayer({
     source: new VectorSource(), 
     title: "All Airports",
     visible: false,
     zIndex: 11
-}); 
+});
+
+let metarVectorLayer = new VectorLayer({
+    source: new VectorSource(),
+    title: "Metars",
+    visible: false,
+    zIndex: 13
+});
 
 let tafVectorLayer = new VectorLayer({
     source: new VectorSource(),
     title: "TAFs",
-    visible: true,
-    zIndex: 13
+    visible: false,
+    zIndex: 12
 });
 
 let pirepVectorLayer = new VectorLayer({
     source: new VectorSource(),
     title: "Pireps",
-    visible: true,
+    visible: false,
+    zIndex: 11
+});
+
+let trafficVectorLayer = new VectorLayer({
+    source: new VectorSource(),
+    title: "Traffic",
+    visible: false,
     zIndex: 14
 });
 
+map.addLayer(airportVectorLayer);
 map.addLayer(metarVectorLayer);
 map.addLayer(tafVectorLayer);
 map.addLayer(pirepVectorLayer);
-map.addLayer(airportVectorLayer);
+map.addLayer(trafficVectorLayer);
 
 async function setupStratuxWebsockets() {
-    let wsTraffic = new WebSocket(urltraffic);
-    wsTraffic.onmessage = function(evt){
-        let data = JSON.parse(evt.data);
-        console.log(data);
-    }
+    // let wsTraffic = new WebSocket(urltraffic);
+    // wsTraffic.onmessage = function(evt){
+    //     let data = JSON.parse(evt.data);
+    //     console.log(data);
+    // }
 
-    let wsSituation = new WebSocket(urlsituation);
-    wsSituation.onmessage = function(evt){
-        let data = JSON.parse(evt.data);
-        setOwnshipOrientation(data);
-        //console.log(data);
-    }
+    // let wsSituation = new WebSocket(urlsituation);
+    // wsSituation.onmessage = function(evt){
+    //     let data = JSON.parse(evt.data);
+    //     setOwnshipOrientation(data);
+    //     //console.log(data);
+    // }
 
     let wsWeather = new WebSocket(urlweather);
-    wsWeather.onmessage = function(evt) {
+    wsWeather.onmessage = async function(evt) {
         let data = JSON.parse(evt.data);
-        console.log(data)
-        parseWeatherMessage(data);
+        console.log(data);
+        let pd;
+        try {
+            pd = await parseWeatherMessage(data);
+        } catch (err) {
+            console.error("Error parsing weather message:", err);
+            return;
+        }
+        if (!pd || !pd.type) return;
+        switch (pd.type) {
+            case 'METAR':
+                if (metars.length >= 1650) {
+                    metars.splice(0, metars.length - 1649);
+                }
+                metars.push(pd);
+                // Add feature directly to layer
+                if (pd.lon && pd.lat) {
+                    const feature = new Feature({
+                        geometry: new Point(fromLonLat([pd.lon, pd.lat])),
+                        metar: pd
+                    });
+                    feature.setStyle((feature, resolution) => {
+                        const baseRadius = 24;
+                        const referenceResolution = 76.43702828517625;
+                        let scale = baseRadius * (referenceResolution / resolution);
+                        scale = Math.max(3, Math.min(scale, 40));
+                        const fillColor = getMetarFillColor(pd.visibility);
+                        return new Style({
+                            image: new CircleStyle({
+                                radius: scale,
+                                fill: new Fill({ color: fillColor }),
+                                stroke: new Stroke({ color: '#222', width: 2 })
+                            })
+                        });
+                    });
+                    metarVectorLayer.getSource().addFeature(feature);
+                }
+                break;
+            case 'TAF':
+            case 'TAF.AMD':
+                if (tafs.length >= 500) {
+                    tafs.splice(0, tafs.length - 499);
+                }
+                tafs.push(pd);
+                // Add feature directly to layer
+                if (pd.lon && pd.lat) {
+                    const feature = new Feature({
+                        geometry: new Point(fromLonLat([pd.lon, pd.lat])),
+                        taf: pd
+                    });
+                    feature.setStyle((feature, resolution) => {
+                        const baseRadius = 10;
+                        const referenceResolution = 76.43702828517625;
+                        let scale = baseRadius * (referenceResolution / resolution);
+                        scale = Math.max(3, Math.min(scale, 40));
+                        return new Style({
+                            image: new Icon({
+                                src: '/images/taf.svg',
+                                scale: 0.0025,
+                                anchor: [0.5, 0.5],
+                                anchorXUnits: 'fraction',
+                                anchorYUnits: 'fraction'
+                            })
+                        });
+                    });
+                    tafVectorLayer.getSource().addFeature(feature);
+                }
+                break;
+            case 'PIREP':
+                if (pireps.length >= 500) {
+                    pireps.splice(0, pireps.length - 499);
+                }
+                pireps.push(pd);
+                // Add feature directly to layer
+                if (pd.lon && pd.lat) {
+                    const feature = new Feature({
+                        geometry: new Point(fromLonLat([pd.lon, pd.lat])),
+                        pirep: pd
+                    });
+                    feature.setStyle((feature, resolution) => {
+                        const baseRadius = 10;
+                        const referenceResolution = 76.43702828517625;
+                        let scale = baseRadius * (referenceResolution / resolution);
+                        scale = Math.max(3, Math.min(scale, 40));
+                        return new Style({
+                            image: new Icon({
+                                src: '/images/pirep.svg',
+                                scale: 0.0025,
+                                anchor: [0.5, 0.5],
+                                anchorXUnits: 'fraction',
+                                anchorYUnits: 'fraction'
+                            })
+                        });
+                    });
+                    pirepVectorLayer.getSource().addFeature(feature);
+                }
+                break;
+            default:
+                // Ignore other types
+                break;
+        }
     };
 }
 
@@ -245,10 +388,12 @@ function placeOwnshipOnMap(jsondata) {
     });
 
     pointFeature.setStyle(new Style({
-        image: new CircleStyle({
-            radius: 6,
-            fill: new Fill({ color: 'red' }),
-            stroke: new Stroke({ color: 'black', width: 1 })
+        image: new Icon({
+            src: '/images/airplane.svg',
+            scale: 0.5,
+            anchor: [0.5, 0.5],
+            anchorXUnits: 'fraction',
+            anchorYUnits: 'fraction'
         })
     }));
 
@@ -288,7 +433,6 @@ map.on('click', (evt) => {
                 //displayAirportPopup(feature);
             }
             else if (datatype === "traffic") {
-                //BAMHERE
                 //displayTrafficPopup(feature);
             }
             let coordinate = evt.coordinate;
@@ -358,7 +502,11 @@ map.addOverlay(popupoverlay);
  */
 function closePopup() {
     popupoverlay.setPosition(undefined);
-    return false;s
+    // Remove all child nodes (including SVGs) from the popup content
+    while (popupcontent.firstChild) {
+        popupcontent.removeChild(popupcontent.firstChild);
+    }
+    return false;
 }
 
 /**
@@ -527,6 +675,28 @@ function getMetarColor(metar) {
         default:
             return "#3ef04dff";
     }
+}
+
+function getMetarFillColor(visibility) {
+    // If visibilityMeters is a string like "10 SM", extract the numeric part
+    let visMiles = 0;
+    let color = '#10cf20';
+
+    if (typeof visibility === 'string') {
+        const match = visibility.match(/^([\d.]+)\s*SM$/i);
+        if (match) {
+            visMiles = parseFloat(match[1]);
+        }
+    } else if (typeof visibility === 'number') {
+        visMiles = visibility;
+    } else {
+        return color; // Default to VFR if missing
+    }
+
+    if (visMiles < 1) color = '#ff00ff'; // LIFR
+    if (visMiles < 3) color = '#ff0000'; // IFR
+    if (visMiles < 5) color = '#0000ff'; // MVFR
+    return color; // VFR
 }
 
 /**
@@ -1145,9 +1315,11 @@ function getConditionImage(conditiontype, conditionvalue) {
     }
     if (time.search("Pacific Standard") > -1) {
         tzone = "(PST)"; 
+    
     }
     if (time.search("Pacific Daylight") > -1) {
         tzone = "(PDT)"; 
+    
     }
     if (time.search("Alaska Standard") > -1) {
         tzone = "(AKST)"; 
@@ -1207,4 +1379,129 @@ function getConditionImage(conditiontype, conditionvalue) {
 
     ownshipLayer.getSource().addFeature(pointFeature);
 }
+
+/**
+ * Prune features older than a given age (in milliseconds) from a VectorLayer.
+ * @param {VectorLayer} layer - The OpenLayers VectorLayer to prune.
+ * @param {string} timeProperty - The property name storing the timestamp (e.g., 'time').
+ * @param {number} maxAgeMs - Maximum age in milliseconds.
+ */
+function pruneOldFeatures(layer, timeProperty, maxAgeMs) {
+    const now = Date.now();
+    const source = layer.getSource();
+    source.getFeatures().forEach(feature => {
+        const featureTime = feature.get(timeProperty);
+        if (featureTime && now - featureTime > maxAgeMs) {
+            source.removeFeature(feature);
+        }
+    });
+}
+
+/**
+ * Prune old features from Metars, Pireps, and TAFs layers.
+ * Metars: 30 minutes, Pireps: 2 hours, TAFs: 6 hours
+ */
+function pruneAllWeatherLayers() {
+    if (!metarVectorLayer.getVisible()) {
+        pruneOldFeatures(metarVectorLayer, 'time', 30 * 60 * 1000);
+    }
+    if (!pirepVectorLayer.getVisible()) {
+        pruneOldFeatures(pirepVectorLayer, 'time', 2 * 60 * 60 * 1000);
+    }
+    if (!tafVectorLayer.getVisible()) {
+        pruneOldFeatures(tafVectorLayer, 'time', 6 * 60 * 60 * 1000);
+    }
+}
+
+/**
+ * Refreshes the Metar layer from the weather array, ensuring only the latest Metars are shown.
+ */
+function updateMetarLayerFromArray() {
+    const source = metarVectorLayer.getSource();
+    source.clear(); // Remove all existing features
+    
+    metars.forEach(metarObj => {
+        if (metarObj && metarObj.lon && metarObj.lat) {
+            const feature = new Feature({
+                geometry: new Point(fromLonLat([metarObj.lon, metarObj.lat])),
+                metar: metarObj 
+            });
+            feature.setStyle((feature, resolution) => {
+                const baseRadius = 24;
+                const referenceResolution = 76.43702828517625;
+                let scale = baseRadius * (referenceResolution / resolution);
+                scale = Math.max(3, Math.min(scale, 40));
+                const fillColor = getMetarFillColor(metarObj.visibility);
+                return new Style({
+                    image: new CircleStyle({
+                        radius: scale,
+                        fill: new Fill({ color: fillColor }),
+                        stroke: new Stroke({ color: '#222', width: 2 })
+                    })
+                });
+            });
+            source.addFeature(feature);
+        }
+    });
+}
+
+/**
+ * Refreshes the TAF layer from the tafs array, ensuring only the latest TAFs are shown.
+ */
+function updateTafLayerFromArray() {
+    const source = tafVectorLayer.getSource();
+    source.clear();
+    tafs.forEach(tafObj => {
+        if (tafObj && tafObj.lon && tafObj.lat) {
+            const feature = new Feature({
+                geometry: new Point(fromLonLat([tafObj.lon, tafObj.lat])),
+                taf: tafObj
+            });
+            feature.setStyle((feature, resolution) => getWeatherIconStyle('TAF', resolution));
+            source.addFeature(feature);
+        }
+    });
+}
+
+function updatePirepLayerFromArray() {
+    const source = pirepVectorLayer.getSource();
+    source.clear();
+    pireps.forEach(pirepObj => {
+        if (pirepObj && pirepObj.lon && pirepObj.lat) {
+            const feature = new Feature({
+                geometry: new Point(fromLonLat([pirepObj.lon, pirepObj.lat])),
+                pirep: pirepObj
+            });
+            feature.setStyle((feature, resolution) => getWeatherIconStyle('PIREP', resolution));
+            source.addFeature(feature);
+        }
+    });
+}
+
+// Layer visibility event handlers
+metarVectorLayer.on('change:visible', function () {
+    if (metarVectorLayer.getVisible()) {
+        console.log("Refreshing METAR layer from array");
+        updateMetarLayerFromArray();
+    }
+});
+
+tafVectorLayer.on('change:visible', function () {
+    if (tafVectorLayer.getVisible()) {
+        console.log("Refreshing TAF layer from array");
+        updateTafLayerFromArray();
+    }
+});
+
+pirepVectorLayer.on('change:visible', function () {
+    if (pirepVectorLayer.getVisible()) {
+        console.log("Refreshing PIREP layer from array");
+        updatePirepLayerFromArray();
+    }
+});
+
+// Schedule pruning of weather layers every 10 minutes
+setInterval(pruneAllWeatherLayers, 10 * 60 * 1000);
+
+
 
