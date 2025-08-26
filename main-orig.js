@@ -415,7 +415,6 @@ function placeOwnshipOnMap(jsondata) {
     if (!ownshipLayer) {
         ownshipLayer = new VectorLayer({
             source: new VectorSource(),
-            title: 'Own Ship Position'
         });
         map.addLayer(ownshipLayer);
     }
@@ -434,27 +433,20 @@ map.on('click', (evt) => {
     map.forEachFeatureAtPixel(evt.pixel, (feature) => {
         if (feature) {
             hasfeature = true;
-            let datatype = null;
-            if (feature.get("metar")) datatype = "METAR";
-            else if (feature.get("speci")) datatype = "METAR";
-            else if (feature.get("taf")) datatype = "TAF";
-            else if (feature.get("tafamd")) datatype = "TAF.AMD";
-            else if (feature.get("pirep")) datatype = "PIREP";
-            else if (feature.get("airport")) datatype = "AIRPORT";
-            else if (feature.get("traffic")) datatype = feature.get("TRAFFIC").type;
-            if (datatype === "METAR") {
+            let datatype = feature.get("datatype");
+            if (datatype === "metar") {
                 displayMetarPopup(feature);
             }
-            else if (datatype === "TAF" || datatype === "TAF.AMD") {
+            else if (datatype === "taf"){
                 displayTafPopup(feature);
             }
-            else if (datatype === "PIREP") {
+            else if (datatype === "pirep") {
                 displayPirepPopup(feature);
             }
-            else if (datatype === "AIRPORT") { // simple airport marker
+            else if (datatype === "airport") { // simple airport marker
                 //displayAirportPopup(feature);
             }
-            else if (datatype === "TRAFFIC") {
+            else if (datatype === "traffic") {
                 //displayTrafficPopup(feature);
             }
             let coordinate = evt.coordinate;
@@ -473,71 +465,7 @@ map.on('click', (evt) => {
  * @param {feature} ol.Feature: the metar feature the user clicked on 
  */
 function displayMetarPopup(feature) {
-    const weatherObject = feature.get("metar"); // now using the new structure
-    const rawmetar = weatherObject.raw_text;
-    const ident = weatherObject.station;
-    let svg = feature.get("svgimage");
-    let cat = weatherObject.flightCategory || "VFR";
-    let time = weatherObject.observation_time;
-    if (settings.uselocaltime) {
-        time = getLocalTime(time);
-    }
-    const tempC = weatherObject.temp_c;
-    const dewpC = weatherObject.dewpoint_c;
-    const temp = convertCtoF(weatherObject.temp_c);
-    const dewp = convertCtoF(weatherObject.dewpoint_c);
-    const windir = weatherObject.wind?.direction;
-    const winspd = weatherObject.wind?.speed + "";
-    const wingst = weatherObject.wind?.gust + ""; 
-    const altim = getAltimeterSetting(weatherObject.altimeter);
-    const vis = getDistanceUnits(weatherObject.visibility);
-    const wxcode = weatherObject.wx ? decodeWxDescriptions(weatherObject.wx) : "";
-    const taflabelcssClass = "taflabel";
-    let skyconditions = "";
-    let icingconditions = "";
-    if (weatherObject.clouds) {
-        skyconditions = decodeSkyCondition(weatherObject.clouds, taflabelcssClass);
-    }
-    if (weatherObject.icing_condition) {
-        icingconditions = decodeIcingOrTurbulenceCondition(weatherObject.icing_condition, taflabelcssClass);
-    }
     
-    let label = `<label class="#class">`;
-    let css;
-    switch(cat) {
-        case "IFR":
-            css = label.replace("#class", "metarifr");
-            break;
-        case "LIFR":
-            css = label.replace("#class", "metarlifr");
-            break;
-        case "MVFR":
-            css = label.replace("#class", "metarmvfr");
-            break;
-        case "VFR":
-            css = label.replace("#class", "metarvfr");
-            break;
-    }
-    if (ident) {
-        let name = getFormattedAirportName(ident);
-        let html = `<div id="#featurepopup"><pre><code><p>`;
-        html +=    `${css}${name}\n${ident} - ${cat}</label><p></p>`;
-        html +=   (time ? `Time:&nbsp<b>${time}</b><br/>` : "");
-        html +=   (temp ? `Temp:&nbsp<b>${tempC} °C</b> (${temp})<br/>` : "");
-        html +=   (dewp ? `Dewpoint:&nbsp<b>${dewpC} °C</b> (${dewp})<br/>` : "");
-        html += (windir ? `Wind Direction:&nbsp<b>${windir}°</b><br/>` : "");
-        html += (winspd ? `Wind Speed:&nbsp<b>${winspd}&nbspkt</b><br/>` : "");
-        html += (wingst ? `Wind Gust:&nbsp<b>${wingst}&nbspkt</b><br/>` : "");
-        html +=  (altim ? `Altimeter:&nbsp<b>${altim}&nbsphg</b><br/>` : "");
-        html +=    (vis ? `Horizontal Visibility:&nbsp<b>${vis}</b><br/>` : "");
-        html += (wxcode ? `Weather:&nbsp<b>${wxcode}</b><br/>`: "");
-        html += (skyconditions ? `${skyconditions}` : "");
-        html += (icingconditions ? `${icingconditions}` : "");
-        html += `</p></code></pre><span class="windsvg">${svg}</span>`;
-        html += `<textarea class="rawdata">${rawmetar}</textarea><br />`; 
-        html += `<p><button class="ol-popup-closer" onclick="closePopup()">close</button></p></div>`;
-        popupcontent.innerHTML = html;  
-    }
 }
 
 /**
@@ -1017,35 +945,467 @@ function buildWeatherJsonObject() {
 }
 
 
-// --- Utility to group METARs by flight category ---
-function groupMetarsByCategory(metars) {
-    return {
-        VFR: metars.filter(m => m.flightCategory === "VFR"),
-        MVFR: metars.filter(m => m.flightCategory === "MVFR"),
-        IFR: metars.filter(m => m.flightCategory === "IFR"),
-        LIFR: metars.filter(m => m.flightCategory === "LIFR")
+/**
+ * Generate a wind barb SVG image
+ * @param {int} width 
+ * @param {int} height 
+ * @param {object} WeatherItem 
+ * @returns 
+ */
+function getWindBarbSvg(width, height, weatherObject) {
+    // Use the actual weather object structure
+    const windDirection = weatherObject.wind?.direction ?? 0;
+    const windSpeed = weatherObject.wind?.speed ?? 0;
+    const gustSpeed = weatherObject.wind?.gust ?? 0;
+    const station = weatherObject.station ?? "";
+    // Compute color from flight category or visibility
+    let catcolor = getMetarColor(weatherObject);
+
+    const windData = {
+        wind_direction: windDirection,
+        wind_speed: windSpeed,
+        gust_speed: gustSpeed,
+        station: station
     };
+
+    let svg = "";
+    try {
+        svg = `<svg xmlns="http://www.w3.org/2000/svg" ` +
+              `width="${width}" height="${height}" ` +
+              `viewBox="0 0 500 500">` +
+              genWind(windData) +
+              `<g id="clr">` +
+                  `<circle cx="250" cy="250" r="30" stroke="#000000" stroke-width="3" fill="${catcolor}"/>` +
+              `</g>` +
+              `</svg>`;
+    } catch (e) {
+        // fallback SVG if needed
+        svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}"></svg>`;
+    }
+    return svg;
+}
+/**
+ * Convert ºF to ºF
+ * @param celsius
+ */
+function cToF(celsius) {
+    if (celsius != null) {
+        return Math.round(celsius * 9 / 5 + 32);
+    }
 }
 
-// --- Generate SVG wind barbs for each category ---
-function getCategoryWindBarbs(metars, width = 50, height = 50) {
-    const grouped = groupMetarsByCategory(metars);
-    return {
-        VFR: grouped.VFR.map(metar => getWindBarbSvg(width, height, metar)),
-        MVFR: grouped.MVFR.map(metar => getWindBarbSvg(width, height, metar)),
-        IFR: grouped.IFR.map(metar => getWindBarbSvg(width, height, metar)),
-        LIFR: grouped.LIFR.map(metar => getWindBarbSvg(width, height, metar))
-    };
+var GUST_WIDTH = 5;
+var WS_WIDTH = 5;
+/**
+ * Creates a windbarb for the metar
+ * @param windItem
+ * @returnsif (!ownshipLayer) {
+        ownshipLayer = new VectorLayer({
+            source: new VectorSource(),
+        });
+        map.addLayer(ownshipLayer);
+    }
+
+    ownshipLayer.getSource().addFeature(pointFeature);
+ */
+function genWind(windItem) {
+    var _a, _b, _c, _d, _e, _f, _g, _h, _j, _k;
+    var WDD = windItem.wind_direction ? windItem.wind_direction : 0;
+    var WSP = windItem.wind_speed ? windItem.wind_speed : 0;
+    var WGSP = windItem.gust_speed ? windItem.gust_speed : 0;
+    var wind = "";
+    var gust = "";
+    if (WSP === 0) {
+        wind =
+            `<g id="calm"><ellipse id="calm-marker" stroke="#000" fill="#00000000" cx="250" cy="250" rx="35" ry="35"/></g>`;
+    }
+    else {
+        gust = (windItem.gust_speed === null || windItem.gust_speed === undefined) ? "" :
+            `<g id="gustBarb" transform="rotate(${WDD}, 250, 250)"> ` +
+                `${genBarb1((_a = WGSP) !== null && _a !== void 0 ? _a : 0, true)} ` + 
+                `${genBarb2((_b = WGSP) !== null && _b !== void 0 ? _b : 0, true)} ` + 
+                `${genBarb3((_c = WGSP) !== null && _c !== void 0 ? _c : 0, true)} ` + 
+                `${genBarb4((_d = WGSP) !== null && _d !== void 0 ? _d : 0, true)} ` + 
+                `${genBarb5((_e = WGSP) !== null && _e !== void 0 ? _e : 0, true)} ` + 
+            `</g>`;
+        wind =
+            `<g id="windBarb" transform="rotate(${WDD}, 250, 250)">` + 
+            `<line stroke-width="5" y1="225" x1="250" y2="90" x2="250" stroke="#000" fill="none"/>` +
+                `${genBarb1((_f = WSP) !== null && _f !== void 0 ? _f : 0, false)} ` + 
+                `${genBarb2((_g = WSP) !== null && _g !== void 0 ? _g : 0, false)} ` + 
+                `${genBarb3((_h = WSP) !== null && _h !== void 0 ? _h : 0, false)} ` + 
+                `${genBarb4((_j = WSP) !== null && _j !== void 0 ? _j : 0, false)} ` + 
+                `${genBarb5((_k = WSP) !== null && _k !== void 0 ? _k : 0, false)} ` + 
+            `</g>`;
+    }
+    return gust + wind;
 }
 
-// --- Example usage: Generate SVGs for all METARs by category ---
-const windBarbSvgs = getCategoryWindBarbs(metars);
-// You can now use windBarbSvgs.VFR, windBarbSvgs.MVFR, etc. in your UI
+/**
+ * Generate first barb
+ * @param speed wind or gust speed
+ * @param gust set to true for gust
+ * @returns
+ */
+function genBarb1(speed, gust) {
+    var fill = gust ? 'red' : '#000';
+    var tag = gust ? 'gs' : 'ws';
+    var width = gust ? GUST_WIDTH : WS_WIDTH;
+    var barb = "";
+    if (speed >= 10 && speed < 50) {
+        //barb = `<line id="${tag}-barb-1-long" stroke-width="${width}" y1="50" x1="250" y2="50" x2="300" stroke="${fill}" transform="rotate(-35, 250, 50)"/>`;
+        barb = `<line id="${tag}-barb-1-long" stroke-width="${width}" y1="90" x1="250" y2="90" x2="305" stroke="${fill}" transform="rotate(-35, 250, 90)"/>`;
+    }
+    else if (speed >= 50) {
+        barb = `<polygon id="${tag}-barb-1-flag" points="248,98 290,68 248,68" fill="${fill}" />`;
+    }
+    return barb;
+}
+/**
+ * Generate second barb
+ * @param speed wind or gust speed
+ * @param gust set to true for gust
+ * @returns
+ */
+function genBarb2(speed, gust) {
+    var fill = gust ? 'red' : '#000';
+    var tag = gust ? 'gs' : 'ws';
+    var width = gust ? GUST_WIDTH : WS_WIDTH;
+    var barb = "";
+    if ((speed < 10) || (15 <= speed && speed < 20) || (55 <= speed && speed < 60)) {
+        barb = `<line id="${tag}-barb-2-short" stroke-width="${width}" y1="110" x1="250" y2="110" x2="285" stroke="${fill}" transform="rotate(-35, 250, 110)"/>`;
+    }
+    else if ((15 < speed && speed < 50) || (speed >= 60)) {
+        barb = `<line id="${tag}-barb-2-long" stroke-width="${width}" y1="110" x1="250" y2="110" x2="305" stroke="${fill}" transform="rotate(-35, 250, 110)"/>`;
+    }
+    return barb;
+}
+/**
+ * Generate third barb
+ * @param speed wind or gust speedparseWea
+ * @param gust set to true for gust
+ * @returns
+ */
+function genBarb3(speed, gust) {
+    var fill = gust ? 'red' : '#000';
+    var tag = gust ? 'gs' : 'ws';
+    var width = gust ? GUST_WIDTH : WS_WIDTH;
+    var barb = "";
+    if ((25 <= speed && speed < 30) || (65 <= speed && speed < 70)) {
+        barb = `<line id="${tag}-barb-3-short" stroke-width="${width}" y1="150"  x1="250" y2="150" x2="285" stroke="${fill}" transform="rotate(-35, 250, 150)"/>`;
+    }
+    else if ((25 < speed && speed < 50) || speed >= 70) {
+        barb = `<line id="${tag}-bard-3-long" stroke-width="${width}" y1="150"  x1="250" y2="150" x2="305" stroke="${fill}" transform="rotate(-35, 250, 150)"/>`;
+    }
+    return barb;
+}
+/**
+ * Generate forth barb
+ * @param speed wind or gust speed
+ * @param gust set to true for gust
+ * @returnss
+ */
+function genBarb4(speed, gust) {
+    var fill = gust ? 'red' : '#000';
+    var tag = gust ? 'gs' : 'ws';
+    var width = gust ? GUST_WIDTH : WS_WIDTH;
+    var barb = "";
+    if ((35 <= speed && speed < 40) || (75 <= speed && speed < 80)) {
+        barb = `<line id="${tag}-barb-4-short" stroke-width="${width}" y1="190" x1="250" y2="190" x2="285" stroke="${fill}" transform="rotate(-35, 250, 190)"/>`;
+    }
+    else if ((35 < speed && speed < 50) || speed >= 80) {
+        barb = `<line id="${tag}-barb-4-long" stroke-width="${width}" y1="190" x1="250" y2="190" x2="305"  stroke="${fill}" transform="rotate(-35, 250, 190)"/>`;
+    }
+    return barb;
+}
+/**
+ * Generate fifth barb
+ * @param speed wind or gust speed
+ * @param gust set to true for gust
+ * @returns
+ */
+function genBarb5(speed, gust) {
+    var fill = gust ? 'red' : '#000';
+    var tag = gust ? 'gs' : 'ws';
+    var width = gust ? GUST_WIDTH : WS_WIDTH;
+    var barb = "";
+    if ((45 <= speed && speed < 50) || (85 <= speed && speed < 90)) {
+        barb = `<line id="${tag}-barb-5-short" stroke-width="${width}" y1="230" x1="250" y2="230" x2="285" stroke="${fill}" transform="rotate(-35, 250, 230)"/>`;
+    }
+    return barb;
+}
 
-// --- Remove old manual filtering and SVG generation code ---
-// (No longer needed, so not included)
+/**
+ * Parse international temp dewp point format.
+ * @param rawWxItem raw metardisplayMetar
+ * @returns
+ */
+function parseTempInternational(rawWxItem) {
+    var re = /\s(M)?(\d{2})\/(M)?(\d{2})\s/g;
+    var matches = re.exec(rawWxItem);
+    if (matches != null) {
+        var temp = parseInt(matches[2]) * (matches[1] == null ? 1 : -1);
+        var dew_point = parseInt(matches[4]) * (matches[3] == null ? 1 : -1);
+        return [temp, dew_point];
+    }
+}
 
-// ...rest of your code remains unchanged...
+/**
+ * Parse North American temp dew point format
+ * @param rawWxItem raw metar
+ * @returns
+ */
+function parseTempNorthAmerica(rawWxItem) {
+    var re = /(T)(\d{1})(\d{2})(\d{1})(\d{1})(\d{2})(\d{1})/g;
+    var matches = re.exec(rawWxItem);
+    if (matches != null) {
+        var temp = parseFloat(matches[3] + "." + matches[4]) * (matches[2] === "0" ? 1 : -1);
+        var dew_point = parseFloat(matches[6] + "." + matches[7]) * (matches[5] === "0" ? 1 : -1);
+        return [temp, dew_point];
+    }
+}
+
+/**
+ * Utility function to trim and round Metar or TAF  
+ * altimeter value to a standard fixed(2) number
+ * @param {*} altimeter 
+ * @returns 
+ */
+function getAltimeterSetting(altimeter) {
+    let dbl = parseFloat(altimeter);
+    return dbl.toFixed(2).toString();
+}
+
+/**
+ * Convert statute miles to desired unit 
+ * @param {*} miles: statute miles
+ * @returns statute miles, kilometers or nautical miles   
+ */
+ function getDistanceUnits(miles) {
+    let num = parseFloat(miles);
+    let label = "mi";
+    switch (distanceunit) {
+        case DistanceUnits.kilometers: 
+            num = miles * 1.609344;
+            label = "km"
+            break;
+        case DistanceUnits.nauticalmiles:
+            num = miles * 0.8689762419;
+            label = "nm";
+            break;
+    }
+    return `${num.toFixed(1)} ${label}`;
+}
+
+/**
+ * Get inches of mercury fixed at 2 decimal places
+ * @param {float} altimeter 
+ * @returns 
+ */
+function getInchesOfMercury(altimeter) {
+    let inhg = parseFloat(altimeter);
+    return inhg.toFixed(2);
+}
+
+/**
+ * Get the image that corresponds to icing or turbulence condition
+ * @param {string} conditiontype 
+ * @param {string} conditionvalue 
+ * @returns html image string
+ */
+function getConditionImage(conditiontype, conditionvalue) {
+    let image = "";
+    if (conditiontype === "icing_intensity") {
+        switch (conditionvalue) {
+            case "NEGclr":
+            case "NEG":
+                image = "/images/Nil.png";
+                break;
+            case "RIME":
+            case "TRC":
+                image = "/images/IceTrace.png";
+                break;
+            case "TRC-LGT":
+                image = "/images/IceTraceLight.png"
+            case "LGT":
+                image = "/images/IceLight.png";
+                break;
+            case "LGT-MOD":
+                image = "/images/IceLightMod.png";
+                break;
+            case "MOD":
+                image = "/images/IceMod.png";
+                break;
+            case "MOD-SEV":
+                image = "/images/IceLight.png";
+                break;
+            case "SEV":
+                image = "/images/IceSevere.png";
+                break;
+        }
+    }   
+    else if (conditiontype === "turbulence_intensity") { 
+        switch (conditionvalue) {
+            case "NEG":
+            case "NEGclr": 
+                image = "/images/Nil.png";
+                break;
+            case "SMTH-LGT":
+            case "LGT":
+                image = "/images/TurbSmoothLight.png";
+            case "LGT-CHOP":
+                image = "/images/TurbLight.png";    
+                break;
+            case "CHOP":
+            case "LGT-MOD":
+                image = "/images/TurbLightMod.png";
+                break;
+            case "MOD":
+            case "MOD-CHOP":
+                image = "/images/TurbMod.png";
+                break;
+            case "MOD-SEV":
+                image = "/images/TurbModSevere.png";
+                break;
+            case "SEV":
+                image = "/images/TurbSevere.png";
+                break;
+        }
+    }
+    else {
+        image = "";
+    }
+    
+    return image;
+}
+
+/**
+ * Get the formatted name of an airport
+ * @param {string} ident, the airport identifier 
+ * @returns string, formatted name of the airport
+ */
+ function getFormattedAirportName(ident) {
+    let retvalue = airportNameKeymap.get(ident);
+    if (retvalue === undefined || 
+        retvalue === "undefined" ||
+        retvalue === "") {
+        retvalue = "";
+    } 
+    else {
+        retvalue = retvalue.replace("/", "\n");
+        retvalue = retvalue.replace(",", "\n");
+    }
+    return retvalue;
+}
+
+/**
+ * Get the local machine dae/time from the supplied ZULU date
+ * @param {*} zuludate: the ZULU date to be translated 
+ * @returns string: the translated date in standard or daylight time
+ */
+ function getLocalTime(zuludate) {
+    let date = new Date(zuludate);
+    let hours = date.getHours();
+    let minutes = date.getMinutes();
+    let ampm = hours >= 12 ? 'PM' : 'AM';
+    let month = date.getMonth() + 1;
+    let day = date.getDate();
+    let year = date.getFullYear();
+    let tzone = "";
+
+    hours = hours % 12;
+    hours = hours ? hours : 12; // the hour '0' should be '12'
+    minutes = minutes < 10 ? '0'+minutes : minutes;
+
+
+
+    let timex = date.toString().split("GMT");
+    let time = timex[1];
+
+    if (time.search("Eastern Standard") > -1) {
+        tzone = "(EST)"; 
+    }
+    if (time.search("Eastern Daylignt") > -1) {
+        tzone = "(EDT)"; 
+    }
+    if (time.search("Central Standard") > -1) {
+        tzone = "(CST)"; 
+    }
+    if (time.search("Central Daylight") > -1) {
+        tzone = "(CDT)"; 
+    }
+    if (time.search("Mountain Standard") > -1) {
+        tzone = "(MST)"; 
+    }
+    if (time.search("Mountain Daylight") > -1) {
+        tzone = "(MDT)"; 
+    }
+    if (time.search("Pacific Standard") > -1) {
+        tzone = "(PST)"; 
+    
+    }
+    if (time.search("Pacific Daylight") > -1) {
+        tzone = "(PDT)"; 
+    
+    }
+    if (time.search("Alaska Standard") > -1) {
+        tzone = "(AKST)"; 
+    }
+    if (time.search("Alaska Daylight") > -1) {
+        tzone = "(AKDT)"; 
+    }
+    if (time.search("Atlantic Standard") > -1) {
+        tzone = "(AST)"; 
+    }
+    if (time.search("Atlantic Daylight") > -1) {
+        tzone = "(ADT)";
+    }
+    return `${month}-${day}-${year} ${hours}:${minutes} ${ampm} ${tzone}`;
+}
+
+/**
+ * Set ownship orientation from Stratux situation, updates airplane image current position
+ */
+ function setOwnshipOrientation(jsondata) {
+    /*---------------------------------------------------------------
+     * Situation json data field example
+     *---------------------------------------------------------------
+      { "GPSLastFixSinceMidnightUTC": 61233.1,GPSLatitude": 30.714376,"GPSLongitude": -98.254944,"GPSFixQuality": 1,"GPSHeightAboveEllipsoid": 1187.6641,
+        "GPSGeoidSep": -78.41207,"GPSSatellites": 9,"GPSSatellitesTracked": 22,"GPSSatellitesSeen": 14,"GPSHorizontalAccuracy": 4.8500004,
+        "GPSNACp": 10,"GPSAltitudeMSL": 1266.0762,"GPSVerticalAccuracy": 6.85,"GPSVerticalSpeed": 0,"GPSLastFixLocalTime": "0001-01-03T18:43:51.48Z",
+        "GPSTrueCourse": 45.51,"GPSTurnRate": 0,"GPSGroundSpeed": 1.1610000133514404,"GPSLastGroundTrackTime": "0001-01-03T18:43:51.48Z",
+        "GPSTime": "2022-07-14T17:00:33.18Z","GPSLastGPSTimeStratuxTime": "0001-01-03T18:43:51.48Z","GPSLastValidNMEAMessageTime": "0001-01-03T18:43:51.48Z",
+        "GPSLastValidNMEAMessage": "$GNGGA,170033.10,3042.86261,N,09815.29674,W,1,09,0.97,385.9,M,-23.9,M,,*77","GPSPositionSampleRate": 9.998427260812582,
+        "BaroTemperature": 41.89,"BaroPressureAltitude": 1085.1527,"BaroVerticalSpeed": -3.136783,"BaroLastMeasurementTime": "0001-01-03T18:43:51.53Z",
+        "BaroSourceType": 1,"AHRSPitch": -0.0025035837716802546,"AHRSRoll": 0.049514056369771665,"AHRSGyroHeading": 3276.7,"AHRSMagHeading": 3276.7,
+        "AHRSSlipSkid": -0.03840070310305229,"AHRSTurnRate": 3276.7,"AHRSGLoad": 0.9996413993502861,"AHRSGLoadMin": 0.9930797723335983,
+        "AHRSGLoadMax": 1.0025976589458154,"AHRSLastAttitudeTime": "0001-01-03T18:43:51.53Z","AHRSStatus": 7
+      }
+    */
+        
+    const coords = fromLonLat([jsondata.GPSLongitude, jsondata.GPSLatitude]);
+    const pointFeature = new Feature({
+        geometry: new Point(coords)
+    });
+
+    pointFeature.setStyle(new Style({
+        image: new CircleStyle({
+            radius: 6,
+            fill: new Fill({ color: 'red' }),
+            stroke: new Stroke({ color: 'black', width: 1 })
+        })
+    }));
+
+    // Create a vector source and layer if not already present
+    if (!ownshipLayer) {
+        ownshipLayer = new VectorLayer({
+            source: new VectorSource(),
+        });
+        map.addLayer(ownshipLayer);
+    }
+
+    ownshipLayer.getSource().addFeature(pointFeature);
+}
 
 
 
