@@ -54,8 +54,8 @@ export async function parseMetarData(metarJson) {
         type: metarJson.Type || 'METAR',
         station: metarJson.Location,
         airport: airportInfo,
-        lat: (airportInfo && airportInfo.lat != null) ? airportInfo.lat : "",
-        lon: (airportInfo && airportInfo.lon != null) ? airportInfo.lon : "",
+        lat: (airportInfo && airportInfo.lat != null) ? airportInfo.lat : null,
+        lon: (airportInfo && airportInfo.lon != null) ? airportInfo.lon : null,
         time: metarJson.Time,
         reportType: reportTypeMatch ? reportTypeMatch[1] : null,
         wind,
@@ -67,6 +67,6 @@ export async function parseMetarData(metarJson) {
         remarks,
         raw: data
     };
-    console.log("METAR Data Parsed:", obj);
+    console.log(obj);
     return obj;
 }

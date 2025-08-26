@@ -20,12 +20,14 @@ import LayerSwitcher from 'ol-layerswitcher';
 import { parseWeatherMessage } from './messageparser';
 import { formatMessageDisplay } from './messagedisplay';
 import settings from '/settings.js';
+import { parsePirepData } from './pirepParser';
+import { parseTafAmdData, parseTafData } from './tafParser';
 
 const URL_GET_AIRPORTLIST = `http://localhost:8500/airportlist`;
 
 const urlsituation = "ws://127.0.0.1/situation";
 const urltraffic = "ws://127.0.0.1/traffic";
-const urlweather = "ws://127.0.0.1:8550"; ///weather";
+const urlweather = "ws://127.0.0.1/weather";
 
 let airports = {};
 let ownshipLayer;
@@ -76,72 +78,98 @@ setupStratuxWebsockets();
  */
 let airportNameKeymap = new Map();
 
-function getWeatherIconStyle(type, resolution) {
-    const baseRadius = 24;
-    const referenceResolution = 76.43702828517625;
-    let scale = baseRadius * (referenceResolution / resolution);
-    // Clamp scale for icons
-    const iconScale = Math.max(0.0025, Math.min(scale / 100, 0.05));
+function getWeatherIconStyle(weatherObject) {
     let src = '';
-    switch (type) {
+    let fscale = 0.0;
+    let fsize = [];
+    switch (weatherObject.type) {
         case 'TAF':
         case 'TAF.AMD':
             src = '/images/taf.svg';
+            fscale = 0.2;
+            fsize = [126, 90];
             break;
         case 'PIREP':
-            src = '/images/pirep.svg';
+            src = '/images/airplane.svg';
+            fscale = 0.5;
+            fsize = [85, 85];
             break;
+        case 'METAR':
+        case 'SPECI':
         default:
-            src = '/images/metar.svg'; // fallback
+            src = '/images/vfr.png'; 
             break;
     }
-    return new Style({
+    let icon = new Style({
         image: new Icon({
             src: src,
-            scale: iconScale,
+            size: fsize,
+            scale: fscale,
             anchor: [0.5, 0.5],
-            anchorXUnits: 'fraction',
-            anchorYUnits: 'fraction'
+            opacity: 1
         })
     });
+
+    return icon;
 }
 
-function parseFlightCategory() {
-    let vis = this.visibility; // in meters, convert to miles
-    let cond = "VFR" // default
+function parseFlightCategory(metarObject, resolution) {
+    let visMiles = 0;
+    let visibility = metarObject.visibility; 
     let ceiling = null;
-    if (this.clouds.length > 0) {
+    let cond = "VFR";
+
+    if (typeof visibility === 'string') {
+        const match = visibility.match(/^([\d.]+)\s*SM$/i);
+        if (match) {
+            visMiles = parseFloat(match[1]);
+        }
+    } 
+    else if (typeof visibility === 'number') {
+        visMiles = visibility;
+    }
+
+    if (metarObject.clouds && metarObject.clouds.length > 0) {
         // Find lowest cloud base (exclude SKC, CLR, NSC, FEW, SCT)
         const coverRanks = { BKN: 3, OVC: 4, VV: 5 };
-        let lowest = this.clouds
+        let lowest = metarObject.clouds
             .filter(c => coverRanks[c.abbreviation])
             .map(c => c.altitude)
             .sort((a, b) => a - b)[0];
 
         ceiling = lowest || null;
     }
-    // Convert visibility to statute miles if needed
-    let vis_miles = vis ? vis * 0.000621371 : null;
-    if ((ceiling !== null && ceiling < 500) || (vis_miles !== null && vis_miles < 1)) cond = "LIFR";
-    if ((ceiling !== null && ceiling < 1000) || (vis_miles !== null && vis_miles < 3)) cond = "IFR";
-    if ((ceiling !== null && ceiling < 3000) || (vis_miles !== null && vis_miles < 5)) cond = "MVFR";
-    this.flightCategory = cond;
+    
+    if ((visMiles !== null && visMiles < 1)) cond = "LIFR";
+    if ((visMiles !== null && visMiles < 3)) cond = "IFR";
+    if ((visMiles !== null && visMiles < 5)) cond = "MVFR";
+
+    let src = "/images/vfr.png";
     switch (cond) {
         case "MVFR":
-            this.color = "#0000ff";
+            src = "/images/mvfr.png";
             break;
         case "IFR":
-            this.color = "#ff0000";
+            src = "/images/ifr.png";
             break;
-        case "MIFR":
-            this.color = "#ff00ff";
+        case "LIFR":
+            src = "/images/lifr.png";
             break;
-        case "VFR":
         default:
-            this.color = "#10cf20";
+            src = "/images/vfr.png";
             break;
     } 
-    return cond;
+
+    let iconout = new Style({
+        image: new Icon({
+            src: src,
+            scale: .30, 
+            anchor: [0.5, 0.5],
+            size: [55, 55]
+        })
+    });
+
+    return iconout;
 }
 
 class Wind {
@@ -231,14 +259,14 @@ let tafVectorLayer = new VectorLayer({
     source: new VectorSource(),
     title: "TAFs",
     visible: false,
-    zIndex: 12
+    zIndex: 13
 });
 
 let pirepVectorLayer = new VectorLayer({
     source: new VectorSource(),
     title: "Pireps",
     visible: false,
-    zIndex: 11
+    zIndex: 13
 });
 
 let trafficVectorLayer = new VectorLayer({
@@ -272,40 +300,32 @@ async function setupStratuxWebsockets() {
     wsWeather.onmessage = async function(evt) {
         let data = JSON.parse(evt.data);
         console.log(data);
-        let pd;
+        let parsedObject = {};
         try {
-            pd = await parseWeatherMessage(data);
+            parsedObject = await parseWeatherMessage(data);
         } catch (err) {
             console.error("Error parsing weather message:", err);
             return;
         }
-        if (!pd || !pd.type) return;
-        switch (pd.type) {
+        
+        if (!parsedObject || !parsedObject.type) {
+            return;
+        }
+
+        switch (parsedObject.type) {
             case 'METAR':
+            case 'SPECI':
                 if (metars.length >= 1650) {
                     metars.splice(0, metars.length - 1649);
                 }
-                metars.push(pd);
+                metars.push(parsedObject);
                 // Add feature directly to layer
-                if (pd.lon && pd.lat) {
+                if (parsedObject.lon && parsedObject.lat) {
                     const feature = new Feature({
-                        geometry: new Point(fromLonLat([pd.lon, pd.lat])),
-                        metar: pd
+                        geometry: new Point(fromLonLat([parsedObject.lon, parsedObject.lat])),
+                        metar: parsedObject
                     });
-                    feature.setStyle((feature, resolution) => {
-                        const baseRadius = 24;
-                        const referenceResolution = 76.43702828517625;
-                        let scale = baseRadius * (referenceResolution / resolution);
-                        scale = Math.max(3, Math.min(scale, 40));
-                        const fillColor = getMetarFillColor(pd.visibility);
-                        return new Style({
-                            image: new CircleStyle({
-                                radius: scale,
-                                fill: new Fill({ color: fillColor }),
-                                stroke: new Stroke({ color: '#222', width: 2 })
-                            })
-                        });
-                    });
+                    feature.setStyle((feature, resolution) => parseFlightCategory(feature.get('metar'), resolution));
                     metarVectorLayer.getSource().addFeature(feature);
                 }
                 break;
@@ -314,28 +334,14 @@ async function setupStratuxWebsockets() {
                 if (tafs.length >= 500) {
                     tafs.splice(0, tafs.length - 499);
                 }
-                tafs.push(pd);
+                tafs.push(parsedObject);
                 // Add feature directly to layer
-                if (pd.lon && pd.lat) {
+                if (parsedObject.lon && parsedObject.lat) {
                     const feature = new Feature({
-                        geometry: new Point(fromLonLat([pd.lon, pd.lat])),
-                        taf: pd
+                        geometry: new Point(fromLonLat([parsedObject.lon, parsedObject.lat])),
+                        taf: parsedObject
                     });
-                    feature.setStyle((feature, resolution) => {
-                        const baseRadius = 10;
-                        const referenceResolution = 76.43702828517625;
-                        let scale = baseRadius * (referenceResolution / resolution);
-                        scale = Math.max(3, Math.min(scale, 40));
-                        return new Style({
-                            image: new Icon({
-                                src: '/images/taf.svg',
-                                scale: 0.0025,
-                                anchor: [0.5, 0.5],
-                                anchorXUnits: 'fraction',
-                                anchorYUnits: 'fraction'
-                            })
-                        });
-                    });
+                    feature.setStyle((feature, resolution) => getWeatherIconStyle(feature.get('taf'), resolution));                        
                     tafVectorLayer.getSource().addFeature(feature);
                 }
                 break;
@@ -343,28 +349,14 @@ async function setupStratuxWebsockets() {
                 if (pireps.length >= 500) {
                     pireps.splice(0, pireps.length - 499);
                 }
-                pireps.push(pd);
+                pireps.push(parsedObject);
                 // Add feature directly to layer
-                if (pd.lon && pd.lat) {
+                if (parsedObject.lon && parsedObject.lat) {
                     const feature = new Feature({
-                        geometry: new Point(fromLonLat([pd.lon, pd.lat])),
-                        pirep: pd
+                        geometry: new Point(fromLonLat([parsedObject.lon, parsedObject.lat])),
+                        pirep: parsedObject
                     });
-                    feature.setStyle((feature, resolution) => {
-                        const baseRadius = 10;
-                        const referenceResolution = 76.43702828517625;
-                        let scale = baseRadius * (referenceResolution / resolution);
-                        scale = Math.max(3, Math.min(scale, 40));
-                        return new Style({
-                            image: new Icon({
-                                src: '/images/pirep.svg',
-                                scale: 0.0025,
-                                anchor: [0.5, 0.5],
-                                anchorXUnits: 'fraction',
-                                anchorYUnits: 'fraction'
-                            })
-                        });
-                    });
+                    feature.setStyle((feature, resolution) => getWeatherIconStyle(feature.get('pirep'), resolution));     
                     pirepVectorLayer.getSource().addFeature(feature);
                 }
                 break;
@@ -1426,20 +1418,7 @@ function updateMetarLayerFromArray() {
                 geometry: new Point(fromLonLat([metarObj.lon, metarObj.lat])),
                 metar: metarObj 
             });
-            feature.setStyle((feature, resolution) => {
-                const baseRadius = 24;
-                const referenceResolution = 76.43702828517625;
-                let scale = baseRadius * (referenceResolution / resolution);
-                scale = Math.max(3, Math.min(scale, 40));
-                const fillColor = getMetarFillColor(metarObj.visibility);
-                return new Style({
-                    image: new CircleStyle({
-                        radius: scale,
-                        fill: new Fill({ color: fillColor }),
-                        stroke: new Stroke({ color: '#222', width: 2 })
-                    })
-                });
-            });
+            feature.setStyle((feature) => parseFlightCategory(feature.get('metar')));
             source.addFeature(feature);
         }
     });
@@ -1457,7 +1436,7 @@ function updateTafLayerFromArray() {
                 geometry: new Point(fromLonLat([tafObj.lon, tafObj.lat])),
                 taf: tafObj
             });
-            feature.setStyle((feature, resolution) => getWeatherIconStyle('TAF', resolution));
+            feature.setStyle((feature) => getWeatherIconStyle(feature.get('taf')));
             source.addFeature(feature);
         }
     });
@@ -1472,7 +1451,7 @@ function updatePirepLayerFromArray() {
                 geometry: new Point(fromLonLat([pirepObj.lon, pirepObj.lat])),
                 pirep: pirepObj
             });
-            feature.setStyle((feature, resolution) => getWeatherIconStyle('PIREP', resolution));
+            feature.setStyle((feature) => getWeatherIconStyle(feature.get('pirep')));
             source.addFeature(feature);
         }
     });

@@ -1,7 +1,10 @@
 // pirepParser.js
 // Handles PIREP parsing
-export function parsePirepData(pirepJson) {
+import { attachAirportInfo } from './airportInfo.js';
+
+export async function parsePirepData(pirepJson) {
     if (!pirepJson || !pirepJson.Data) return null;
+    const airportInfo = await attachAirportInfo(pirepJson.Location);
     let data = pirepJson.Data.replace(/\n/g, ' ').replace(/=+$/, '').trim();
 
     const locationMatch = data.match(/\/OV\s*([A-Z0-9]+)/i);
@@ -18,10 +21,12 @@ export function parsePirepData(pirepJson) {
             sky = match[2] ? `${match[1]} ${match[2]}` : match[1];
         }
     }
-
-    return {
+    let outObject = {
         type: pirepJson.Type || 'PIREP',
         station: pirepJson.Location,
+        airport: airportInfo,
+        lat: (airportInfo && airportInfo.lat != null) ? airportInfo.lat : null,
+        lon: (airportInfo && airportInfo.lon != null) ? airportInfo.lon : null,
         time: pirepJson.Time,
         location: locationMatch ? locationMatch[1] : "",
         pirepTime: timeMatch ? timeMatch[1] : "",
@@ -31,4 +36,6 @@ export function parsePirepData(pirepJson) {
         remarks: remarksMatch ? remarksMatch[1].trim() : "",
         raw: data
     };
+
+    return outObject;
 }

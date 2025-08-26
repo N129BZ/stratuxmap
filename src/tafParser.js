@@ -22,12 +22,12 @@ export async function parseTafData(tafJson) {
 
     const airportInfo = await attachAirportInfo(tafJson.Location);
 
-    return {
+    let outObject = {
         type: tafJson.Type || 'TAF',
         station: tafJson.Location,
         airport: airportInfo,
-    lat: (airportInfo && airportInfo.latitude != null) ? airportInfo.latitude : "",
-    lon: (airportInfo && airportInfo.longitude != null) ? airportInfo.longitude : "",
+        lat: (airportInfo && airportInfo.latitude != null) ? airportInfo.latitude : null,
+        lon: (airportInfo && airportInfo.longitude != null) ? airportInfo.longitude : null,
         time: tafJson.Time,
         period: periodMatch ? periodMatch[1] : null,
         changeIndicators,
@@ -39,6 +39,8 @@ export async function parseTafData(tafJson) {
         airport: airportInfo,
         raw: data
     };
+
+    return outObject;
 }
 
 export async function parseTafAmdData(tafJson) {
