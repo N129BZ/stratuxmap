@@ -34,7 +34,7 @@ export async function parsePirepData(pirepJson) {
         aircraft: aircraftMatch ? aircraftMatch[1] : "",
         sky,
         remarks: remarksMatch ? remarksMatch[1].trim() : "",
-        raw: data
+        raw_data: data
     };
 
     return outObject;

@@ -37,7 +37,7 @@ export async function parseTafData(tafJson) {
         weather: wxMatches,
         weatherDescription: wxDescriptions,
         airport: airportInfo,
-        raw: data
+        raw_data: data
     };
 
     return outObject;
@@ -66,8 +66,8 @@ export async function parseTafAmdData(tafJson) {
         type: tafJson.Type || 'TAF.AMD',
         station: tafJson.Location,
         airport: airportInfo,
-        lat: (airportInfo && airportInfo.lat != null) ? airportInfo.lat : "",
-        lon: (airportInfo && airportInfo.lon != null) ? airportInfo.lon : "",
+        lat: (airportInfo && airportInfo.lat != null) ? airportInfo.lat : null,
+        lon: (airportInfo && airportInfo.lon != null) ? airportInfo.lon : null,
         time: tafJson.Time,
         period: periodMatch ? periodMatch[1] : null,
         changeIndicators,
@@ -77,6 +77,6 @@ export async function parseTafAmdData(tafJson) {
         weather: wxMatches,
         weatherDescription: wxDescriptions,
         airport: airportInfo,
-        raw: data
+        raw_data: data
     };
 }

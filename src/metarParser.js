@@ -16,14 +16,17 @@ export async function parseMetarData(metarJson) {
     const altimeterMatch = data.match(/A(\d{4})/);
     const remarksMatch = data.match(/RMK\s+(.+)$/);
 
-    let wind = null;
+    let wind = { direction: "0", speed: 0, gust: 0 };
     if (windMatch) {
-        wind = `${windMatch[1]}° ${windMatch[2]} ${windMatch[3]}`;
+        wind.direction = `${windMatch[1]}°`;
+        wind.speed = parseInt(windMatch[2]);
+        wind.gust = parseInt(windMatch[3]);
     }
 
-    let visibility = null;
+    let visibility = {distance: 10, unit: "SM" };
     if (visibilityMatch) {
-        visibility = `${visibilityMatch[1]} ${visibilityMatch[2]}`;
+        visibility.distance = parseInt(visibilityMatch[1]);
+        visibility.unit = visibilityMatch[2].trim();
     }
 
     let sky = null;
@@ -65,7 +68,7 @@ export async function parseMetarData(metarJson) {
         dewpoint: tempDewMatch ? tempDewMatch[2] : null,
         altimeter,
         remarks,
-        raw: data
+        raw_data: data
     };
     console.log(obj);
     return obj;

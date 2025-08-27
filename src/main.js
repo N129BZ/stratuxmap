@@ -81,6 +81,17 @@ setupStratuxWebsockets();
 let airportNameKeymap = new Map();
 
 function getWeatherIconStyle(weatherObject) {
+    if (!weatherObject) {
+        // Return a default icon style if weatherObject is null or undefined
+        return new Style({
+            image: new Icon({
+                src: '/images/vfr.png',
+                scale: 0.3,
+                anchor: [0.5, 0.5],
+                opacity: 1
+            })
+        });
+    }
     let src = '';
     let fscale = 0.0;
     let fsize = [];
@@ -100,6 +111,8 @@ function getWeatherIconStyle(weatherObject) {
         case 'SPECI':
         default:
             src = '/images/vfr.png'; 
+            fscale = 0.3;
+            fsize = [55, 55];
             break;
     }
     let icon = new Style({
@@ -111,11 +124,9 @@ function getWeatherIconStyle(weatherObject) {
             opacity: 1
         })
     });
-
-    return icon;
 }
 
-function parseFlightCategory(metarObject, resolution) {
+function parseFlightCategory(metarObject) {
     let visMiles = 0;
     let visibility = metarObject.visibility; 
     let ceiling = null;
@@ -342,9 +353,10 @@ async function setupStratuxWebsockets() {
                 if (parsedObject.lon && parsedObject.lat) {
                     const feature = new Feature({
                         geometry: new Point(fromLonLat([parsedObject.lon, parsedObject.lat])),
-                        metar: parsedObject
+                        type: "METAR",
+                        object: parsedObject
                     });
-                    feature.setStyle((feature, resolution) => parseFlightCategory(feature.get('metar'), resolution));
+                    feature.setStyle((feature) => parseFlightCategory(parsedObject));
                     metarVectorLayer.getSource().addFeature(feature);
                     metarVectorLayer.changed();
                 }
@@ -359,9 +371,10 @@ async function setupStratuxWebsockets() {
                 if (parsedObject.lon && parsedObject.lat) {
                     const feature = new Feature({
                         geometry: new Point(fromLonLat([parsedObject.lon, parsedObject.lat])),
-                        taf: parsedObject
+                        type: "TAF",
+                        object: parsedObject
                     });
-                    feature.setStyle((feature, resolution) => getWeatherIconStyle(feature.get('taf'), resolution));                        
+                    feature.setStyle((feature) => getWeatherIconStyle(parsedObject));                        
                     tafVectorLayer.getSource().addFeature(feature);
                     tafVectorLayer.changed();
                 }
@@ -375,9 +388,10 @@ async function setupStratuxWebsockets() {
                 if (parsedObject.lon && parsedObject.lat) {
                     const feature = new Feature({
                         geometry: new Point(fromLonLat([parsedObject.lon, parsedObject.lat])),
-                        pirep: parsedObject
+                        type: "PIREP",
+                        object: parsedObject
                     });
-                    feature.setStyle((feature, resolution) => getWeatherIconStyle(feature.get('pirep'), resolution));     
+                    feature.setStyle((feature) => getWeatherIconStyle(parsedObject));     
                     pirepVectorLayer.getSource().addFeature(feature);
                     pirepVectorLayer.changed();
                 }
@@ -429,39 +443,29 @@ function placeOwnshipOnMap(jsondata) {
  */
 map.on('click', (evt) => {
     let hasfeature = false;
-    let coords = toLonLat(evt.coordinate);
-    
+    let coordinate = evt.coordinate;
     map.forEachFeatureAtPixel(evt.pixel, (feature) => {
         if (feature) {
             hasfeature = true;
-            let datatype = null;
-            if (feature.get("metar")) datatype = "METAR";
-            else if (feature.get("speci")) datatype = "METAR";
-            else if (feature.get("taf")) datatype = "TAF";
-            else if (feature.get("tafamd")) datatype = "TAF.AMD";
-            else if (feature.get("pirep")) datatype = "PIREP";
-            else if (feature.get("airport")) datatype = "AIRPORT";
-            else if (feature.get("traffic")) datatype = feature.get("TRAFFIC").type;
-            if (datatype === "METAR") {
-                displayMetarPopup(feature);
+            let featureObject = feature.get('object');
+            if (featureObject.type === "METAR") {
+                displayMetarPopup(featureObject);
+            } else if (featureObject.type === "TAF") {
+                displayTafPopup(featureObject);
+            } else if (featureObject.type === "TAF.AMD") {
+                displayTafPopup(featureObject);
+            } else if (featureObject.type === "PIREP") {
+                displayPirepPopup(featureObject)
+            } else if (featureObject.type === "AIRPORT") {
+                //displayAirportPopup(featureObject);
+            } else if (feature.get("traffic")) {
+                //displayAirportPopup(featureObject);
             }
-            else if (datatype === "TAF" || datatype === "TAF.AMD") {
-                displayTafPopup(feature);
-            }
-            else if (datatype === "PIREP") {
-                displayPirepPopup(feature);
-            }
-            else if (datatype === "AIRPORT") { // simple airport marker
-                //displayAirportPopup(feature);
-            }
-            else if (datatype === "TRAFFIC") {
-                //displayTrafficPopup(feature);
-            }
-            let coordinate = evt.coordinate;
             popupoverlay.setPosition(coordinate);
         }
         return true;
     });
+
     if (!hasfeature) {
         closePopup();
     }
@@ -470,36 +474,31 @@ map.on('click', (evt) => {
 
 /**
  * Create the html for a METAR popup element
- * @param {feature} ol.Feature: the metar feature the user clicked on 
+ * @param {object} weatherObject: the metar feature object the user clicked on 
  */
-function displayMetarPopup(feature) {
-    const weatherObject = feature.get("metar"); // now using the new structure
-    const rawmetar = weatherObject.raw_text;
+function displayMetarPopup(weatherObject) {
+    const rawmetar = weatherObject.raw_data;
     const ident = weatherObject.station;
-    let svg = feature.get("svgimage");
+    let svg = weatherObject.image;
     let cat = weatherObject.flightCategory || "VFR";
     let time = weatherObject.observation_time;
-    if (settings.uselocaltime) {
-        time = getLocalTime(time);
-    }
-    const tempC = weatherObject.temp_c;
-    const dewpC = weatherObject.dewpoint_c;
-    const temp = convertCtoF(weatherObject.temp_c);
-    const dewp = convertCtoF(weatherObject.dewpoint_c);
+    const temp = weatherObject.temperature;
+    //const dewpC = tempC; //weatherObject.dewpoint_c;
+    //const temp = weatherObject.temperature;
     const windir = weatherObject.wind?.direction;
-    const winspd = weatherObject.wind?.speed + "";
-    const wingst = weatherObject.wind?.gust + ""; 
-    const altim = getAltimeterSetting(weatherObject.altimeter);
-    const vis = getDistanceUnits(weatherObject.visibility);
-    const wxcode = weatherObject.wx ? decodeWxDescriptions(weatherObject.wx) : "";
+    const winspd = weatherObject.wind?.speed;
+    const wingst = weatherObject.wind?.gust; 
+    const altim = weatherObject.altimeter;
+    const vis = weatherObject.visibility;
+    //const wxcode = weatherObject.wx ? decodeWxDescriptions(weatherObject) : "";
     const taflabelcssClass = "taflabel";
     let skyconditions = "";
     let icingconditions = "";
     if (weatherObject.clouds) {
-        skyconditions = decodeSkyCondition(weatherObject.clouds, taflabelcssClass);
+        skyconditions = decodeSkyCondition(weatherObject, taflabelcssClass);
     }
     if (weatherObject.icing_condition) {
-        icingconditions = decodeIcingOrTurbulenceCondition(weatherObject.icing_condition, taflabelcssClass);
+        icingconditions = decodeIcingOrTurbulenceCondition(weatherObject, taflabelcssClass);
     }
     
     let label = `<label class="#class">`;
@@ -519,18 +518,18 @@ function displayMetarPopup(feature) {
             break;
     }
     if (ident) {
-        let name = getFormattedAirportName(ident);
+        let name = weatherObject.airport.name;
         let html = `<div id="#featurepopup"><pre><code><p>`;
         html +=    `${css}${name}\n${ident} - ${cat}</label><p></p>`;
         html +=   (time ? `Time:&nbsp<b>${time}</b><br/>` : "");
-        html +=   (temp ? `Temp:&nbsp<b>${tempC} °C</b> (${temp})<br/>` : "");
-        html +=   (dewp ? `Dewpoint:&nbsp<b>${dewpC} °C</b> (${dewp})<br/>` : "");
+        html +=   (temp ? `Temp:&nbsp<b>${temp} °C</b> (${temp})<br/>` : "");
+        //html +=   (dewp ? `Dewpoint:&nbsp<b>${dewpC} °C</b> (${dewp})<br/>` : "");
         html += (windir ? `Wind Direction:&nbsp<b>${windir}°</b><br/>` : "");
         html += (winspd ? `Wind Speed:&nbsp<b>${winspd}&nbspkt</b><br/>` : "");
         html += (wingst ? `Wind Gust:&nbsp<b>${wingst}&nbspkt</b><br/>` : "");
         html +=  (altim ? `Altimeter:&nbsp<b>${altim}&nbsphg</b><br/>` : "");
         html +=    (vis ? `Horizontal Visibility:&nbsp<b>${vis}</b><br/>` : "");
-        html += (wxcode ? `Weather:&nbsp<b>${wxcode}</b><br/>`: "");
+        //html += (wxcode ? `Weather:&nbsp<b>${wxcode}</b><br/>`: "");
         html += (skyconditions ? `${skyconditions}` : "");
         html += (icingconditions ? `${icingconditions}` : "");
         html += `</p></code></pre><span class="windsvg">${svg}</span>`;
@@ -542,18 +541,134 @@ function displayMetarPopup(feature) {
 
 /**
  * Create the html for a TAF popup element
- * @param {feature} ol.Feature: the taf feature the user clicked on
+ * @param {object} tafObject: the taf feature object the user clicked on
  */
-function displayTafPopup(feature) {
+function displayTafPopup(tafObject) {
 
 }
 
 /**
  * Create the html for a PIREP popup element
- * @param {object} feature: the pirep the user clicked on
+ * @param {object} pirepObject: the pirep feature object the user clicked on
  */
-function displayPirepPopup(feature) {
+function displayPirepPopup(pirepObject) {
  
+}
+
+/**
+ * Decode icing or turbulence condition
+ * @param {object} condition json object 
+ * @returns html string
+ */
+function decodeIcingOrTurbulenceCondition(condition) {
+    let html = "";
+    for (const item in condition) {
+        let value = condition[item];
+        if (typeof(value) === 'object') {
+            html += "<p>";
+            for (const subitem in value) {
+                let subvalue = value[subitem];
+                html += parseConditionField(subitem, subvalue);
+            }
+            html += "</p><hr>";
+        } 
+        else {
+            html += parseConditionField(item, value);
+        }
+    }        
+    return html;        
+}
+
+/**
+ * Decode weather codes from TAFs or METARS
+ * @param {*} codevalue: this could contain multiple space-delimited codes
+ * @returns string with any weather description(s)
+ */
+function decodeWxDescriptions(weatherObject) {
+    if (!weatherObject || !weatherObject.weather) return "";
+    let outstr = "";
+    let vals = Array.isArray(weatherObject.weather) ? weatherObject.weather : weatherObject.weather.split(" ");
+    for (let i = 0; i < vals.length; i++) {
+        const desc = weatherAcronymKeymap.get(vals[i]) || vals[i];
+        outstr += i === 0 ? desc : ` / ${desc}`;
+    }
+    return outstr;
+}
+
+/**
+ * Decode sky conditions
+ * @param {object} json object skyconditions 
+ * @param {string} css class to use 
+ * @returns html string 
+ */
+function decodeSkyCondition(weatherObject, labelclassCss) {
+    let html = "";
+    if (!weatherObject || !weatherObject.clouds) return html;
+    const skycondition = weatherObject.clouds;
+    try {
+        for (const x in skycondition) {
+            let condition = skycondition[x];
+            let fieldname = "";
+            let fieldvalue = "";
+            if (typeof(condition) !== "string") {
+                for (const index in condition) {
+                    fieldname = getFieldDescription(index);
+                    fieldvalue = condition[index];
+                    html += `<label class="${labelclassCss}">${fieldname}: <b>${fieldvalue}</b></label><br />`;
+                }
+            }
+            else {
+                fieldname = getFieldDescription(x);
+                fieldvalue = getSkyConditionDescription(condition);
+                html += `<label class="${labelclassCss}">${fieldname}: <b>${fieldvalue}</b></label><br />`;
+            }
+        }
+    }
+    catch (error) {
+        console.log(error.message);
+    }
+    return html;
+}
+
+function convertCtoF(weatherObject) {
+    if (!weatherObject || typeof weatherObject.temp_c !== 'number') return null;
+    // Convert Celsius to Fahrenheit
+    return Math.round((weatherObject.temp_c * 9) / 5 + 32) + " °F";
+}
+
+/**
+ * Utility function to trim and round Metar or TAF  
+ * altimeter value to a standard fixed(2) number
+ * @param {*} weatherObject 
+ * @returns 
+ */
+function getAltimeterSetting(weatherObject) {
+    if (!weatherObject || typeof weatherObject.altimeter !== 'number') return null;
+    // Format altimeter inHg to two decimal places
+    return weatherObject.altimeter.toFixed(2);
+}
+
+/**
+ * Convert statute miles to desired unit 
+ * @param {*} miles: statute miles
+ * @returns statute miles, kilometers or nautical miles   
+ */
+function getDistanceUnits(weatherObject) {
+    if (!weatherObject || typeof weatherObject.visibility !== 'number') return null;
+    let miles = weatherObject.visibility;
+    let num = parseFloat(miles);
+    let label = "mi";
+    switch (distanceunit) {
+        case DistanceUnits.kilometers: 
+            num = miles * 1.609344;
+            label = "km";
+            break;
+        case DistanceUnits.nauticalmiles:
+            num = miles * 0.8689762419;
+            label = "nm";
+            break;
+    }
+    return `${num.toFixed(1)} ${label}`;
 }
 
 /**
@@ -596,6 +711,8 @@ function closePopup() {
     }
     return false;
 }
+
+window.closePopup = closePopup;
 
 /**
  *
