@@ -44,13 +44,14 @@ export async function parseMetarData(metarJson) {
         }
     }
 
+    let clouds = parseClouds(data);
     let remarks = remarksMatch ? remarksMatch[1].trim() : null;
 
     let altimeter = null;
     if (altimeterMatch && altimeterMatch[1]) {
         const value = (parseInt(altimeterMatch[1], 10) / 100).toFixed(2);
-        const descriptor = 'inHg';
-        altimeter = `${value} ${descriptor}`;
+        //const descriptor = 'inHg';
+        altimeter = value;
     }
 
     let obj = {
@@ -64,6 +65,7 @@ export async function parseMetarData(metarJson) {
         wind,
         visibility,
         sky,
+        clouds, 
         temperature: tempDewMatch ? tempDewMatch[1] : null,
         dewpoint: tempDewMatch ? tempDewMatch[2] : null,
         altimeter,
@@ -72,4 +74,25 @@ export async function parseMetarData(metarJson) {
     };
     console.log(obj);
     return obj;
+}
+
+/**
+ * Parse cloud coverages
+ * @param metarString raw metar
+ * @returns
+ */
+function parseClouds(metarString) {
+    var _a;
+    var re = /(NCD|SKC|CLR|NSC|FEW|SCT|BKN|OVC|VV)(\d{3})/g;
+    var clouds = new Array();
+    var matches;
+    while ((matches = re.exec(metarString)) != null) {
+        var cloud = {
+            abbreviation: matches[1],
+            meaning: (_a = CLOUDS[matches[1]]) === null || _a === void 0 ? void 0 : _a.text,
+            altitude: parseInt(matches[2]) * 100
+        };
+        clouds.push(cloud);
+    }
+    return clouds;
 }

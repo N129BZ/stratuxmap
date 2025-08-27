@@ -6,7 +6,6 @@ Sectional.db
 # Ignore logs and temp files
 *.log
 *.tmp
-*.sh
 # Ignore OS-specific files
 .DS_Store
 Thumbs.db

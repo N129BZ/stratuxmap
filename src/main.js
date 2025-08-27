@@ -23,6 +23,8 @@ import settings from '/settings.js';
 import { parsePirepData } from './pirepParser';
 import { parseTafAmdData, parseTafData } from './tafParser';
 import BaseLayer from 'ol/layer/Base';
+import { WEATHER, CLOUDS, CONDITIONS } from './weatherdictionary';
+
 //import  from './pirepLayer';
 
 const URL_GET_AIRPORTLIST = `http://localhost:8500/airportlist`;
@@ -80,6 +82,15 @@ setupStratuxWebsockets();
  */
 let airportNameKeymap = new Map();
 
+/**
+ * Returns SVG icon
+ * @param key weather abbriviation
+ */
+function getWeatherLegend(key) {
+    var weather = WEATHER[key] != null ? WEATHER[key].svg : "";
+    return "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"65\" height=\"65\" viewBox=\"0 0 500 500\">\n                <style>\n                    .wx_text{ \n                        color: black;\n                        font-size: 400px;\n                        font-family: \"Noto Sans\";\n                        white-space: pre;\n                    }\n                    .snow{ \n                        color: black;\n                        font-size: 300px;\n                        font-family: \"Noto Sans\";\n                        white-space: pre;\n                    }\n                    .wx_graphic {\n                        stroke: black;\n                        fill: none;\n                        stroke-width: 30\n                    }\n                    .wx_graphic_thin {\n                        stroke: black;\n                        fill: none;\n                        stroke-width: 15\n                    }\n                </style>\n                " + weather + "\n            </svg>";
+}
+
 function getWeatherIconStyle(weatherObject) {
     if (!weatherObject) {
         // Return a default icon style if weatherObject is null or undefined
@@ -124,6 +135,29 @@ function getWeatherIconStyle(weatherObject) {
             opacity: 1
         })
     });
+}
+
+/**
+ * Parse Weather items
+ * @param metar raw metar
+ * @returns
+ */
+function parseWeather(metar) {
+    var obs_keys = Object.keys(WEATHER).join('|').replace(/\+/g, "\\+");
+    var re = new RegExp("\\s?(" + obs_keys + ")\\s", 'g');
+    var matches = metar.match(re);
+    if (matches != null) {
+        return matches.map(function (match) {
+            var key = match.trim();
+            return {
+                abbreviation: key,
+                meaning: WEATHER[key].text
+            };
+        });
+    }
+    else {
+        return new Array();
+    }
 }
 
 function parseFlightCategory(metarObject) {
@@ -343,10 +377,22 @@ async function setupStratuxWebsockets() {
                 metars.push(parsedObject);
                 // Add feature directly to layer
                 if (parsedObject.lon && parsedObject.lat) {
+                    let svg = "";
+                    let svg2 = "";
+                    try { 
+                        svg = rawMetarToSVG(parsedObject, 150, 150, settings.usemetricunits);
+                        svg2 = getWindBarbSvg(95, 95, parsedObject); 
+                    }
+                    catch(error) {
+                        console.log(error); 
+                        debugger;
+                    }
                     const feature = new Feature({
                         geometry: new Point(fromLonLat([parsedObject.lon, parsedObject.lat])),
                         type: "METAR",
-                        object: parsedObject
+                        object: parsedObject,
+                        svg: svg,
+                        svg2: svg2
                     });
                     feature.setStyle((feature) => parseFlightCategory(parsedObject));
                     metarVectorLayer.getSource().addFeature(feature);
@@ -471,7 +517,7 @@ map.on('click', (evt) => {
 function displayMetarPopup(metarObject) {
     const rawmetar = metarObject.raw_data;
     const ident = metarObject.station;
-    let svg = metarObject.image;
+    let svg = metarObject.svg;
     let cat = metarObject.flightCategory || "VFR";
     let time = metarObject.observation_time;
     const temp = metarObject.temperature;
@@ -712,37 +758,39 @@ window.closePopup = closePopup;
  * @param metric true for metric units(m, hPa, mps), false for north american units (miles, inHg, Kts)
  * @returns
  */
-function weatherItemToIconPlot(wxItem, metric) {
+function weatherItemToIconPlot(weatherObject, metric) {
     var _a;
+    var weather = new Array();
+    var wx = weather.map(function (weather) { return weather.abbreviation; }).join("");
     //Metric converion
     var pressure;
-    var vis = undefined;
-    var temp = wxItem.temp_c;
-    var dp = wxItem.dewpoint_c;
+    var vis;
+    var temp = weatherObject.temperature;
+    var dp = weatherObject.dewpoint_c;
     if (metric) {
-        pressure = (wxItem.altimeter != null) ? Math.round(wxItem.altimeter * 33.86) : undefined;
-        if (wxItem.visibility != null) {
-            vis = wxItem.visibility > 9999 ? 9999 : Math.round(wxItem.visibility);
+        pressure = (weatherObject.altimeter != null) ? Math.round(weatherObject.altimeter * 33.86) : undefined;
+        if (weatherObject.visibility != null) {
+            vis = weatherObject.visibility > 9999 ? 9999 : Math.round(weatherObject.visibility);
         }
     }
     else {
         temp = cToF(temp);
         dp = cToF(dp);
-        pressure = wxItem.altimeter;
-        vis = milePrettyPrint((_a = wxItem.visibility) !== null && _a !== void 0 ? _a : -1);
+        pressure = weatherObject.altimeter;
+        vis = milePrettyPrint((_a = weatherObject.visibility) !== null && _a !== void 0 ? _a : -1);
     }
     return {
         metric: metric !== null && metric !== void 0 ? metric : false,
         visiblity: vis,
         temp: temp,
         dew_point: dp,
-        station: wxItem.station,
-        wind_direction: (typeof wxItem.wind.direction === "number") ? wxItem.wind.direction : undefined,
-        wind_speed: wxItem.wind.speed,
-        gust_speed: wxItem.wind.gust,
+        station: weatherObject.station,
+        wind_direction: (typeof weatherObject.wind.direction === "number") ? weatherObject.wind.direction : undefined,
+        wind_speed: weatherObject.wind.speed,
+        gust_speed: weatherObject.wind.gust,
         pressure: pressure,
-        wx: {},
-        coverage: determineCoverage(wxItem)
+        wx: wx,
+        coverage: determineCoverage(weatherObject)
     };
 }
 
@@ -762,13 +810,13 @@ function milePrettyPrint(meters) {
 
 /**
  * Determines the coverage symbol
- * @param wxitem
+ * @param weatherObject
  * @returns
  */
-function determineCoverage(wxitem) {
+function determineCoverage(weatherObject) {
     var _a;
     var prevailingCoverage;
-    wxitem.clouds.forEach(function (cloud) {
+    weatherObject.clouds.forEach(function (cloud) {
         if (prevailingCoverage != null) {
             var curr = prevailingCoverage.abbreviation != null ? CLOUDS[prevailingCoverage.abbreviation].rank : undefined;
             var rank = cloud.abbreviation != null ? CLOUDS[cloud.abbreviation].rank : undefined;
@@ -786,13 +834,6 @@ function determineCoverage(wxitem) {
     return (_a = prevailingCoverage === null || prevailingCoverage === void 0 ? void 0 : prevailingCoverage.abbreviation) !== null && _a !== void 0 ? _a : "";
 }
 
-const CONDITIONS = {
-    VFR: "green",
-    MVFR: "blue",
-    IFR: "red",
-    LIFR: "purple"
-};
-
 var size = 25;
 var piD = (size / 2) * 3.14 * 2;
 var CLR_SQUARE = "<g id=\"clr\">\n        <rect width=\"" + size + "\" height=\"" + size + "\" x=\"calc(250 - " + size / 2 + ")\" y=\"calc(250 - " + size / 2 + ")\" class=\"coverage\"/>\n    </g>";
@@ -801,17 +842,6 @@ var FEW = "<g id=\"few\">\n        <circle cx=\"250\" cy=\"250\" r=\"" + size + 
 var SCT = "<g id=\"few\">\n    <circle cx=\"250\" cy=\"250\" r=\"" + size + "\" fill=\"#00000000\" class=\"coverage\"/>\n    <circle cx=\"250\" cy=\"250\" r=\"" + size / 2 + "\" fill=\"#00000000\" \n    stroke-dasharray=\"calc(25 * " + piD + " / 100) calc(50 * " + piD + " / 100) calc(25 * " + piD + " / 100)\"\n    class=\"partial\"/>\n</g>";
 var BRK = "<g id=\"few\">\n    <circle cx=\"250\" cy=\"250\" r=\"" + size + "\" fill=\"#00000000\" class=\"coverage\"/>\n    <circle cx=\"250\" cy=\"250\" r=\"" + size / 2 + "\" fill=\"#00000000\" \n    stroke-dasharray=\"calc(49 * " + piD + " / 100) calc(26 * " + piD + " / 100) calc(25 * " + piD + " / 100)\"\n    class=\"partial\"/>\n</g>";
 var OVC = "<g id=\"ovc\">\n    <circle cx=\"250\" cy=\"250\" r=\"" + size + "\" class=\"ovc\"/>\n</g>";
-let CLOUDS = {
-    NCD: { svg: CLR_CIRCLE, text: "no clouds", rank: 0 },
-    SKC: { svg: CLR_CIRCLE, text: "sky clear", rank: 0 },
-    CLR: { svg: CLR_CIRCLE, text: "no clouds under 12,000 ft", rank: 0 },
-    NSC: { svg: CLR_CIRCLE, text: "no significant", rank: 0 },
-    FEW: { svg: FEW, text: "few", rank: 1 },
-    SCT: { svg: SCT, text: "scattered", rank: 2 },
-    BKN: { svg: BRK, text: "broken", rank: 3 },
-    OVC: { svg: OVC, text: "overcast", rank: 4 },
-    VV: { svg: OVC, text: "vertical visibility", rank: 5 },
-};
 
 /**
  * Generates SVG for cloud coverage
@@ -821,10 +851,10 @@ let CLOUDS = {
  */
 function genCoverage(coverage, condition) {
     if (coverage != null && coverage !== "") {
-        return "\n            <style>\n                .coverage{ \n                    stroke-width: 5; \n                    stroke: " + (condition != null ? exports.CONDITIONS[condition] : "black") + ";\n                }\n                .partial{\n                    stroke-width: 25; \n                    stroke: " + (condition != null ? exports.CONDITIONS[condition] : "black") + ";\n                }\n                .ovc{\n                    fill: " + (condition != null ? exports.CONDITIONS[condition] : "black") + ";\n                }\n            </style>\n            " + CLOUDS[coverage].svg;
+        return "\n            <style>\n                .coverage{ \n                    stroke-width: 5; \n                    stroke: " + (condition != null ? CONDITIONS[condition] : "black") + ";\n                }\n                .partial{\n                    stroke-width: 25; \n                    stroke: " + (condition != null ? exports.CONDITIONS[condition] : "black") + ";\n                }\n                .ovc{\n                    fill: " + (condition != null ? exports.CONDITIONS[condition] : "black") + ";\n                }\n            </style>\n            " + CLOUDS[coverage].svg;
     }
     else {
-        return "";s
+        return "";
     }
 }
 
@@ -932,14 +962,6 @@ function getWeatherSVG(key) {
     return "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"65\" height=\"65\" viewBox=\"0 0 500 500\" x=\"140\" y=\"220\">\n                <style>\n                    .wx_text{ \n                        color: black;\n                        font-size: 400px;\n                        font-family: \"Noto Sans\";\n                        white-space: pre;\n                    }\n                    .snow{ \n                        color: black;\n                        font-size: 300px;\n                        font-family: \"Noto Sans\";\n                        white-space: pre;\n                    }\n                    .wx_graphic {\n                        stroke: black;\n                        fill: none;\n                        stroke-width: 30\n                    }\n                    .wx_graphic_thin {\n                        stroke: black;\n                        fill: none;\n                        stroke-width: 15\n                    }\n                </style>\n                " + weather + "\n            </svg>";
 }
 
-/**
- * Returns SVG icon
- * @param key weather abbriviation
- */
-function getWeatherLegend(key) {
-    var weather = WEATHER[key] != null ? WEATHER[key].svg : "";
-    return "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"65\" height=\"65\" viewBox=\"0 0 500 500\">\n                <style>\n                    .wx_text{ \n                        color: black;\n                        font-size: 400px;\n                        font-family: \"Noto Sans\";\n                        white-space: pre;\n                    }\n                    .snow{ \n                        color: black;\n                        font-size: 300px;\n                        font-family: \"Noto Sans\";\n                        white-space: pre;\n                    }\n                    .wx_graphic {\n                        stroke: black;\n                        fill: none;\n                        stroke-width: 30\n                    }\n                    .wx_graphic_thin {\n                        stroke: black;\n                        fill: none;\n                        stroke-width: 15\n                    }\n                </style>\n                " + weather + "\n            </svg>";
-}
 var BRK_DWN_ARW = "<line class=\"wx_graphic\" x1=\"350\" y1=\"50\" x2=\"175\" y2=\"250\"></line>\n    <line class=\"wx_graphic\" x1=\"170\" y1=\"245\" x2=\"350\" y2=\"415\"></line>\n    <line class=\"wx_graphic\" x1=\"350\" y1=\"415\" x2=\"250\" y2=\"415\"></line>\n    <line class=\"wx_graphic\" x1=\"350\" y1=\"425\" x2=\"350\" y2=\"315\"></line>";
 var RIGHT_ARROW = "<line class=\"wx_graphic\" x1=\"120\" y1=\"250\" x2=\"430\" y2=\"250\"></line>\n    <line class=\"wx_graphic\" x1=\"380\" y1=\"250\" x2=\"465\" y2=\"250\" transform=\"rotate(-45, 450, 250)\"></line>\n    <line class=\"wx_graphic\" x1=\"380\" y1=\"250\" x2=\"450\" y2=\"250\" transform=\"rotate(45, 450, 250)\"></line>";
 var TRANSFORM = "transform=\"matrix(1.4,0,0,1.2,-102.2,-30.3)\"";
@@ -1151,10 +1173,283 @@ function getCategoryWindBarbs(metars, width = 50, height = 50) {
 const windBarbSvgs = getCategoryWindBarbs(metars);
 // You can now use windBarbSvgs.VFR, windBarbSvgs.MVFR, etc. in your UI
 
-// --- Remove old manual filtering and SVG generation code ---
-// (No longer needed, so not included)
+/**
+ * Turns a raw METAR to an SVG image
+ * @param metarObject metar object
+ * @param width css width of svg
+ * @param height css height of svg
+ * @param metric true for metric units(m, hPa, mps), false for north american units (miles, inHg, Kts)
+ * @returns
+ */
+function rawMetarToSVG(metarObject, width, height, metric) {
+    var plot = rawMetarToMetarPlot(metarObject, metric);
+    return metarToSVG(plot, width, height);
+}
 
-// ...rest of your code remains unchanged...
+/**
+ *
+ * @param metarObject raw metar string
+ * @param metric true for metric units(m, hPa, mps), false for north american units (miles, inHg, Kts)
+ * @returns
+ */
+function rawMetarToMetarPlot(metarObject, metric) {
+    var _a;
+    //var wx = metar.weather.map(function (weather) { return weather.abbreviation; }).join("");
+    //Metric converion
+    var pressure;
+    var vis = metarObject.visibility;
+    var temp = metarObject.temperature;
+    var dp = metarObject.dewpoint;
+    if (metric) {
+        pressure = metarObject.altimeter ? Math.round(metarObject.altimeter * 33.86) : undefined;
+        if (metarObject.visibility.distance) {
+            vis = metarObject.visibility.distance > 9999 ? 9999 : Math.round(metarObject.visibility.distance);
+        }
+    }
+    else {
+        temp = cToF(temp);
+        dp = cToF(dp);
+        pressure = metarObject.altimeter;
+        if (metric) {
+            vis = milePrettyPrint((_a = metarObject.visibility.distance) !== null && _a !== void 0 ? _a : -1);
+        }
+    }
+    
+    let outobj = {
+        metric: metric !== null && metric !== void 0 ? metric : false,
+        visiblity: vis,
+        temp: temp,
+        dew_point: dp,
+        station: metarObject.station,
+        wind_direction: metarObject.wind.direction? metarObject.wind.direction : undefined,
+        wind_speed: metarObject.wind.speed? metarObject.wind.speed : undefined,
+        gust_speed: metarObject.wind.gust? metarObject.wind.gust : undefined,
+        //wx: wx ? wx : undefined,
+        pressure: pressure ? pressure : undefined,
+        coverage: metarObject.clouds ? determineCoverage(metarObject) : undefined
+    };
+
+    return outobj;
+}
+
+/**
+ * Turns a Metar plot object to a SVG image
+ * @param metar MetarPlot Object
+ * @param width css width for svg
+ * @param height css height for svg
+ * @returns
+ */
+ function metarToSVG(metar, width, height) {
+    var _a, _b, _c, _d, _e, _f;
+    var VIS = (_a = metar.visiblity) !== null && _a !== void 0 ? _a : "";
+    var TMP = (_b = metar.temp) !== null && _b !== void 0 ? _b : "";
+    var DEW = (_c = metar.dew_point) !== null && _c !== void 0 ? _c : "";
+    var STA = (_d = metar.station) !== null && _d !== void 0 ? _d : "";
+    var ALT = (_e = metar.pressure) !== null && _e !== void 0 ? _e : "";
+    return `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 500 500"> ` +
+           `<style> ` + 
+                `.txt{ font-size: 47.5px; font-family: sans-serif; } ` +
+                `.tmp{ fill: red } ` + 
+                `.sta{ fill: grey } ` + 
+                `.dew{ fill: blue } ` +
+                `.vis{ fill: violet } ` +
+           `</style> ${(0, genWind)(metar)} ${(0, getWeatherSVG)((_f = metar.wx) !== null && _f !== void 0 ? _f : "")} ` +
+           `         ${(0, genCoverage)(metar.coverage, metar.condition)} ` + 
+           `<g id="text"><text class="vis txt" fill="#000000" stroke="#000" stroke-width="0" x="80" y="260" text-anchor="middle" ` +
+           `xml:space="preserve">${VIS}</text><text class="tmp txt" fill="#000000" stroke="#000" stroke-width="0" x="160" y="220" text-anchor="middle" ` +
+           `xml:space="preserve">${TMP}</text><text class="dew txt" fill="#000000" stroke="#000" stroke-width="0" x="160"  y="315" text-anchor="middle" ` +
+           `xml:space="preserve">${DEW}</text><text class="sta txt" fill="#000000" stroke="#000" stroke-width="0" x="275"  y="315" text-anchor="start" ` +
+           `xml:space="preserve">${STA}</text><text class="sta txt" fill="#000000" stroke="#000" stroke-width="0" x="275"  y="220" text-anchor="start" ` +
+           `xml:space="preserve">${ALT}</text></g></svg>`;
+}
+
+/**
+ * Generate a wind barb SVG image
+ * @param {int} width 
+ * @param {int} height 
+ * @param {object} metarObject 
+ * @returns 
+ */
+function getWindBarbSvg(width, height, metarObject) {
+    let catcolor = "";
+    let svg = "";
+    let thismetar = {
+        wind_direction: metarObject.wind_dir_degrees,
+        wind_speed: metarObject.wind.speed ? metarObject.wind.speed : undefined,
+        gust_speed: metarObject.wind.gust ? metarObject.wind.gust : undefined,
+        station: metarObject.station_id
+    };
+    try {
+        switch (metarObject.flightCategory) {
+            case "IFR":
+                catcolor ="ff0000";
+                break;
+            case "LIFR":
+                catcolor = "ff00ff";
+                break;
+            case "MVFR": 
+                catcolor = "0000cd";
+                break;
+            case "VFR":
+            default:
+                catcolor = "12f23c";
+                break;
+        }
+        svg = `<svg xmlns="http://www.w3.org/2000/svg" ` +
+                  `width="${width}" height="${height}" ` + 
+                  `viewBox="0 0 500 500">` + 
+                  (0, genWind)(thismetar) + 
+                  `<g id="clr">` + 
+                       `<circle cx="250" cy="250" r="30" stroke="#000000" stroke-width="3" fill="#${catcolor}"/>` +
+                  `</g>` + 
+               `</svg>`;
+    }
+    catch {}
+    return svg; 
+}
+
+var GUST_WIDTH = 5;
+var WS_WIDTH = 5;
+/**
+ * Creates a windbarb for the metar
+ * @param metarObject
+ * @returns
+ */
+function genWind(metarObject) {
+    var _a, _b, _c, _d, _e, _f, _g, _h, _j, _k;
+    var WDD = metarObject.wind_direction ? metarObject.wind_direction : 0;
+    var WSP = metarObject.wind_speed ? metarObject.wind_speed : 0;
+    var WGSP = metarObject.gust_speed ? metarObject.gust_speed : 0;
+    var wind = "";
+    var gust = "";
+    if (WSP === 0) {
+        wind =
+            `<g id="calm"><ellipse id="calm-marker" stroke="#000" fill="#00000000" cx="250" cy="250" rx="35" ry="35"/></g>`;
+    }
+    else {
+        gust = (metarObject.gust_speed === null || metarObject.gust_speed === undefined) ? "" :
+            `<g id="gustBarb" transform="rotate(${WDD}, 250, 250)"> ` +
+                `${genBarb1((_a = WGSP) !== null && _a !== void 0 ? _a : 0, true)} ` + 
+                `${genBarb2((_b = WGSP) !== null && _b !== void 0 ? _b : 0, true)} ` + 
+                `${genBarb3((_c = WGSP) !== null && _c !== void 0 ? _c : 0, true)} ` + 
+                `${genBarb4((_d = WGSP) !== null && _d !== void 0 ? _d : 0, true)} ` + 
+                `${genBarb5((_e = WGSP) !== null && _e !== void 0 ? _e : 0, true)} ` + 
+            `</g>`;
+        wind =
+            `<g id="windBarb" transform="rotate(${WDD}, 250, 250)">` + 
+            `<line stroke-width="5" y1="225" x1="250" y2="90" x2="250" stroke="#000" fill="none"/>` +
+                `${genBarb1((_f = WSP) !== null && _f !== void 0 ? _f : 0, false)} ` + 
+                `${genBarb2((_g = WSP) !== null && _g !== void 0 ? _g : 0, false)} ` + 
+                `${genBarb3((_h = WSP) !== null && _h !== void 0 ? _h : 0, false)} ` + 
+                `${genBarb4((_j = WSP) !== null && _j !== void 0 ? _j : 0, false)} ` + 
+                `${genBarb5((_k = WSP) !== null && _k !== void 0 ? _k : 0, false)} ` + 
+            `</g>`;
+    }
+    return gust + wind;
+}
+
+/**
+ * Generate first barb
+ * @param speed wind or gust speed
+ * @param gust set to true for gust
+ * @returns
+ */
+function genBarb1(speed, gust) {
+    var fill = gust ? 'red' : '#000';
+    var tag = gust ? 'gs' : 'ws';
+    var width = gust ? GUST_WIDTH : WS_WIDTH;
+    var barb = "";
+    if (speed >= 10 && speed < 50) {
+        //barb = `<line id="${tag}-barb-1-long" stroke-width="${width}" y1="50" x1="250" y2="50" x2="300" stroke="${fill}" transform="rotate(-35, 250, 50)"/>`;
+        barb = `<line id="${tag}-barb-1-long" stroke-width="${width}" y1="90" x1="250" y2="90" x2="305" stroke="${fill}" transform="rotate(-35, 250, 90)"/>`;
+    }
+    else if (speed >= 50) {
+        barb = `<polygon id="${tag}-barb-1-flag" points="248,98 290,68 248,68" fill="${fill}" />`;
+    }
+    return barb;
+}
+/**
+ * Generate second barb
+ * @param speed wind or gust speed
+ * @param gust set to true for gust
+ * @returns
+ */
+function genBarb2(speed, gust) {
+    var fill = gust ? 'red' : '#000';
+    var tag = gust ? 'gs' : 'ws';
+    var width = gust ? GUST_WIDTH : WS_WIDTH;
+    var barb = "";
+    if ((speed < 10) || (15 <= speed && speed < 20) || (55 <= speed && speed < 60)) {
+        barb = `<line id="${tag}-barb-2-short" stroke-width="${width}" y1="110" x1="250" y2="110" x2="285" stroke="${fill}" transform="rotate(-35, 250, 110)"/>`;
+    }
+    else if ((15 < speed && speed < 50) || (speed >= 60)) {
+        barb = `<line id="${tag}-barb-2-long" stroke-width="${width}" y1="110" x1="250" y2="110" x2="305" stroke="${fill}" transform="rotate(-35, 250, 110)"/>`;
+    }
+    return barb;
+}
+/**
+ * Generate third barb
+ * @param speed wind or gust speed
+ * @param gust set to true for gust
+ * @returns
+ */
+function genBarb3(speed, gust) {
+    var fill = gust ? 'red' : '#000';
+    var tag = gust ? 'gs' : 'ws';
+    var width = gust ? GUST_WIDTH : WS_WIDTH;
+    var barb = "";
+    if ((25 <= speed && speed < 30) || (65 <= speed && speed < 70)) {
+        barb = `<line id="${tag}-barb-3-short" stroke-width="${width}" y1="150"  x1="250" y2="150" x2="285" stroke="${fill}" transform="rotate(-35, 250, 150)"/>`;
+    }
+    else if ((25 < speed && speed < 50) || speed >= 70) {
+        barb = `<line id="${tag}-bard-3-long" stroke-width="${width}" y1="150"  x1="250" y2="150" x2="305" stroke="${fill}" transform="rotate(-35, 250, 150)"/>`;
+    }
+    return barb;
+}
+/**
+ * Generate forth barb
+ * @param speed wind or gust speed
+ * @param gust set to true for gust
+ * @returns
+ */
+function genBarb4(speed, gust) {
+    var fill = gust ? 'red' : '#000';
+    var tag = gust ? 'gs' : 'ws';
+    var width = gust ? GUST_WIDTH : WS_WIDTH;
+    var barb = "";
+    if ((35 <= speed && speed < 40) || (75 <= speed && speed < 80)) {
+        barb = `<line id="${tag}-barb-4-short" stroke-width="${width}" y1="190" x1="250" y2="190" x2="285" stroke="${fill}" transform="rotate(-35, 250, 190)"/>`;
+    }
+    else if ((35 < speed && speed < 50) || speed >= 80) {
+        barb = `<line id="${tag}-barb-4-long" stroke-width="${width}" y1="190" x1="250" y2="190" x2="305"  stroke="${fill}" transform="rotate(-35, 250, 190)"/>`;
+    }
+    return barb;
+}
+/**
+ * Generate fifth barb
+ * @param speed wind or gust speed
+ * @param gust set to true for gust
+ * @returns
+ */
+function genBarb5(speed, gust) {
+    var fill = gust ? 'red' : '#000';
+    var tag = gust ? 'gs' : 'ws';
+    var width = gust ? GUST_WIDTH : WS_WIDTH;
+    var barb = "";
+    if ((45 <= speed && speed < 50) || (85 <= speed && speed < 90)) {
+        barb = `<line id="${tag}-barb-5-short" stroke-width="${width}" y1="230" x1="250" y2="230" x2="285" stroke="${fill}" transform="rotate(-35, 250, 230)"/>`;
+    }
+    return barb;
+}
 
 
+/**
+ * Convert ºF to ºF
+ * @param celsius
+ */
+function cToF(celsius) {
+    if (celsius != null) {
+        return Math.round(celsius * 9 / 5 + 32);
+    }
+}
 
