@@ -16,17 +16,17 @@ export async function parseMetarData(metarJson) {
     const altimeterMatch = data.match(/A(\d{4})/);
     const remarksMatch = data.match(/RMK\s+(.+)$/);
 
-    let wind = { direction: "0", speed: 0, gust: 0 };
+    let wind = { direction: null, speed: null, gust: null };
     if (windMatch) {
-        wind.direction = `${windMatch[1]}°`;
-        wind.speed = parseInt(windMatch[2]);
-        wind.gust = parseInt(windMatch[3]);
+        wind.direction = windMatch[1] ? `${windMatch[1]}° C` : null;
+        wind.speed = windMatch[2] ? parseInt(windMatch[2]) : null;
+        wind.gust = windMatch[3] ? parseInt(windMatch[3]) : null;
     }
 
     let visibility = {distance: 10, unit: "SM" };
     if (visibilityMatch) {
-        visibility.distance = parseInt(visibilityMatch[1]);
-        visibility.unit = visibilityMatch[2].trim();
+        visibility.distance = visibilityMatch[1] ? parseInt(visibilityMatch[1]) : null;
+        visibility.unit = visibilityMatch[2] ? visibilityMatch[2].trim() : null;
     }
 
     let sky = null;

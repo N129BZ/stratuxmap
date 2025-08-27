@@ -132,15 +132,7 @@ function parseFlightCategory(metarObject) {
     let ceiling = null;
     let cond = "VFR";
 
-    if (typeof visibility === 'string') {
-        const match = visibility.match(/^([\d.]+)\s*SM$/i);
-        if (match) {
-            visMiles = parseFloat(match[1]);
-        }
-    } 
-    else if (typeof visibility === 'number') {
-        visMiles = visibility;
-    }
+    visMiles = visibility.distance;
 
     if (metarObject.clouds && metarObject.clouds.length > 0) {
         // Find lowest cloud base (exclude SKC, CLR, NSC, FEW, SCT)
@@ -474,31 +466,31 @@ map.on('click', (evt) => {
 
 /**
  * Create the html for a METAR popup element
- * @param {object} weatherObject: the metar feature object the user clicked on 
+ * @param {object} metarObject: the metar feature object the user clicked on 
  */
-function displayMetarPopup(weatherObject) {
-    const rawmetar = weatherObject.raw_data;
-    const ident = weatherObject.station;
-    let svg = weatherObject.image;
-    let cat = weatherObject.flightCategory || "VFR";
-    let time = weatherObject.observation_time;
-    const temp = weatherObject.temperature;
+function displayMetarPopup(metarObject) {
+    const rawmetar = metarObject.raw_data;
+    const ident = metarObject.station;
+    let svg = metarObject.image;
+    let cat = metarObject.flightCategory || "VFR";
+    let time = metarObject.observation_time;
+    const temp = metarObject.temperature;
     //const dewpC = tempC; //weatherObject.dewpoint_c;
     //const temp = weatherObject.temperature;
-    const windir = weatherObject.wind?.direction;
-    const winspd = weatherObject.wind?.speed;
-    const wingst = weatherObject.wind?.gust; 
-    const altim = weatherObject.altimeter;
-    const vis = weatherObject.visibility;
+    const windir = metarObject.wind?.direction;
+    const winspd = metarObject.wind?.speed;
+    const wingst = metarObject.wind?.gust; 
+    const altim = metarObject.altimeter;
+    const vis = metarObject.visibility.distance ? `${metarObject.visibility.distance} ${metarObject.visibility.unit}` : null;
     //const wxcode = weatherObject.wx ? decodeWxDescriptions(weatherObject) : "";
     const taflabelcssClass = "taflabel";
     let skyconditions = "";
     let icingconditions = "";
-    if (weatherObject.clouds) {
-        skyconditions = decodeSkyCondition(weatherObject, taflabelcssClass);
+    if (metarObject.clouds) {
+        skyconditions = decodeSkyCondition(metarObject, taflabelcssClass);
     }
-    if (weatherObject.icing_condition) {
-        icingconditions = decodeIcingOrTurbulenceCondition(weatherObject, taflabelcssClass);
+    if (metarObject.icing_condition) {
+        icingconditions = decodeIcingOrTurbulenceCondition(metarObject, taflabelcssClass);
     }
     
     let label = `<label class="#class">`;
@@ -518,7 +510,7 @@ function displayMetarPopup(weatherObject) {
             break;
     }
     if (ident) {
-        let name = weatherObject.airport.name;
+        let name = metarObject.airport.name;
         let html = `<div id="#featurepopup"><pre><code><p>`;
         html +=    `${css}${name}\n${ident} - ${cat}</label><p></p>`;
         html +=   (time ? `Time:&nbsp<b>${time}</b><br/>` : "");
