@@ -2,7 +2,7 @@
  * Returns a formatted string for display based on the parsed message type.
  * Supports METAR, TAF, PIREP, WINDS.
  */
-export function formatMessageDisplay(parsedMessage) {
+function formatMessageDisplay(parsedMessage) {
     if (!parsedMessage || !parsedMessage.station) return 'No data available.';
 
     switch (parsedMessage.type || parsedMessage.Type) {
@@ -45,3 +45,5 @@ export function formatMessageDisplay(parsedMessage) {
             return 'Unknown message type or format.';
     }
 }
+
+export { formatMessageDisplay };

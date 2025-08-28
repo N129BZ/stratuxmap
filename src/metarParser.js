@@ -2,7 +2,7 @@
 // Handles METAR parsing
 import { attachAirportInfo } from './airportInfo.js';
 import { skyAndConditionsKeymap } from '/keymaps.js';
-import { CLOUDS } from './weatherdictionary.js';
+import { CLOUDS, WEATHER } from './weatherdictionary.js';
 
 export async function parseMetarData(metarJson) {
     if (!metarJson || !metarJson.Data) return null;
@@ -17,11 +17,11 @@ export async function parseMetarData(metarJson) {
     const altimeterMatch = data.match(/A(\d{4})/);
     const remarksMatch = data.match(/RMK\s+(.+)$/);
 
-    let wind = { direction: null, speed: null, gust: null };
+    let wind = { direction: null, speed: 0, gust: 0 };
     if (windMatch) {
-        wind.direction = windMatch[1] ? `${windMatch[1]}° C` : null;
-        wind.speed = windMatch[2] ? parseInt(windMatch[2]) : null;
-        wind.gust = windMatch[3] ? parseInt(windMatch[3]) : null;
+        wind.direction = windMatch[1] ? parseInt(windMatch[1]) : null;
+        wind.speed = windMatch[2] ? parseInt(windMatch[2]) : 0;
+        wind.gust = windMatch[3] ? parseInt(windMatch[3]) : 0;
     }
 
     let visibility = {distance: 10, unit: "SM" };
@@ -47,6 +47,7 @@ export async function parseMetarData(metarJson) {
 
     let clouds = parseClouds(data);
     let remarks = remarksMatch ? remarksMatch[1].trim() : null;
+    let coverage = clouds.length > 0 ? clouds[0].abbreviation : "CLR";
 
     let altimeter = null;
     if (altimeterMatch && altimeterMatch[1]) {
@@ -67,18 +68,42 @@ export async function parseMetarData(metarJson) {
         wind,
         visibility,
         sky,
-        clouds, 
+        clouds,
+        coverage, 
         temperature: tempDewMatch ? tempDewMatch[1] : null,
         dewpoint: tempDewMatch ? tempDewMatch[2] : null,
         altimeter,
         remarks,
-        wxitem: {weather: []},
+        wxitem: parseWeather(metarJson.Data),
         raw_data: data,
         svg: "",
         svg2: ""
     };
-    console.log(obj);
+    //console.log("PARSED METAR", obj);
     return obj;
+}
+
+/**
+ * Parse Weather items
+ * @param rawMetarString raw metar
+ * @returns
+ */
+function parseWeather(rawMetarString) {
+    var obs_keys = Object.keys(WEATHER).join('|').replace(/\+/g, "\\+");
+    var re = new RegExp("\\s?(" + obs_keys + ")\\s", 'g');
+    var matches = rawMetarString.match(re);
+    if (matches != null) {
+        return matches.map(function (match) {
+            var key = match.trim();
+            return {
+                abbreviation: key,
+                meaning: WEATHER[key].text
+            };
+        });
+    }
+    else {
+        return new Array();
+    }
 }
 
 /**
