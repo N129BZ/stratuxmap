@@ -357,15 +357,15 @@ async function setupStratuxWebsockets() {
                 // Add feature directly to layer
                 if (parsedObject.lon && parsedObject.lat) {
                     try { 
-                        parsedObject.svg = rawMetarToSVG(parsedObject, 150, 150, settings.usemetricunits);
-                        parsedObject.svg2 = getWindBarbSvg(95, 95, parsedObject); 
-                        console.log("SVG", parsedObject.svg);
+                        parsedObject.mapDotSvg = rawMetarToSVG(parsedObject, 150, 150, settings.usemetricunits);
+                        parsedObject.popupSvg = getWindBarbSvg(95, 95, parsedObject); 
+                        console.log("SVG", parsedObject.mapDotSvg);
                     }
                     catch(error) {
                         console.log(error); 
                         debugger;
                     }
-                    const svg2DataUri = 'data:image/svg+xml;utf8,' + encodeURIComponent(parsedObject.svg2);
+                    const svg2DataUri = 'data:image/svg+xml;utf8,' + encodeURIComponent(parsedObject.popupSvg);
                     const feature = new Feature({
                         geometry: new Point(fromLonLat([parsedObject.lon, parsedObject.lat])),
                         type: "METAR",
