@@ -2,6 +2,7 @@
 // Handles METAR parsing
 import { attachAirportInfo } from './airportInfo.js';
 import { skyAndConditionsKeymap } from '/keymaps.js';
+import { CLOUDS } from './weatherdictionary.js';
 
 export async function parseMetarData(metarJson) {
     if (!metarJson || !metarJson.Data) return null;
@@ -62,6 +63,7 @@ export async function parseMetarData(metarJson) {
         lon: (airportInfo && airportInfo.lon != null) ? airportInfo.lon : null,
         time: metarJson.Time,
         reportType: reportTypeMatch ? reportTypeMatch[1] : null,
+        flightCategory: "VFR",
         wind,
         visibility,
         sky,
@@ -70,7 +72,10 @@ export async function parseMetarData(metarJson) {
         dewpoint: tempDewMatch ? tempDewMatch[2] : null,
         altimeter,
         remarks,
-        raw_data: data
+        wxitem: {weather: []},
+        raw_data: data,
+        svg: "",
+        svg2: ""
     };
     console.log(obj);
     return obj;

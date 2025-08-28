@@ -23,7 +23,7 @@ import settings from '/settings.js';
 import { parsePirepData } from './pirepParser';
 import { parseTafAmdData, parseTafData } from './tafParser';
 import BaseLayer from 'ol/layer/Base';
-import { WEATHER, CLOUDS, CONDITIONS } from './weatherdictionary';
+import { WEATHER, CLOUDS, CONDITIONS } from './weatherdictionary.js';
 
 //import  from './pirepLayer';
 
@@ -182,6 +182,8 @@ function parseFlightCategory(metarObject) {
     if ((visMiles !== null && visMiles < 1)) cond = "LIFR";
     if ((visMiles !== null && visMiles < 3)) cond = "IFR";
     if ((visMiles !== null && visMiles < 5)) cond = "MVFR";
+    
+    metarObject.flightCategory = cond;
 
     let src = "/images/vfr.png";
     switch (cond) {
@@ -377,24 +379,34 @@ async function setupStratuxWebsockets() {
                 metars.push(parsedObject);
                 // Add feature directly to layer
                 if (parsedObject.lon && parsedObject.lat) {
-                    let svg = "";
-                    let svg2 = "";
+                    parseFlightCategory(parsedObject); // <-- Add this line BEFORE generating SVGs
                     try { 
-                        svg = rawMetarToSVG(parsedObject, 150, 150, settings.usemetricunits);
-                        svg2 = getWindBarbSvg(95, 95, parsedObject); 
+                        parsedObject.svg = rawMetarToSVG(parsedObject, 150, 150, settings.usemetricunits);
+                        parsedObject.svg2 = getWindBarbSvg(95, 95, parsedObject); 
                     }
                     catch(error) {
                         console.log(error); 
                         debugger;
                     }
+                    const svg2DataUri = 'data:image/svg+xml;utf8,' + encodeURIComponent(parsedObject.svg2);
                     const feature = new Feature({
                         geometry: new Point(fromLonLat([parsedObject.lon, parsedObject.lat])),
                         type: "METAR",
-                        object: parsedObject,
-                        svg: svg,
-                        svg2: svg2
+                        object: parsedObject
                     });
-                    feature.setStyle((feature) => parseFlightCategory(parsedObject));
+                    feature.setStyle(new Style({
+                        image: new Icon({
+                            src: svg2DataUri,
+                            scale: 0.7,
+                            anchor: [0.5, 0.5]
+                        })
+                    }));
+                    // const feature = new Feature({
+                    //     geometry: new Point(fromLonLat([parsedObject.lon, parsedObject.lat])),
+                    //     type: "METAR",
+                    //     object: parsedObject
+                    // });
+                    // feature.setStyle((feature) => parseFlightCategory(parsedObject));
                     metarVectorLayer.getSource().addFeature(feature);
                     metarVectorLayer.changed();
                 }
@@ -517,7 +529,6 @@ map.on('click', (evt) => {
 function displayMetarPopup(metarObject) {
     const rawmetar = metarObject.raw_data;
     const ident = metarObject.station;
-    let svg = metarObject.svg;
     let cat = metarObject.flightCategory || "VFR";
     let time = metarObject.observation_time;
     const temp = metarObject.temperature;
@@ -562,7 +573,11 @@ function displayMetarPopup(metarObject) {
         html +=   (time ? `Time:&nbsp<b>${time}</b><br/>` : "");
         html +=   (temp ? `Temp:&nbsp<b>${temp} °C</b> (${temp})<br/>` : "");
         //html +=   (dewp ? `Dewpoint:&nbsp<b>${dewpC} °C</b> (${dewp})<br/>` : "");
-        html += (windir ? `Wind Direction:&nbsp<b>${windir}°</b><br/>` : "");
+        if (typeof windir === "number") {
+            html += `Wind Direction:&nbsp;<b>${windir}°</b><br/>`;
+        } else if (windir) {
+            html += `Wind Direction:&nbsp;<b>${windir}°</b><br/>`;
+        }
         html += (winspd ? `Wind Speed:&nbsp<b>${winspd}&nbspkt</b><br/>` : "");
         html += (wingst ? `Wind Gust:&nbsp<b>${wingst}&nbspkt</b><br/>` : "");
         html +=  (altim ? `Altimeter:&nbsp<b>${altim}&nbsphg</b><br/>` : "");
@@ -570,7 +585,8 @@ function displayMetarPopup(metarObject) {
         //html += (wxcode ? `Weather:&nbsp<b>${wxcode}</b><br/>`: "");
         html += (skyconditions ? `${skyconditions}` : "");
         html += (icingconditions ? `${icingconditions}` : "");
-        html += `</p></code></pre><span class="windsvg">${svg}</span>`;
+        html += `</p></code></pre><div class="windsvg">${metarObject.svg}</div>`;
+        html += `<br><br>`
         html += `<textarea class="rawdata">${rawmetar}</textarea><br />`; 
         html += `<p><button class="ol-popup-closer" onclick="closePopup()">close</button></p></div>`;
         popupcontent.innerHTML = html;  
@@ -1194,7 +1210,7 @@ function rawMetarToSVG(metarObject, width, height, metric) {
  */
 function rawMetarToMetarPlot(metarObject, metric) {
     var _a;
-    //var wx = metar.weather.map(function (weather) { return weather.abbreviation; }).join("");
+    var wx = metarObject.wxitem.weather.map(function (weather) { return weather.abbreviation; }).join("");
     //Metric converion
     var pressure;
     var vis = metarObject.visibility;
@@ -1217,16 +1233,16 @@ function rawMetarToMetarPlot(metarObject, metric) {
     
     let outobj = {
         metric: metric !== null && metric !== void 0 ? metric : false,
-        visiblity: vis,
-        temp: temp,
-        dew_point: dp,
-        station: metarObject.station,
-        wind_direction: metarObject.wind.direction? metarObject.wind.direction : undefined,
-        wind_speed: metarObject.wind.speed? metarObject.wind.speed : undefined,
-        gust_speed: metarObject.wind.gust? metarObject.wind.gust : undefined,
-        //wx: wx ? wx : undefined,
-        pressure: pressure ? pressure : undefined,
-        coverage: metarObject.clouds ? determineCoverage(metarObject) : undefined
+        visiblity: typeof vis === "number" || typeof vis === "string" ? vis : "",
+        temp: typeof temp === "number" || typeof temp === "string" ? temp : "",
+        dew_point: typeof dp === "number" || typeof dp === "string" ? dp : "",
+        station: metarObject.station || "",
+        wind_direction: typeof metarObject.wind.direction === "number" ? metarObject.wind.direction : "",
+        wind_speed: typeof metarObject.wind.speed === "number" ? metarObject.wind.speed : "",
+        gust_speed: typeof metarObject.wind.gust === "number" ? metarObject.wind.gust : "",
+        wx: metarObject.wxitem ? metarObject.wxitem : "",
+        pressure: typeof pressure === "number" ? pressure : "",
+        coverage: metarObject.clouds ? determineCoverage(metarObject) : ""
     };
 
     return outobj;
