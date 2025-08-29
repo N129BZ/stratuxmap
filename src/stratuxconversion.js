@@ -1,7 +1,6 @@
 // stratuxconversion.js
 // Converts Stratux ADS-B websocket METAR object to FAA pre-processed METAR format
 
-import airportsData from './airports.json';
 import { attachAirportInfo } from './airportInfo.js'
 
 /**
@@ -13,11 +12,14 @@ import { attachAirportInfo } from './airportInfo.js'
 export async function convertStratuxToFAA(stratuxObj, stationInfo) {
     // If no stationInfo provided, build from airports.json
     if (!stationInfo) {
-        stationInfo = await buildStationInfoIndex();
+        stationInfo = await attachAirportInfo(stratuxObj.Location);
+        console.log(stationInfo);
     }
 
+    const cleanedData = stratuxObj.Data.replace(/\s*\n\s*/g, ' ').trim();
+
     // Parse METAR string
-    const metarRaw = stratuxObj.Data;
+    const metarRaw = `${stratuxObj.Location} ${stratuxObj.Time} ${cleanedData}`;
     const station_id = stratuxObj.Location;
     const observation_time = await parseObservationTime(stratuxObj.Time);
     const raw_text = metarRaw;
@@ -49,6 +51,8 @@ export async function convertStratuxToFAA(stratuxObj, stationInfo) {
     return {
         raw_text,
         station_id,
+        station_name: stationInfo?.name ?? null,
+        timestamp: stratuxObj.Time,
         observation_time,
         latitude: stationInfo?.lat ?? null,
         longitude: stationInfo?.lon ?? null,
@@ -69,19 +73,6 @@ function findAirportByICAO(icao) {
     let response = {};
     response = airportsData.find(airport => airport.ident === icao);
     return response;     
-}
-
-async function buildStationInfoIndex() {
-    // airportsData.airports is an array
-    const index = {};
-    for (const airport of airportsData.airports) {
-        index[airport.ident] = {
-            latitude: airport.lat,
-            longitude: airport.lon,
-            elevation_m: airport.elev
-        };
-    }
-    return index;
 }
 
 async function parseObservationTime(timeStr) {

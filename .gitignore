@@ -3,6 +3,7 @@ node_modules/
 dist/
 # Ignore database and other generated files
 Sectional.db
+main_old.js
 # Ignore logs and temp files
 *.log
 *.tmp

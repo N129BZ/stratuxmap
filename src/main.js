@@ -121,41 +121,24 @@ loadTurbulenceCodeKeymap();
 loadIcingCodeKeymap();
 loadSkyConditionmKeymap();
 
-/**
- * Collections hold features like
- * metars, tafs, airport info, etc.
- */
-let metarFeatures = new Collection();
-let metarMarkers = [];
-let airportFeatures = new Collection();
-let tafFeatures = new Collection();
-let pirepFeatures = new Collection();
-let trafficFeatures = new Collection();
-
-/**
- * Vector sources
- */
-let metarVectorSource;
-let airportVectorSource;
-let tafVectorSource;
-let pirepVectorSource;
-let trafficVectorSource;
-let animatedWxTileSource;
-
-/**
- * Vector layers
- */
-let airportVectorLayer;
-let metarVectorLayer;
-let tafVectorLayer;
-let pirepVectorLayer;
-let trafficVectorLayer;
+// /**
+//  * Collections hold features like
+//  * metars, tafs, airport info, etc.
+//  */
+// let metarFeatures = new Collection();
+// let metarMarkers = [];
+// let airportFeatures = new Collection();
+// let tafFeatures = new Collection();
+// let pirepFeatures = new Collection();
+// let trafficFeatures = new Collection();
 
 /**
  * Tile layers
  */
 let animatedWxTileLayer;
 let debugTileLayer;  
+const popup = document.getElementById('popup');
+const popupcontent = document.getElementById('popup-content');
 
 /**
  * Websocket objects, flag, and message definition
@@ -327,17 +310,17 @@ function setupStratuxWebsockets() {
     wsWeather.onmessage = async function(evt){
         let message = JSON.parse(evt.data);
         let payload = await convertStratuxToFAA(message);
-        switch (message.type) {
+        switch (message.Type) {
             case "METAR":
             case "SPECI":
-                processMetars(payload);
+                processMetar(payload);
                 break;
             case "TAF":
             case "TAF.AMD":
-                processTafs(payload);
+                processTaf(payload);
                 break;
             case "PIREP":
-                processPireps(payload);
+                processPirep(payload);
                 break;
         }
     }
@@ -360,44 +343,44 @@ function addTrafficItem(jsondata) {
     }
 }
 
-/**
- * Icon markers for different METAR categories 
- */
-let ifrMarker = new Icon({
-    crossOrigin: 'anonymous',
-    src: `${URL_SERVER}/img/ifr.png`,
-    size: [55, 55],
-    offset: [0, 0],
-    opacity: 1,
-    scale: .30
-});
-/*--------------------------------------*/
-let lifrMarker = new Icon({
-    crossOrigin: 'anonymous',
-    src: `${URL_SERVER}/img/lifr.png`,
-    size: [55, 55],
-    offset: [0, 0],
-    opacity: 1,
-    scale: .30
-});
-/*--------------------------------------*/
-let mvfrMarker = new Icon({
-    crossOrigin: 'anonymous',
-    src: `${URL_SERVER}/img/mvfr.png`,
-    size: [55, 55],
-    offset: [0, 0],
-    opacity: 1,
-    scale: .30
-});
-/*--------------------------------------*/
-let vfrMarker = new Icon({
-    crossOrigin: 'anonymous',
-    src: `${URL_SERVER}/img/vfr.png`,
-    size: [55, 55],
-    offset: [0, 0],
-    opacity: 1,
-    scale: .30
-});
+// /**
+//  * Icon markers for different METAR categories 
+//  */
+// let ifrMarker = new Icon({
+//     crossOrigin: 'anonymous',
+//     src: `${URL_SERVER}/img/ifr.png`,
+//     size: [55, 55],
+//     offset: [0, 0],
+//     opacity: 1,
+//     scale: .30
+// });
+// /*--------------------------------------*/
+// let lifrMarker = new Icon({
+//     crossOrigin: 'anonymous',
+//     src: `${URL_SERVER}/img/lifr.png`,
+//     size: [55, 55],
+//     offset: [0, 0],
+//     opacity: 1,
+//     scale: .30
+// });
+// /*--------------------------------------*/
+// let mvfrMarker = new Icon({
+//     crossOrigin: 'anonymous',
+//     src: `${URL_SERVER}/img/mvfr.png`,
+//     size: [55, 55],
+//     offset: [0, 0],
+//     opacity: 1,
+//     scale: .30
+// });
+// /*--------------------------------------*/
+// let vfrMarker = new Icon({
+//     crossOrigin: 'anonymous',
+//     src: `${URL_SERVER}/img/vfr.png`,
+//     size: [55, 55],
+//     offset: [0, 0],
+//     opacity: 1,
+//     scale: .30
+// });
 
 /**
  * Icon markers for airports, TAFs, heliports, etc.
@@ -410,24 +393,24 @@ let tafMarker = new Icon({
     opacity: 1,
     scale: .2
 });
-/*--------------------------------------*/
-let airportMarker = new Icon({
-    crossOrigin: 'anonymous',
-    src: `${URL_SERVER}/img/dot.png`,
-    size: [55, 55],
-    offset: [0, 0],
-    opacity: 1,
-    scale: .30
-});
-/*--------------------------------------*/
-let heliportMarker = new Icon({
-    crossOrigin: 'anonymous',
-    src: `${URL_SERVER}/img/helipad.png`,
-    size: [55, 55],
-    offset: [0, 0],
-    opacity: 1,
-    scale: .50
-});
+// /*--------------------------------------*/
+// let airportMarker = new Icon({
+//     crossOrigin: 'anonymous',
+//     src: `${URL_SERVER}/img/dot.png`,
+//     size: [55, 55],
+//     offset: [0, 0],
+//     opacity: 1,
+//     scale: .30
+// });
+// /*--------------------------------------*/
+// let heliportMarker = new Icon({
+//     crossOrigin: 'anonymous',
+//     src: `${URL_SERVER}/img/helipad.png`,
+//     size: [55, 55],
+//     offset: [0, 0],
+//     opacity: 1,
+//     scale: .50
+//});
 /*--------------------------------------*/
 let pirepMarker = new Icon({
     crossOrigin: 'anonymous',
@@ -438,33 +421,33 @@ let pirepMarker = new Icon({
     scale: .50
 });
 
-/**
- * Style objects 
- */
-const vfrStyle = new Style({
-    image: vfrMarker
-});
-const mvfrStyle = new Style({
-    image: mvfrMarker
-});
-const ifrStyle = new Style({
-    image: ifrMarker
-});
-const lifrStyle = new Style({
-    image: lifrMarker
-});
-const tafStyle = new Style({
-    image: tafMarker
-})
-const airportStyle = new Style({
-    image: airportMarker
-});
-const heliportStyle = new Style({
-    image: heliportMarker
-});
-const pirepStyle = new Style({
-    image: pirepMarker
-});
+// /**
+//  * Style objects 
+//  */
+// const vfrStyle = new Style({
+//     image: vfrMarker
+// });
+// const mvfrStyle = new Style({
+//     image: mvfrMarker
+// });
+// const ifrStyle = new Style({
+//     image: ifrMarker
+// });
+// const lifrStyle = new Style({
+//     image: lifrMarker
+// });
+// const tafStyle = new Style({
+//     image: tafMarker
+// })
+// const airportStyle = new Style({
+//     image: airportMarker
+// });
+// const heliportStyle = new Style({
+//     image: heliportMarker
+// });
+// const pirepStyle = new Style({
+//     image: pirepMarker
+// });
 
 // /**
 //  * Load airports into their feature collection 
@@ -565,27 +548,6 @@ const pirepStyle = new Style({
 //     });
 // }
 
-/**
- * Metar popup object
- */
-const popup = document.getElementById('popup');
-const popupcontent = document.getElementById('popup-content');
-const popupoverlay = new Overlay({
-    element: popup,
-    autoPan: true,
-    autoPanAnimation: {
-      duration: 500,
-    },
-});
-
-/**
- * popup close event handler
- * @returns false!!
- */
-function closePopup() {
-    popupoverlay.setPosition(undefined);
-    return false;
-}
 
 // /**
 //  * Ownship image 
@@ -622,21 +584,128 @@ const scaleLine = new ScaleLine({
     minWidth: 140
 });
 
-/**
- * The map object that gets put in index.html <div> element
- */
+const chicagoCoords = fromLonLat([-87.6298, 41.8781]); // Chicago: lon, lat
+
 const map = new OLMap({
     target: 'map',
     view: new View({
-        //center: viewposition,        
+        center: chicagoCoords,        
         zoom: settings.startupzoom,
         enableRotation: false,
         minZoom: 1,
         maxZoom: 22
     }),
-    controls: defaultControls().extend([scaleLine]),
-    overlays: [popupoverlay]
+    controls: defaultControls().extend([scaleLine])
+    //overlays: [popupoverlay]
 });
+
+// let airportMarker = new Icon({
+//     crossOrigin: 'anonymous',
+//     src: '/images/dot.png',
+//     size: [55, 55],
+//     offset: [0, 0],
+//     opacity: 1,
+//     scale: .30
+// });
+
+
+// let viewextent = [-180, -85];
+// let offset = [-18, -18];
+//let extent = transformExtent(viewextent, 'EPSG:4326', 'EPSG:3857')
+
+let osmTileLayer = new TileLayer({
+    source: new OSM(),
+    title: "OSM",
+    visible: true,
+    type: "base",
+    zIndex: 0
+});
+map.addLayer(osmTileLayer);
+
+osmTileLayer.on('change:visible', function () {
+    if (osmTileLayer.getVisible()) {
+        metarVectorLayer.setVisible(false);
+        tafVectorLayer.setVisible(false);
+        airportVectorLayer.setVisible(false);
+        trafficVectorLayer.setVisible(false);
+    }
+});
+
+let pirepVectorLayer = new VectorLayer({
+    source: new VectorSource(),
+    title: "Pireps",
+    visible: false,
+    type: "base"
+});
+map.addLayer(pirepVectorLayer);
+pirepVectorLayer.on('change:visible', function () {
+    if (pirepVectorLayer.getVisible()) {
+        metarVectorLayer.setVisible(false);
+        tafVectorLayer.setVisible(false);
+        airportVectorLayer.setVisible(false);
+        trafficVectorLayer.setVisible(false);
+    }
+});
+
+let airportVectorLayer = new VectorLayer({
+    source: new VectorSource(), 
+    title: "All Airports",
+    visible: false,
+    zIndex: 11
+});
+map.addLayer(airportVectorLayer);
+
+let metarVectorLayer = new VectorLayer({
+    source: new VectorSource(),
+    title: "Metars",
+    visible: false,
+    zIndex: 13
+});
+map.addLayer(metarVectorLayer);
+
+let tafVectorLayer = new VectorLayer({
+    source: new VectorSource(),
+    title: "TAFs",
+    visible: false,
+    zIndex: 13
+});
+map.addLayer(tafVectorLayer);
+
+let trafficVectorLayer = new VectorLayer({
+    source: new VectorSource(),
+    title: "Traffic",
+    visible: false,
+    zIndex: 14
+});
+map.addLayer(trafficVectorLayer);
+
+/**
+ * Metar popup object
+ */
+
+const popupoverlay = new Overlay({
+    element: popup,
+    //autoPan: true,
+    autoPanAnimation: {
+      duration: 500,
+    },
+});
+try {
+    map.addOverlay(popupoverlay);
+}
+catch(err) {
+    console.error(err);
+}   
+
+/**
+ * popup close event handler
+ * @returns false!!
+ */
+function closePopup() {
+    popupoverlay.setPosition(undefined);
+    return false;
+}
+window.closePopup = closePopup;
 
 // /**
 //  * Positioning of the ownship image feature
@@ -721,9 +790,9 @@ map.on('click', (evt) => {
         cat = "VFR";
     }
     let time = metar.observation_time;
-    if (settings.uselocaltime) {
-        time = getLocalTime(time);
-    }
+    // if (settings.uselocaltime) {
+    //     time = getLocalTime(time);
+    // }
     let tempC = metar.temp_c;
     let dewpC = metar.dewpoint_c;
     let temp = convertCtoF(metar.temp_c);
@@ -763,7 +832,7 @@ map.on('click', (evt) => {
             break;
     }
     if (ident != "undefined") {
-        let name = getFormattedAirportName(ident);
+        let name = feature.get('station_name');
         let html = `<div id="#featurepopup"><pre><code><p>`
         html +=    `${css}${name}\n${ident} - ${cat}</label><p></p>`;
         html +=   (time != "" && time != "undefined") ? `Time:&nbsp<b>${time}</b><br/>` : "";
@@ -778,7 +847,7 @@ map.on('click', (evt) => {
         html += (skyconditions != undefined && skyconditions != "") ? `${skyconditions}` : "";
         html += (icingconditions != undefined && icingconditions != "") ? `${icingconditions}` : "";
         html += `</p></code></pre><span class="windsvg">${svg}</span>`;
-        html += `<textarea class="rawdata">${rawmetar}</textarea><br />`; 
+        html += `<textarea id="rawdata" class="rawdata">${rawmetar}</textarea><br />`; 
         html += `<p><button class="ol-popup-closer" onclick="closePopup()">close</button></p></div>`;
         popupcontent.innerHTML = html;  
     }
@@ -1174,7 +1243,7 @@ function getConditionImage(conditiontype, conditionvalue) {
  */
 function displayAirportPopup(feature) {
     let ident = feature.get("ident");
-    let name = getFormattedAirportName(ident)
+    let name = feature.get("station_name");
     let html = `<div id="#featurepopup"><pre><code><p>`;
         html += `<label class="airportpopuplabel">${name} - ${ident}</label><p></p>`;
         html += `</p></code></pre></div>`;
@@ -1256,47 +1325,44 @@ function processTraffic(jsondata) {
  * Place metar features on the map. color-coded to the conditions
  * @param {object} metarsobject: JSON object with LOTS of metars
  */
- function processMetars(metarsobject) {
-    let newmetars = metarsobject.response.data.METAR;
-    if (newmetars !== undefined) {
-        metarFeatures.clear();
-        metarMarkers = [];
-        let scaleSize = getScaleSize();
-        try {
-            newmetars.forEach((metar) => {
-                let svg = "";
-                let svg2 = "";
-                try { 
-                    svg = rawMetarToSVG(metar.raw_text, 150, 150, settings.usemetricunits);
-                    svg2 = getWindBarbSvg(95, 95, metar); 
-                }
-                catch { }
-                  
-                let metarmarker = new Icon({
-                    crossOrigin: "anonymous",
-                    src: `data:image/svg+xml;utf8,${escape(svg2)}`,
-                    offset: [0,0],
-                    opacity: 1,
-                    scale: scaleSize
-                });
-                let metarFeature = new Feature({
-                    metar: metar,
-                    datatype: "metar",
-                    geometry: new Point(fromLonLat([metar.longitude, metar.latitude])),
-                    svgimage: svg 
-                });
-                metarFeature.setStyle(new Style({
-                    image: metarmarker
-                }));
-                metarMarkers.push(metarmarker);
-                metarFeature.setId(metar.station_id);
-                metarFeatures.push(metarFeature);
-                metarFeature.changed();
-            });
+// ...existing code...
+
+function processMetar(metar) {
+    let scaleSize = getScaleSize();
+    try {
+        let popupSvg = "";
+        let mapDotSvg = "";
+        try { 
+            popupSvg = rawMetarToSVG(metar, 150, 150, settings.usemetricunits);
+            mapDotSvg = getWindBarbSvg(95, 95, metar); 
         }
-        catch(error) {
-            console.log(error.message);
-        }
+        catch { }
+            
+        let metarmarker = new Icon({
+            crossOrigin: 'anonymous',
+            src: `data:image/svg+xml;utf8,${encodeURIComponent(mapDotSvg)}`,
+            offset: [0,0],
+            opacity: 1,
+            scale: scaleSize
+        });
+        let metarFeature = new Feature({
+            metar: metar,
+            datatype: "metar",
+            geometry: new Point(fromLonLat([metar.longitude, metar.latitude])),
+            station_name: metar.station_name,
+            svgimage: popupSvg 
+        });
+        metarFeature.setStyle(new Style({
+            image: metarmarker
+        }));
+        //metarMarkers.push(metarmarker);
+        metarFeature.setId(metar.station_id);
+        //metarFeatures.push(metarFeature);
+        metarVectorLayer.getSource().addFeature(metarFeature); // <-- PATCH: add feature to layer source
+        //metarFeature.changed();
+    }
+    catch(error) {
+        console.log(error.message);
     }
 }
 
@@ -1304,27 +1370,21 @@ function processTraffic(jsondata) {
  * Place taf feature objects on the map
  * @param {object} tafsobject: JSON object with LOTS of tafs 
  */
-function processTafs(tafsobject) {
-    let newtafs = tafsobject.response.data.TAF;
-    if (newtafs !== undefined) {
-        tafFeatures.clear();
-        try {
-            newtafs.forEach((taf) => {
-                let taffeature = new Feature({
-                    ident: taf.station_id,
-                    taf: taf,
-                    datatype: "taf",
-                    geometry: new Point(fromLonLat([taf.longitude, taf.latitude]))
-                });
-                taffeature.setId(taf.station_id);
-                taffeature.setStyle(tafStyle);
-                tafFeatures.push(taffeature);
-                taffeature.changed();
-            });
-        }
-        catch (error){
-            console.log(error.message);
-        }
+function processTaf(tafsobject) {
+    try {
+        let taffeature = new Feature({
+            ident: taf.station_id,
+            taf: taf,
+            datatype: "taf",
+            geometry: new Point(fromLonLat([taf.longitude, taf.latitude]))
+        });
+        taffeature.setId(taf.station_id);
+        taffeature.setStyle(tafStyle);
+        tafFeatures.push(taffeature);
+        taffeature.changed();
+    }
+    catch (error){
+        console.log(error.message);
     }
 }
 
@@ -1332,43 +1392,37 @@ function processTafs(tafsobject) {
  * Place pirep features on the map
  * @param {object} pirepsobject: JSON object with LOTS of pireps 
  */
- function processPireps(pirepsobject) {
-    let newpireps = pirepsobject.response.data.AircraftReport;
-    if (newpireps !== undefined) {
-        pirepFeatures.clear();
-        try {
-            newpireps.forEach((pirep) => {
-                // generate a "pseudo-heading" to use if wind dir is absent
-                let heading = Math.random()*Math.PI*2;
-                if (pirep.wind_dir_degrees) {
-                    heading = (pirep.wind_dir_degrees * 0.0174533);
-                }
-                let pirepfeature = new Feature({
-                    ident: pirep.aircraft_ref,
-                    pirep: pirep,
-                    datatype: "pirep",
-                    geometry: new Point(fromLonLat([pirep.longitude, pirep.latitude])),
-                });
-                
-                pirepfeature.setId(pirep.aircraft_ref);
-                pirepfeature.setStyle(new Style({
-                                        image: new Icon({
-                                            crossOrigin: 'anonymous',
-                                            src: `${URL_SERVER}/img/airplane.svg`,
-                                            //size:[85, 85],
-                                            offset: [0,0],
-                                            opacity: 1,
-                                            scale: .05,
-                                            rotation: heading
-                                        })
-                                    })
-                );
-                pirepFeatures.push(pirepfeature);
-            });
+ function processPirep(pirepsobject) {
+    try {
+        // generate a "pseudo-heading" to use if wind dir is absent
+        let heading = Math.random()*Math.PI*2;
+        if (pirep.wind_dir_degrees) {
+            heading = (pirep.wind_dir_degrees * 0.0174533);
         }
-        catch (error){
-            console.log(error.message);
-        }
+        let pirepfeature = new Feature({
+            ident: pirep.aircraft_ref,
+            pirep: pirep,
+            datatype: "pirep",
+            geometry: new Point(fromLonLat([pirep.longitude, pirep.latitude])),
+        });
+        
+        pirepfeature.setId(pirep.aircraft_ref);
+        pirepfeature.setStyle(new Style({
+                                image: new Icon({
+                                    crossOrigin: 'anonymous',
+                                    src: `${URL_SERVER}/img/airplane.svg`,
+                                    //size:[85, 85],
+                                    offset: [0,0],
+                                    opacity: 1,
+                                    scale: .05,
+                                    rotation: heading
+                                })
+                            })
+        );
+        pirepFeatures.push(pirepfeature);
+    }
+    catch (error){
+        console.log(error.message);
     }
 }
 
@@ -1382,13 +1436,18 @@ function resizeDots(newzoom) {
         resizing = true;
         currentZoom = parseInt(newzoom.toFixed(0));
         let newscale = getScaleSize();
+        let metarMarkers = metarVectorLayer.getSource().getFeatures();
         for (let i = 0; i < metarMarkers.length; i++) {
-            metarMarkers[i].setScale(newscale);
+            let style = metarMarkers[i].getStyle();
+            if (style && style.getImage && style.getImage()) {
+                style.getImage().setScale(newscale);
+                metarMarkers[i].setStyle(style); // update the feature's style
+            }
         }
-        //pirepMarker.setScale(newscale * .08);
-        airportMarker.setScale(newscale);
-        heliportMarker.setScale(newscale);
-        tafMarker.setScale(newscale * .2);
+        // //pirepMarker.setScale(newscale * .08);
+        // airportMarker.setScale(newscale);
+        // heliportMarker.setScale(newscale);
+        //tafMarker.setScale(newscale * .2);
         resizing = false;
     }
 }
@@ -1436,118 +1495,118 @@ function getScaleSize() {
     return scale;
 }
 
-/**
- * Tile source for animated weather
- */
-animatedWxTileSource = new TileWMS({
-    attributions: ['Iowa State University'],
-    url: settings.animatedwxurl,
-    params: {'LAYERS': 'nexrad-n0r-wmst'},
-});
+// /**
+//  * Tile source for animated weather
+//  */
+// animatedWxTileSource = new TileWMS({
+//     attributions: ['Iowa State University'],
+//     url: settings.animatedwxurl,
+//     params: {'LAYERS': 'nexrad-n0r-wmst'},
+// });
 
 
-/**
- * Add tile data for all layers
- */
-let extent = transformExtent(viewextent, 'EPSG:4326', 'EPSG:3857')
-debugTileLayer = new TileLayer({
-    title: "Debug",
-    type: "overlay",
-    source: new TileDebug(),
-    visible: false,
-    extent: extent,
-    zIndex: 12
-});
+// /**
+//  * Add tile data for all layers
+//  */
+// let extent = transformExtent(viewextent, 'EPSG:4326', 'EPSG:3857')
+// debugTileLayer = new TileLayer({
+//     title: "Debug",
+//     type: "overlay",
+//     source: new TileDebug(),
+//     visible: false,
+//     extent: extent,
+//     zIndex: 12
+// });
 
-animatedWxTileLayer = new TileLayer({
-    title: "Animated Weather",
-    extent: extent,
-    source: animatedWxTileSource,
-    visible: false,
-    zIndex: 11
-});
+// animatedWxTileLayer = new TileLayer({
+//     title: "Animated Weather",
+//     extent: extent,
+//     source: animatedWxTileSource,
+//     visible: false,
+//     zIndex: 11
+// });
 
-metarVectorSource = new VectorSource({
-    features: metarFeatures
-});
-metarVectorLayer = new VectorLayer({
-    title: "Metars",
-    source: metarVectorSource,
-    visible: false,
-    extent: extent,
-    zIndex: 12
-}); 
+// metarVectorSource = new VectorSource({
+//     features: metarFeatures
+// });
+// metarVectorLayer = new VectorLayer({
+//     title: "Metars",
+//     source: metarVectorSource,
+//     visible: false,
+//     extent: extent,
+//     zIndex: 12
+// }); 
 
-airportVectorSource = new VectorSource({
-    features: airportFeatures
-});
-airportVectorLayer = new VectorLayer({
-    title: "All Airports",
-    source: airportVectorSource,
-    visible: false,
-    extent: extent,
-    zIndex: 11
-}); 
+// airportVectorSource = new VectorSource({
+//     features: airportFeatures
+// });
+// airportVectorLayer = new VectorLayer({
+//     title: "All Airports",
+//     source: airportVectorSource,
+//     visible: false,
+//     extent: extent,
+//     zIndex: 11
+// }); 
 
-tafVectorSource = new VectorSource({
-    features: tafFeatures
-});
-tafVectorLayer = new VectorLayer({
-    title: "TAFs",
-    source: tafVectorSource,
-    visible: false,
-    extent: extent,
-    zIndex: 13
-});
+// tafVectorSource = new VectorSource({
+//     features: tafFeatures
+// });
+// tafVectorLayer = new VectorLayer({
+//     title: "TAFs",
+//     source: tafVectorSource,
+//     visible: false,
+//     extent: extent,
+//     zIndex: 13
+// });
 
-pirepVectorSource = new VectorSource({
-    features: pirepFeatures
-});
-pirepVectorLayer = new VectorLayer({
-    title: "Pireps",
-    source: pirepVectorSource,
-    visible: false,
-    extent: extent, 
-    zIndex: 14
-});
+// pirepVectorSource = new VectorSource({
+//     features: pirepFeatures
+// });
+// pirepVectorLayer = new VectorLayer({
+//     title: "Pireps",
+//     source: pirepVectorSource,
+//     visible: false,
+//     extent: extent, 
+//     zIndex: 14
+// });
 
-if (settings.usestratux) {
-    trafficVectorSource = new VectorSource({
-        features: trafficFeatures
-    });
-    trafficVectorLayer = new VectorLayer({
-        title: "Traffic",
-        source: trafficVectorSource,
-        visible: false,
-        extent: extent,
-        zIndex: 14
-    });
-}
+// if (settings.usestratux) {
+//     trafficVectorSource = new VectorSource({
+//         features: trafficFeatures
+//     });
+//     trafficVectorLayer = new VectorLayer({
+//         title: "Traffic",
+//         source: trafficVectorSource,
+//         visible: false,
+//         extent: extent,
+//         zIndex: 14
+//     });
+// }
 
-if (settings.useOSMonlinemap) {
-    const osmOnlineTileLayer = new TileLayer({
-        title: "Open Street Maps",
-        type: "overlay",
-        source: new OSM(),
-        visible: true,
-        extent: extent //,
-        //zIndex: 8
-    });
-    map.addLayer(osmOnlineTileLayer);
-}
+// if (settings.useOSMonlinemap) {
+//     const osmOnlineTileLayer = new TileLayer({
+//         title: "Open Street Maps",
+//         type: "overlay",
+//         source: new OSM(),
+//         visible: true,
+//         extent: extent //,
+//         //zIndex: 8
+//     });
+//     map.addLayer(osmOnlineTileLayer);
+// }
 
-if (settings.debug) {
-    map.addLayer(debugTileLayer);
-}
+// if (settings.debug) {
+//     map.addLayer(debugTileLayer);
+// }
 
-map.addLayer(airportVectorLayer);
-map.addLayer(metarVectorLayer); 
-map.addLayer(tafVectorLayer);
-map.addLayer(pirepVectorLayer);
-if (settings.usestratux) {
-    map.addLayer(trafficVectorLayer);
-}
-map.addLayer(animatedWxTileLayer);
+// map.addLayer(airportVectorLayer);
+// map.addLayer(metarVectorLayer); 
+// map.addLayer(tafVectorLayer);
+// map.addLayer(pirepVectorLayer);
+// if (settings.usestratux) {
+//     map.addLayer(trafficVectorLayer);
+// }
+// map.addLayer(animatedWxTileLayer);
 
 // dblist.reverse();
 // Object.entries(dblist).forEach((db) => {
@@ -1604,11 +1663,11 @@ map.addControl(layerSwitcher);
 //     }
 // });
 
-animatedWxTileLayer.on('change:visible', () => {
-    let visible = animatedWxTileLayer.get('visible');
-    animatecontrol.style.visibility = visible ? 'visible' : 'hidden';
-    visible ? playWeatherRadar() : stopWeatherRadar()
-});
+// animatedWxTileLayer.on('change:visible', () => {
+//     let visible = animatedWxTileLayer.get('visible');
+//     animatecontrol.style.visibility = visible ? 'visible' : 'hidden';
+//     visible ? playWeatherRadar() : stopWeatherRadar()
+// });
 
 /**
  * This allows a clicked feature to raise an event
@@ -2865,7 +2924,7 @@ function parseStation(metar) {
         return matches[2];
     }
     else {
-        throw new Error("Station could not be found invalid metar");
+        return null;
     }
 }
 
@@ -2950,19 +3009,20 @@ function parseTempNA(metar) {
 function parseWeather(metar) {
     var obs_keys = Object.keys(WEATHER).join('|').replace(/\+/g, "\\+");
     var re = new RegExp("\\s?(" + obs_keys + ")\\s", 'g');
-    var matches = metar.match(re);
-    if (matches != null) {
-        return matches.map(function (match) {
-            var key = match.trim();
-            return {
-                abbreviation: key,
-                meaning: WEATHER[key].text
-            };
-        });
+    try {
+        var matches = metar.match(re);
+        if (matches != null) {
+            return matches.map(function (match) {
+                var key = match.trim();
+                return {
+                    abbreviation: key,
+                    meaning: WEATHER[key].text
+                };
+            });
+        }
     }
-    else {
-        return new Array();
-    }
+    catch {}
+    return new Array();
 }
 
 /**
@@ -3073,8 +3133,8 @@ var MetarPlot = /** @class */ (function () {
  * @param metric true for metric units(m, hPa, mps), false for north american units (miles, inHg, Kts)
  * @returns
  */
-function rawMetarToSVG(rawMetar, width, height, metric) {
-    var plot = rawMetarToMetarPlot(rawMetar, metric);
+function rawMetarToSVG(metar, width, height, metric) {
+    var plot = rawMetarToMetarPlot(metar, metric);
     return metarToSVG(plot, width, height);
 }
 
@@ -3084,9 +3144,10 @@ function rawMetarToSVG(rawMetar, width, height, metric) {
  * @param metric true for metric units(m, hPa, mps), false for north american units (miles, inHg, Kts)
  * @returns
  */
-function rawMetarToMetarPlot(rawMetar, metric) {
+function rawMetarToMetarPlot(metarObj, metric) {
     var _a;
-    var metar = new METAR(rawMetar);
+    let rawMetar = metarObj.raw_text;
+    var metar = new METAR(rawMetar, metarObj.station_id, metarObj.observation_time);
     var wx = metar.weather.map(function (weather) { return weather.abbreviation; }).join("");
     //Metric converion
     var pressure;
