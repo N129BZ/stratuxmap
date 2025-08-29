@@ -7,32 +7,6 @@ import { CLOUDS, WEATHER, CONDITIONS } from "./weatherdictionary.js";
 const GUST_WIDTH = 5;
 const WS_WIDTH = 5;
 
-/**
- * Classes used by the on-the-fly weather SVG in metar popups
- */
-class METAR {
-    /**
-     * Extracted Metar data in a human readable format.
-     * @param metarString raw metar string if provided station and time will be ignored and replaced with the content in the raw METAR
-     * @param station staion name for instance creation
-     * @param time time for instance creation
-     */
-    constructor (metarString, station, time) {
-        //Wind speed, direction and unit
-        this.wind;// = new Wind();
-        //List of weather conditions reported
-        this.weather = new Array();
-        //List of Cloud observations
-        this.clouds = new Array();
-        this.station = station !== null && station !== void 0 ? station : "----";
-        this.time = time !== null && time !== void 0 ? time : new Date();
-        this.flightCategory = "";
-        if (metarString != null) {
-            parseMetar(metarString, this);
-        }
-    }
-}
-
 // --- SVG generation functions ---
 function genCoverage(coverage, condition) {
     if (coverage != null && coverage !== "") {
@@ -85,9 +59,9 @@ function genWind(metar) {
     return gust + wind;
 }
 
- function metarToSVG(metar, width, height) {
+function metarToSVG(metar, width, height) {
     var _a, _b, _c, _d, _e, _f;
-    var VIS = (_a = metar.visablity) !== null && _a !== void 0 ? _a : "";
+    var VIS = (_a = metar.visiblity) !== null && _a !== void 0 ? _a : "";
     var TMP = (_b = metar.temp) !== null && _b !== void 0 ? _b : "";
     var DEW = (_c = metar.dew_point) !== null && _c !== void 0 ? _c : "";
     var STA = (_d = metar.station) !== null && _d !== void 0 ? _d : "";
@@ -109,17 +83,17 @@ function genWind(metar) {
            `xml:space="preserve">${ALT}</text></g></svg>`;
 }
 
-function getWindBarbSvg(width, height, metar) {
+function getWindBarbSvg(metarObject, width, height) {
     let catcolor = "";
     let svg = "";
     let thismetar = {
-        wind_direction: metar.wind?.direction,
-        wind_speed: metar.wind?.speed,
-        gust_speed: metar.wind?.gust,
-        station: metar.station,
-        flight_category: metar.flightCategory
+        wind_direction: metarObject.wind?.direction,
+        wind_speed: metarObject.wind?.speed,
+        gust_speed: metarObject.wind?.gust,
+        station: metarObject.station,
+        flight_category: metarObject.category // <-- use camelCase consistently
     };
-    switch (metar.flightCategory) {
+    switch (metarObject.category) {
         case "IFR":
             catcolor = "ff0000";
             break;
@@ -157,7 +131,6 @@ function genBarb1(speed, gust) {
     var width = gust ? GUST_WIDTH : WS_WIDTH;
     var barb = "";
     if (speed >= 10 && speed < 50) {
-        //barb = `<line id="${tag}-barb-1-long" stroke-width="${width}" y1="50" x1="250" y2="50" x2="300" stroke="${fill}" transform="rotate(-35, 250, 50)"/>`;
         barb = `<line id="${tag}-barb-1-long" stroke-width="${width}" y1="90" x1="250" y2="90" x2="305" stroke="${fill}" transform="rotate(-35, 250, 90)"/>`;
     }
     else if (speed >= 50) {
@@ -165,12 +138,6 @@ function genBarb1(speed, gust) {
     }
     return barb;
 }
-/**
- * Generate second barb
- * @param speed wind or gust speed
- * @param gust set to true for gust
- * @returns
- */
 function genBarb2(speed, gust) {
     var fill = gust ? 'red' : '#000';
     var tag = gust ? 'gs' : 'ws';
@@ -184,12 +151,6 @@ function genBarb2(speed, gust) {
     }
     return barb;
 }
-/**
- * Generate third barb
- * @param speed wind or gust speed
- * @param gust set to true for gust
- * @returns
- */
 function genBarb3(speed, gust) {
     var fill = gust ? 'red' : '#000';
     var tag = gust ? 'gs' : 'ws';
@@ -203,12 +164,6 @@ function genBarb3(speed, gust) {
     }
     return barb;
 }
-/**
- * Generate forth barb
- * @param speed wind or gust speed
- * @param gust set to true for gust
- * @returns
- */
 function genBarb4(speed, gust) {
     var fill = gust ? 'red' : '#000';
     var tag = gust ? 'gs' : 'ws';
@@ -222,12 +177,6 @@ function genBarb4(speed, gust) {
     }
     return barb;
 }
-/**
- * Generate fifth barb
- * @param speed wind or gust speed
- * @param gust set to true for gust
- * @returns
- */
 function genBarb5(speed, gust) {
     var fill = gust ? 'red' : '#000';
     var tag = gust ? 'gs' : 'ws';
@@ -239,20 +188,10 @@ function genBarb5(speed, gust) {
     return barb;
 }
 
-/**
- * Convert Celsius to Fahrenheit
- * @param celsius
- * @returns
- */
 function cToF(celsius) {
     return Math.round((celsius * 9 / 5 + 32) * 100) / 100;
 }
 
-/**
- * Pretty print a mile value
- * @param mile
- * @returns
- */
 function milePrettyPrint(mile) {
     if (mile === 9999) {
         return "10";
@@ -283,9 +222,9 @@ function rawMetarToSVG(metarObject, width, height, metric) {
  */
 function rawMetarToMetarPlot(metarObject, metric) {
     var _a;
-    var metar = new METAR(metarObject.Data);
-    var wx = metar.weather.map(function (weather) { return weather.abbreviation; }).join("");
-    //Metric converion
+    // Use the JSON object directly, no METAR class
+    var wx = metarObject.weather ? metarObject.weather.map(function (weather) { return weather.abbreviation; }).join("") : "";
+    //Metric conversion
     var pressure;
     var vis = metarObject.visibility;
     var temp = metarObject.temperature;
@@ -317,13 +256,13 @@ function rawMetarToMetarPlot(metarObject, metric) {
         wx: wx,
         pressure: typeof pressure === "number" ? pressure : "",
         coverage: metarObject.clouds ? determineCoverage(metarObject) : "",
-        condition: parseFlightCategory(metarObject) ? metarObject.flightCategory : ""
+        condition: parseCondition(metarObject) ? metarObject.flightCategory : ""
     };
 
     return outobj;
 }
 
-function parseFlightCategory(metarObject) {
+function parseCondition(metarObject) {
     let visMiles = metarObject.visibility.distance; 
     let ceiling = null;
     let cond = "VFR";
@@ -343,7 +282,7 @@ function parseFlightCategory(metarObject) {
     if ((visMiles !== null && visMiles < 3)) cond = "IFR";
     if ((visMiles !== null && visMiles < 5)) cond = "MVFR";
     
-    metarObject.flightCategory = cond;
+    metarObject.condition = cond;
 
     return true;
 }
@@ -376,9 +315,9 @@ function determineCoverage(weatherObject) {
  */
 function weatherItemToIconPlot(weatherObject, metric) {
     var _a;
-    var weather = new Array();
+    var weather = weatherObject.weather || [];
     var wx = weather.map(function (weather) { return weather.abbreviation; }).join("");
-    //Metric converion
+    //Metric conversion
     var pressure;
     var vis;
     var temp = weatherObject.temperature;
@@ -412,6 +351,7 @@ function weatherItemToIconPlot(weatherObject, metric) {
 
 // Export functions and maps (ES6 module format)
 export {
+    parseCondition,
     genCoverage,
     getWeatherSVG,
     genWind,
@@ -419,8 +359,6 @@ export {
     getWindBarbSvg,
     rawMetarToSVG,
     rawMetarToMetarPlot,
-    //weatherItemIconPlotToSVG,
     weatherItemToIconPlot,
     milePrettyPrint
-
-};
+}

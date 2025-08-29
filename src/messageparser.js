@@ -1,3 +1,9 @@
+
+import { parseMetarData } from './metarParser.js';
+import { parseTafData, parseTafAmdData } from './tafParser.js';
+import { parseWindData } from './windParser.js';
+import { parsePirepData } from './pirepParser.js';
+
 async function parseWeatherMessage(msg) {
 	if (!msg || !msg.Type) return null;
 	switch (msg.Type) {
@@ -18,8 +24,5 @@ async function parseWeatherMessage(msg) {
 }
 
 export { parseWeatherMessage };
-import { parseMetarData } from './metarParser.js';
-import { parseTafData, parseTafAmdData } from './tafParser.js';
-import { parseWindData } from './windParser.js';
-import { parsePirepData } from './pirepParser.js';
+
 

@@ -17,7 +17,7 @@ const settings = {
     gpsintervalmsec: 1000,
     stratuxsituationws: "ws://[stratuxip]/situation",
     stratuxtrafficws: "ws://[stratuxip]/traffic",
-    stratuxweatherws: "ws://[stratuxip]/weather",
+    stratuxweatherws: "ws://[stratuxip]",
     animatedwxurl: "https://mesonet.agron.iastate.edu/cgi-bin/wms/nexrad/n0r-t.cgi",
     addswxurl: "https://aviationweather.gov/api/data/###?&format=xml&hours=1.5",
     addscurrentxmlurl: "https://aviationweather.gov/data/cache/###.cache.xml",

@@ -3,6 +3,7 @@
 import { attachAirportInfo } from './airportInfo.js';
 import { skyAndConditionsKeymap } from '/keymaps.js';
 import { CLOUDS, WEATHER } from './weatherdictionary.js';
+import { rawMetarToSVG, getWindBarbSvg, parseCondition } from './svgMetar.js';
 
 export async function parseMetarData(metarJson) {
     if (!metarJson || !metarJson.Data) return null;
@@ -64,7 +65,6 @@ export async function parseMetarData(metarJson) {
         lon: (airportInfo && airportInfo.lon != null) ? airportInfo.lon : null,
         time: metarJson.Time,
         reportType: reportTypeMatch ? reportTypeMatch[1] : null,
-        flightCategory: "VFR",
         wind,
         visibility,
         sky,
@@ -74,12 +74,20 @@ export async function parseMetarData(metarJson) {
         dewpoint: tempDewMatch ? tempDewMatch[2] : null,
         altimeter,
         remarks,
-        wxitem: parseWeather(metarJson.Data),
+        wxitem: {}, 
+        condition: "", 
         raw_data: data,
-        svg: "",
-        svg2: ""
+        mapDotSvg: "", 
+        popupSvg: "",
+        mapDotSvgURI: ""
     };
-    //console.log("PARSED METAR", obj);
+
+    obj.wxitem = parseWeather(metarJson.Data),
+    obj.category = parseCondition(obj),
+    obj.mapDotSvg = rawMetarToSVG(obj.raw_data, 150, 150, false),
+    obj.popupSvg = getWindBarbSvg(obj, 95, 95),
+    obj.mapDotSvgURI = 'data:image/svg+xml;utf8,' + encodeURIComponent(obj.mapDotSvg, false)
+
     return obj;
 }
 

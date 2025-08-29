@@ -8,7 +8,8 @@ export default defineConfig({
     emptyOutDir: true,
     rollupOptions: {
       external: ['./ol-layerswitcher.js'] // Explicitly externalize ol-layerswitcher
-    }
+    },
+    chunkSizeWarningLimit: 3000, // Increase chunk size warning limit to 2000 kB
   },
   publicDir: '../public',
 });
