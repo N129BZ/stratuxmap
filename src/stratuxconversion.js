@@ -1,5 +1,5 @@
 // stratuxconversion.js
-// Converts Stratux ADS-B websocket METAR object to FAA pre-processed METAR format
+// Converts Stratux ADS-B websocket weather object to FAA pre-processed object format
 
 import { attachAirportInfo } from './airportInfo.js'
 
@@ -17,14 +17,21 @@ export async function convertStratuxToFAA(stratuxObject, stationInfo) {
             console.log("Airport Info", stationInfo);
         }
     }
-
+    
+    // Make sure stratuxObject.Location is a string airport code, e.g. "KORD"
     const cleanedData = stratuxObject.Data.replace(/\s*\n\s*/g, ' ').trim();
+    const forecast = parseWeatherForecast(stratuxObject.Data);
 
-    // Parse METAR string
-    const metarRaw = `${stratuxObject.Location} ${stratuxObject.Time} ${cleanedData}`;
+    // Time handling
+    let timestamp = stratuxObject.Time;
+    let loc_time = stratuxObject.LocaltimeReceived.replace(/^0001-01-01/, '');
+
+
+    // Weather handling
+    const weatherRaw = `${stratuxObject.Location} ${timestamp} ${cleanedData}`;
     const station_id = stratuxObject.Location;
-    const observation_time = await parseObservationTime(stratuxObject.Time);
-    const raw_text = metarRaw;
+    const observation_time = await parseObservationTime(loc_time);
+    const raw_text = weatherRaw;
     const metar_type = stratuxObject.Type;
 
     // Basic regex parsing
@@ -34,15 +41,15 @@ export async function convertStratuxToFAA(stratuxObject, stationInfo) {
     const visRegex = /(\d{1,2})SM/;
     const skyRegex = /(FEW|SCT|BKN|OVC)(\d{3})/g;
 
-    const tempDewMatch = metarRaw.match(tempDewRegex);
-    const windMatch = metarRaw.match(windRegex);
-    const altimMatch = metarRaw.match(altimRegex);
-    const visMatch = metarRaw.match(visRegex);
+    const tempDewMatch = weatherRaw.match(tempDewRegex);
+    const windMatch = weatherRaw.match(windRegex);
+    const altimMatch = weatherRaw.match(altimRegex);
+    const visMatch = weatherRaw.match(visRegex);
 
     // Sky conditions
     let sky_condition = [];
     let skyMatch;
-    while ((skyMatch = skyRegex.exec(metarRaw)) !== null) {
+    while ((skyMatch = skyRegex.exec(weatherRaw)) !== null) {
         sky_condition.push({
             sky_cover: skyMatch[1],
             cloud_base_ft_agl: String(Number(skyMatch[2]) * 100)
@@ -50,7 +57,6 @@ export async function convertStratuxToFAA(stratuxObject, stationInfo) {
     }
 
     let visMiles = visMatch ? Number(visMatch[1]) : 10;
-    //if (visMiles < 3) debugger;
     let cond = "";
 
     if (visMiles < 1) cond = "LIFR";
@@ -58,11 +64,11 @@ export async function convertStratuxToFAA(stratuxObject, stationInfo) {
     else if (visMiles < 5) cond = "MVFR";
     else cond = "VFR";
 
-    // Compose output
     let output = {
         raw_text,
+        //color: 
         type: stratuxObject.Type,
-        station_id,
+        station_id: station_id,
         station_name: stationInfo?.name ?? null,
         timestamp: stratuxObject.Time,
         observation_time,
@@ -77,10 +83,84 @@ export async function convertStratuxToFAA(stratuxObject, stationInfo) {
         sky_condition,
         flight_category: cond, 
         metar_type,
-        elevation_m: stationInfo?.elevation_m ?? null
+        elevation_m: stationInfo?.elevation_m ?? null,
+        forecast: forecast,
     };
 
     return output;
+}
+
+/**
+ * Parses a TAF Data string into forecast periods with wind, visibility, and sky conditions
+ * @param {string} tafData - Raw TAF Data string
+ * @returns {Array} Array of forecast objects
+ */
+function parseWeatherForecast(tafData) {
+    // Split into lines/periods
+    const lines = tafData
+        .replace(/\n/g, ' ')
+        .replace(/=+$/, '')
+        .split(/(?=\bFM\d{6}|TEMPO|PROB\d{2}|BECMG)/)
+        .map(line => line.trim())
+        .filter(line => line.length > 0);
+
+    const forecastPeriods = [];
+
+    for (const line of lines) {
+        // Identify type
+        let type = "MAIN";
+        let time = null;
+        let match;
+
+        if (line.startsWith("FM")) {
+            type = "FM";
+            match = line.match(/^FM(\d{6})/);
+            time = match ? match[1] : null;
+        } else if (line.startsWith("TEMPO")) {
+            type = "TEMPO";
+            match = line.match(/^TEMPO\s+(\d{4})\/(\d{4})/);
+            time = match ? { from: match[1], to: match[2] } : null;
+        } else if (line.startsWith("PROB")) {
+            type = "PROB";
+            match = line.match(/^PROB(\d{2})\s+(\d{4})\/(\d{4})/);
+            time = match ? { prob: match[1], from: match[2], to: match[3] } : null;
+        } else if (line.startsWith("BECMG")) {
+            type = "BECMG";
+            match = line.match(/^BECMG\s+(\d{4})\/(\d{4})/);
+            time = match ? { from: match[1], to: match[2] } : null;
+        }
+
+        // Parse wind, visibility, and sky conditions
+        const windRegex = /(\d{3})(\d{2})G?(\d{2})?KT/;
+        const visRegex = /(\d{1,2})SM/;
+        const skyRegex = /(FEW|SCT|BKN|OVC)(\d{3})/g;
+
+        const windMatch = line.match(windRegex);
+        const visMatch = line.match(visRegex);
+
+        // Sky conditions
+        let sky_condition = [];
+        let skyMatch;
+        while ((skyMatch = skyRegex.exec(line)) !== null) {
+            sky_condition.push({
+                sky_cover: skyMatch[1],
+                cloud_base_ft_agl: String(Number(skyMatch[2]) * 100)
+            });
+        }
+
+        forecastPeriods.push({
+            type,
+            time,
+            text: line,
+            wind_dir_degrees: windMatch ? Number(windMatch[1]) : null,
+            wind_speed_kt: windMatch ? Number(windMatch[2]) : null,
+            wind_gust_kt: windMatch && windMatch[3] ? Number(windMatch[3]) : null,
+            visibility_statute_mi: visMatch ? Number(visMatch[1]) : null,
+            sky_condition
+        });
+    }
+
+    return forecastPeriods;
 }
 
 async function parseObservationTime(timeStr) {

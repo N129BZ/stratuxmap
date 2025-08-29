@@ -53,14 +53,14 @@ let lat = 0;
 /**
  * Classes used by the on-the-fly weather SVG in metar popups
  */
-class METAR {
+class WeatherProcessItem {
     /**
      * Extracted Metar data in a human readable format.
-     * @param metarString raw metar string if provided station and time will be ignored and replaced with the content in the raw METAR
+     * @param weathertext raw metar string if provided station and time will be ignored and replaced with the content in the raw METAR
      * @param station staion name for instance creation
      * @param time time for instance creation
      */
-    constructor (metarString, station, time) {
+    constructor (weathertext, station, time) {
         //Wind speed, direction and unit
         this.wind;// = new Wind();
         //List of weather conditions reported
@@ -70,8 +70,8 @@ class METAR {
         this.station = station !== null && station !== void 0 ? station : "----";
         this.time = time !== null && time !== void 0 ? time : new Date();
         this.flightCategory = "";
-        if (metarString != null) {
-            parseMetar(metarString, this);
+        if (weathertext != null) {
+            parseWeatherText(weathertext, this);
         }
     }
 }
@@ -155,137 +155,14 @@ let DistanceUnits = {};
 let distanceunit = "";
 let airplaneElement = document.getElementById('airplane');
 
-/**
- * Animation variables 
- */
-let animationId = null;
-//let startDate = getTimeThreeHoursAgo();
-let frameRate = 1.0; // frames per second
-const animatecontrol = document.getElementById('wxbuttons');
-
-/**
- * Controls for dropdown select when viewing all airports
- */
-//const regioncontrol = document.getElementById('isoregion');
-//const regionselect = document.getElementById("regionselect");
-//let regionmap = new Map();
-
-
 // /**
-//  * Get the json file containing the metadata from all 
-//  * available mbtiles databases on the server
+//  * Animation variables 
 //  */
-// $.get({
-//     async: false,
-//     type: "GET",
-//     url: URL_GET_METADATASETS,
-//     success: (data) => {
-//         try {
-//             metadatasets = JSON.parse(data);
-//         }
-//         catch(err){
-//             console.log(err);
-//         }
-//     }, 
-//     error: (xhr, ajaxOptions, thrownError) => {
-//         console.error(xhr.status, thrownError)
-//     }
-// });
+// let animationId = null;
+// //let startDate = getTimeThreeHoursAgo();
+// let frameRate = 1.0; // frames per second
+// const animatecontrol = document.getElementById('wxbuttons');
 
-// /**
-//  * Get the list of available mbtiles databases from the server
-//  */
-// $.get({
-//     async: false,
-//     type: "GET",
-//     url: URL_GET_DBLIST,
-//     success: (data) => {
-//         try {
-//             dblist = JSON.parse(data);
-//         }
-//         catch(err) {
-//             console.log(err);
-//         }
-//     },
-//     error: (xhr, ajaxOptions, thrownError) => {
-//         console.error(xhr.status, thrownError);
-//     }
-// });
-
-/**
- * Request Initial ownship position latitude & longitude.
- * Data is stored in the sqlite positionhistory.db file.
- * This will also center the viewport on that position.
- */
-// $.get({
-//     async: false,
-//     type: "GET",
-//     url: URL_GET_HISTORY,
-//     success: (data) => {
-//         try {
-//             let histobj = JSON.parse(data);
-//             last_longitude = histobj.longitude;
-//             last_latitude = histobj.latitude;
-//             last_heading = histobj.heading;
-//         }
-//         catch (err) {
-//             console.log(err);
-//         }
-//     },
-//     error: (xhr, ajaxOptions, thrownError) => {
-//         console.error(xhr.status, thrownError);
-//     }
-// });
-
-// /**
-//  * Websocket connection and message handling
-//  */
-//  $(() => { 
-//     try {
-//         let wsurl = `${URL_WINSOCK}${settings.wsport}`;
-//         console.log(`OPENING: ${wsurl}`);
-//         wsServer = new WebSocket(wsurl);
-//         wsServer.onmessage = (evt) => {
-//             let message = JSON.parse(evt.data);
-//             let payload = convertStratuxToFAA(message);
-
-//             switch (message.type) {
-//                 case MessageTypes.metars.type:
-//                     processMetars(payload);
-//                     break;
-//                 case MessageTypes.tafs.type:
-//                     processTafs(payload);
-//                     break;
-//                 case MessageTypes.pireps.type:
-//                     processPireps(payload);
-//                     break;
-//             }
-//         }
-
-//         wsServer.onerror = function(evt){
-//             console.log("Websocket ERROR: " + evt.data);
-//         }
-        
-//         wsServer.onopen = function(evt) {
-//             console.log("Websocket CONNECTED.");
-//             wsServerOpen = true;
-//             keepAlive();
-//         }
-        
-//         wsServer.onclose = function(evt) {
-//             cancelKeepAlive();
-//             wsServerOpen = false;
-//             console.log("Websocket CLOSED.");
-//         }
-//     }
-//     catch (error) {
-//         console.log(error);
-//     }
-    
-//     if (settings.usestratux) {
-//         setupStratuxWebsockets();
-//     }
-// });
 
 setupStratuxWebsockets();
 function setupStratuxWebsockets() {
@@ -309,18 +186,22 @@ function setupStratuxWebsockets() {
     let wsWeather = new WebSocket(wxurl);
     wsWeather.onmessage = async function(evt){
         let message = JSON.parse(evt.data);
-        let payload = await convertStratuxToFAA(message);
+
+        // TODO: Winds?
+        if (message.Type === "WINDS") return;
+        
+        let weatherObject = await convertStratuxToFAA(message);
         switch (message.Type) {
             case "METAR":
             case "SPECI":
-                processMetar(payload);
+                processMetar(weatherObject);
                 break;
             case "TAF":
             case "TAF.AMD":
-                processTaf(payload);
+                processTaf(weatherObject);
                 break;
             case "PIREP":
-                processPirep(payload);
+                processPirep(weatherObject);
                 break;
         }
     }
@@ -343,211 +224,26 @@ function addTrafficItem(jsondata) {
     }
 }
 
-// /**
-//  * Icon markers for different METAR categories 
-//  */
-// let ifrMarker = new Icon({
-//     crossOrigin: 'anonymous',
-//     src: `${URL_SERVER}/img/ifr.png`,
-//     size: [55, 55],
-//     offset: [0, 0],
-//     opacity: 1,
-//     scale: .30
-// });
-// /*--------------------------------------*/
-// let lifrMarker = new Icon({
-//     crossOrigin: 'anonymous',
-//     src: `${URL_SERVER}/img/lifr.png`,
-//     size: [55, 55],
-//     offset: [0, 0],
-//     opacity: 1,
-//     scale: .30
-// });
-// /*--------------------------------------*/
-// let mvfrMarker = new Icon({
-//     crossOrigin: 'anonymous',
-//     src: `${URL_SERVER}/img/mvfr.png`,
-//     size: [55, 55],
-//     offset: [0, 0],
-//     opacity: 1,
-//     scale: .30
-// });
-// /*--------------------------------------*/
-// let vfrMarker = new Icon({
-//     crossOrigin: 'anonymous',
-//     src: `${URL_SERVER}/img/vfr.png`,
-//     size: [55, 55],
-//     offset: [0, 0],
-//     opacity: 1,
-//     scale: .30
-// });
-
 /**
  * Icon markers for airports, TAFs, heliports, etc.
  */
 let tafMarker = new Icon({
     crossOrigin: 'anonymous',
-    src: `${URL_SERVER}/img/taf.svg`,
+    src: '/images/taf.svg',
     size: [126, 90],
     offset: [0, 0],
     opacity: 1,
     scale: .2
 });
-// /*--------------------------------------*/
-// let airportMarker = new Icon({
-//     crossOrigin: 'anonymous',
-//     src: `${URL_SERVER}/img/dot.png`,
-//     size: [55, 55],
-//     offset: [0, 0],
-//     opacity: 1,
-//     scale: .30
-// });
-// /*--------------------------------------*/
-// let heliportMarker = new Icon({
-//     crossOrigin: 'anonymous',
-//     src: `${URL_SERVER}/img/helipad.png`,
-//     size: [55, 55],
-//     offset: [0, 0],
-//     opacity: 1,
-//     scale: .50
-//});
 /*--------------------------------------*/
 let pirepMarker = new Icon({
     crossOrigin: 'anonymous',
-    src: `${URL_SERVER}/img/pirep.png`,
+    src: '/images/pirep.png',
     size:[85, 85],
     offset: [0,0],
     opacity: 1,
     scale: .50
 });
-
-// /**
-//  * Style objects 
-//  */
-// const vfrStyle = new Style({
-//     image: vfrMarker
-// });
-// const mvfrStyle = new Style({
-//     image: mvfrMarker
-// });
-// const ifrStyle = new Style({
-//     image: ifrMarker
-// });
-// const lifrStyle = new Style({
-//     image: lifrMarker
-// });
-// const tafStyle = new Style({
-//     image: tafMarker
-// })
-// const airportStyle = new Style({
-//     image: airportMarker
-// });
-// const heliportStyle = new Style({
-//     image: heliportMarker
-// });
-// const pirepStyle = new Style({
-//     image: pirepMarker
-// });
-
-// /**
-//  * Load airports into their feature collection 
-//  * @param {jsonobj} airport JSON object 
-//  */
-// async function processAirports(jsonobj) {
-//     let usastates = new Map();
-//     let isoregions = new Map();
-//     try {
-//         for (let i=0; i< jsonobj.airports.length; i++) {
-//             let airport = jsonobj.airports[i];
-//             let lon = airport.lon;
-//             let lat = airport.lat;
-//             let isoregion = airport.isoregion;
-//             let country = airport.country;
-//             let airportFeature = new Feature({
-//                 ident: airport.ident,
-//                 type: airport.type,
-//                 datatype: "airport",
-//                 isoregion: isoregion,
-//                 country: country,
-//                 geometry: new Point(fromLonLat([lon, lat]))
-//             });
-//             airportFeature.setId(airport.ident);
-//             if (airport.type === "heliport") {
-//                 airportFeature.setStyle(heliportStyle);
-//             }
-//             else {
-//                 airportFeature.setStyle(airportStyle);
-//             }
-//             airportFeatures.push(airportFeature);
-//             airportNameKeymap.set(airport.ident, airport.name);
-//             airportFeature.changed();
-//         }
-
-//         /**
-//          * This is for the region select dropdown list
-//          * Map sort all region airports in alpha order by US state 
-//          * we want US states to be at the top of the list followed
-//          * by the rest of the isoregions 
-//          */
-//         usastates[Symbol.iterator] = function* () {
-//             yield* [...this.entries()].sort((a, b) => a[1] - b[1]);
-//         }
-//         usastates.forEach((country, isoregion) => {
-//             let option = document.createElement("option");
-//             option.value = isoregion;
-//             option.text = country;
-//             regionselect.appendChild(option);
-//         });
-        
-//         regionmap[Symbol.iterator] = function* () {
-//             yield* [...this.entries()].sort((a, b) => a[1] - b[1]);
-//         }
-//         isoregions.forEach((country, isoregion) => { 
-//             let option = document.createElement("option");
-//             option.value = isoregion;
-//             option.text = country;
-//             regionselect.appendChild(option);
-//         });
-//     }
-//     catch(err){
-//         console.error(err);
-//     }
-// }
-
-// /**
-//  * Region dropdown select event
-//  */
-// regionselect.addEventListener('change', (event) => {
-//     lastcriteria = event.target.value;
-//     selectFeaturesByCriteria();
-// });
-
-// /**
-//  * Called by select event to manipulate features
-//  * @param {*} criteria: string
-//  */
-// function selectFeaturesByCriteria() {
-//     airportFeatures.forEach((feature) => {
-//         let type = feature.get("type");
-//         let country = feature.get("country");
-//         if (type === "heliport") {
-//             feature.setStyle(heliportStyle);
-//         }
-//         else {
-//             feature.setStyle(airportStyle);
-//         }
-//         if (lastcriteria === "small_airport" || lastcriteria === "medium_airport" || 
-//             lastcriteria === "large_airport" || lastcriteria === "heliport") {
-//             if (type !== lastcriteria) {
-//                 feature.setStyle(new Style(undefined));
-//             }
-//         }
-//         else if (country !== lastcriteria && lastcriteria !== "allregions") {
-//             feature.setStyle(new Style(undefined));        
-//         }
-//     });
-// }
-
 
 // /**
 //  * Ownship image 
@@ -596,22 +292,7 @@ const map = new OLMap({
         maxZoom: 22
     }),
     controls: defaultControls().extend([scaleLine])
-    //overlays: [popupoverlay]
 });
-
-// let airportMarker = new Icon({
-//     crossOrigin: 'anonymous',
-//     src: '/images/dot.png',
-//     size: [55, 55],
-//     offset: [0, 0],
-//     opacity: 1,
-//     scale: .30
-// });
-
-
-// let viewextent = [-180, -85];
-// let offset = [-18, -18];
-//let extent = transformExtent(viewextent, 'EPSG:4326', 'EPSG:3857')
 
 let osmTileLayer = new TileLayer({
     source: new OSM(),
@@ -622,42 +303,18 @@ let osmTileLayer = new TileLayer({
 });
 map.addLayer(osmTileLayer);
 
-osmTileLayer.on('change:visible', function () {
-    if (osmTileLayer.getVisible()) {
-        metarVectorLayer.setVisible(false);
-        tafVectorLayer.setVisible(false);
-        airportVectorLayer.setVisible(false);
-        trafficVectorLayer.setVisible(false);
-    }
-});
 
 let pirepVectorLayer = new VectorLayer({
     source: new VectorSource(),
-    title: "PIREP",
+    title: "Pireps",
     visible: false,
-    type: "base"
+    zindex: 11
 });
 map.addLayer(pirepVectorLayer);
-pirepVectorLayer.on('change:visible', function () {
-    if (pirepVectorLayer.getVisible()) {
-        metarVectorLayer.setVisible(false);
-        tafVectorLayer.setVisible(false);
-        airportVectorLayer.setVisible(false);
-        trafficVectorLayer.setVisible(false);
-    }
-});
-
-let airportVectorLayer = new VectorLayer({
-    source: new VectorSource(), 
-    title: "All Airports",
-    visible: false,
-    zIndex: 11
-});
-map.addLayer(airportVectorLayer);
 
 let metarVectorLayer = new VectorLayer({
     source: new VectorSource(),
-    title: "METAR",
+    title: "Metars",
     visible: false,
     zIndex: 13
 });
@@ -665,7 +322,7 @@ map.addLayer(metarVectorLayer);
 
 let tafVectorLayer = new VectorLayer({
     source: new VectorSource(),
-    title: "TAF",
+    title: "TAFs",
     visible: false,
     zIndex: 13
 });
@@ -682,7 +339,6 @@ map.addLayer(trafficVectorLayer);
 /**
  * Metar popup object
  */
-
 const popupoverlay = new Overlay({
     element: popup,
     //autoPan: true,
@@ -725,18 +381,10 @@ window.closePopup = closePopup;
  */
 map.on('moveend', function(e) {
     let newZoom = map.getView().getZoom();
-    let inAnimation = false;
     if (currentZoom != newZoom) {
-        if (animationId !== null) {
-            inAnimation = true;
-            stopWeatherRadar();
-        }
         resizeDots(newZoom);
         currentZoom = newZoom;
         closePopup();
-        if (inAnimation) {
-            playWeatherRadar();
-        }
     }
 });
 
@@ -790,9 +438,6 @@ map.on('click', (evt) => {
         cat = "VFR";
     }
     let time = metar.observation_time;
-    // if (settings.uselocaltime) {
-    //     time = getLocalTime(time);
-    // }
     let tempC = metar.temp_c;
     let dewpC = metar.dewpoint_c;
     let temp = convertCtoF(metar.temp_c);
@@ -831,6 +476,11 @@ map.on('click', (evt) => {
             css = label.replace("#class", "metarvfr");
             break;
     }
+
+    let btncolors = getCategoryColors(cat);
+    let bgcolor = btncolors.bgcolor;
+    let fgcolor = btncolors.fgcolor;
+
     if (ident != "undefined") {
         let name = feature.get('station_name');
         let html = `<div id="#featurepopup"><pre><code><p>`
@@ -847,8 +497,8 @@ map.on('click', (evt) => {
         html += (skyconditions != undefined && skyconditions != "") ? `${skyconditions}` : "";
         html += (icingconditions != undefined && icingconditions != "") ? `${icingconditions}` : "";
         html += `</p></code></pre><span class="windsvg">${svg}</span>`;
+        html += `<button class="custom-popup-closer" onclick="closePopup()" style="background:${bgcolor}; color:${fgcolor};">close</button>`
         html += `<textarea id="rawdata" class="rawdata">${rawmetar}</textarea><br>`; 
-        html += `<br><br><button class="ol-popup-closer" onclick="closePopup()">close</button></div>`;
         popupcontent.innerHTML = html;  
     }
 }
@@ -859,23 +509,30 @@ map.on('click', (evt) => {
  */
 function displayTafPopup(feature) {
     let taf = feature.get("taf");
-    let rawtaf = taf["raw_text"];
+    let id = feature.get("ident");
+    let rawtaf = taf.raw_text;
+    let btncolors = getCategoryColors(taf.flight_category);
+    let bgcolor = btncolors.bgcolor;
+    let fgcolor = btncolors.fgcolor;
     let forecast = taf.forecast;
-    let outerhtml = `<div class="taftitle">` + 
-                        `<label class="taftitlelabel">Terminal Area Forecast - ${feature.get("ident")}</label>` +
-                    `</div>` +
-                    `<div class="taf">` + 
-                        `<pre><code>` +
-                        `<table class="tafmessage" id="taftable">` +
-                            `<tr class="tafbody">` + 
-                                `<td id="tafdata">###</td>` +
-                            `</tr>` +
-                        `</table>` +
-                        `</code></pre>` +                 
-                    `</div>` + 
-                    `<br /><br />`;
 
-    let html = "<div>";
+    let outerhtml = `<div class="taf-popup-container">` +
+                        `<div class="taf-popup-content">` +
+                            `<div class="taftitle">` + 
+                                `<label class="taftitlelabel">Terminal Area Forecast - ${id}</label>` +
+                            `</div>` +
+                            `<div class="taf">` + 
+                                `<pre><code>` +
+                                `<table class="tafmessage" id="taftable">` +
+                                    `<tr class="tafbody">` + 
+                                        `<td id="tafdata">###</td>` +
+                                    `</tr>` +
+                                `</table>` +
+                                `</code></pre>` +                 
+                            `</div>` + 
+                            `<br><br>`;
+
+    let html = "<div>"; // beginning of forecast div
     
     for (const item in forecast) {
         let value = forecast[item];
@@ -891,72 +548,15 @@ function displayTafPopup(feature) {
         }
     }
     
-    html += `</p></div><textarea class="rawdata">${rawtaf}</textarea><br />`;
-    html += `<p><button class="ol-popup-closer" onclick="closePopup()">close</button></p></div>`;
-    let innerhtml = outerhtml.replace("###", html);
+    let temphtml = outerhtml.replace("###", html) + `</p></div>`; // end of forecast div
+    
+    let footerhtml = `<div class="taf-popup-footer">`; // beginning of footer div
+    footerhtml +=        `<button class="custom-popup-closer" onclick="closePopup()" style="background:${bgcolor}; color:${fgcolor};">close</button>`;
+    footerhtml +=        `<textarea id="rawdata" class="rawdata">${rawtaf}</textarea><br>`;
+    footerhtml +=    `</div>`;  // end of footer div
+    footerhtml += `</div>`; // end of taf-popup-container div
+    let innerhtml = temphtml + footerhtml;
     popupcontent.innerHTML = innerhtml;
-}
-
-/**
- * Parse forcast fields from metars or tafs
- * @param {string} rawfieldname - the object key before "cleaning" underscores, etc.
- * @param {object} fieldvalue json object corresponding to the key
- * @returns 
- */
-function parseForecastField(rawfieldname, fieldvalue) {
-    let fieldname = tafFieldKeymap.get(rawfieldname);
-    let html = "";
-    let formattedvalue = "";
-    switch (rawfieldname) {
-        case "fcst_time_from":
-            let thistime = fieldvalue;
-            if (settings.uselocaltime) {
-                thistime = getLocalTime(fieldvalue);
-            }
-            html = `<label class="fcstlabel"><b>${thistime}</b></label></b><br />`;
-            break;
-        case "fcst_time_to": // I'm going to ignore this field to save space on the popup
-            //html = `&nbspto&nbsp<b>${fieldvalue}</b></label><br />`
-            //html = `<label class="fcstlabel">${formattedvalue}</label><br />`;
-            break;
-        case "change_indicator":
-            let changevalue = getWeatherAcronymDescription(fieldvalue);
-            html = `<label class="taflabel">${fieldname}: <b>${changevalue}</b></label><br />`;
-            break;
-        case "temperature":
-        case "time_becoming":
-        case "probability":
-        case "wind_speed_kt":
-        case "wind_gust_kt":
-        case "wind_shear_hgt_ft_agl":
-        case "wind_shear_speed_kt":
-        case "altim_in_hg":
-        case "vert_vis_ft":
-        case "wx_string":
-            if (fieldname === "wx_string") {
-                formattedvalue = decodeWxDescriptions(fieldvalue);
-                html = `<label class="tafwxlabel">${fieldname}: <b>${formattedvalue}</b></label><br />`;
-            }
-            else {
-                html = `<label class="taflabel">${fieldname}: <b>${fieldvalue}</b></label><br />`;
-            }
-            break;
-        case "sky_condition":
-            formattedvalue = decodeSkyCondition(fieldvalue);
-            html = `<label class="tafskyheader">${fieldname}</label><br />${formattedvalue}`;
-            break;
-        case "turbulence_condition":
-        case "icing_condition":
-            formattedvalue = decodeIcingOrTurbulenceCondition(fieldvalue);
-            html = `<label class="tafskyheader">${fieldname}</label><br />${formattedvalue}`;
-            break;
-        case "wind_dir_degrees":
-        case "wind_shear_dir_degrees":
-            html = `<label class="taflabel">${fieldname}: <b>${fieldvalue} Degrees</b></label><br />`;
-            break;
-
-    }
-    return html;
 }
 
 /**
@@ -964,10 +564,10 @@ function parseForecastField(rawfieldname, fieldvalue) {
  * @param {object} feature: the pirep the user clicked on
  */
  function displayPirepPopup(feature) {
-    let aircraftreport = feature.get("pirep");
-    let rawaircraftreport = aircraftreport["raw_text"];
+    let pirep = feature.get("pirep");
+    let rawpirep = pirep.get("raw_text");
     let outerhtml = `<div class="taftitle">` + 
-                        `<label class="taftitlelabel">${aircraftreport.report_type} FROM AIRCRAFT: ${aircraftreport.aircraft_ref}</label><p></p>` +
+                        `<label class="taftitlelabel">${pirep.report_type} FROM AIRCRAFT: ${pirep.aircraft_ref}</label><p></p>` +
                     `</div>` +
                     `<div class="taf">` + 
                         `<pre><code>` +
@@ -983,8 +583,8 @@ function parseForecastField(rawfieldname, fieldvalue) {
     let html = "<div>";
     let pireplabel = `<label class="pirepitem">`
     let thistime = "";
-    for (const pirepkey in aircraftreport) {
-        let pirepvalue = aircraftreport[pirepkey];
+    for (const pirepkey in pirep) {
+        let pirepvalue = pirep[pirepkey];
         let fieldname = getFieldDescription(pirepkey);
         switch (pirepkey) {
             case "receipt_time":
@@ -1053,10 +653,72 @@ function parseForecastField(rawfieldname, fieldvalue) {
                 break;
         }
     }
-    html += `</p></div><textarea class="rawdata">${rawaircraftreport}</textarea>`;
-    html += `<p><button class="ol-popup-closer" onclick="closePopup()">close</button></p></div>`;
+    html += `<button class="custom-popup-closer" onclick="closePopup()" style="background:${bgcolor}; color:${fgcolor};">close</button>`
+    html += `<textarea id="rawdata" class="rawdata">${rawpirep}</textarea><br>`; 
     let innerhtml = outerhtml.replace("###", html);
     popupcontent.innerHTML = innerhtml;
+}
+
+/**
+ * Parse forcast fields from metars or tafs
+ * @param {string} rawfieldname - the object key before "cleaning" underscores, etc.
+ * @param {object} fieldvalue json object corresponding to the key
+ * @returns 
+ */
+function parseForecastField(rawfieldname, fieldvalue) {
+    let fieldname = tafFieldKeymap.get(rawfieldname);
+    let html = "";
+    let formattedvalue = "";
+    switch (rawfieldname) {
+        case "fcst_time_from":
+            let thistime = fieldvalue;
+            if (settings.uselocaltime) {
+                thistime = getLocalTime(fieldvalue);
+            }
+            html = `<label class="fcstlabel"><b>${thistime}</b></label></b><br />`;
+            break;
+        case "fcst_time_to": // I'm going to ignore this field to save space on the popup
+            //html = `&nbspto&nbsp<b>${fieldvalue}</b></label><br />`
+            //html = `<label class="fcstlabel">${formattedvalue}</label><br />`;
+            break;
+        case "change_indicator":
+            let changevalue = getWeatherAcronymDescription(fieldvalue);
+            html = `<label class="taflabel">${fieldname}: <b>${changevalue}</b></label><br />`;
+            break;
+        case "temperature":
+        case "time_becoming":
+        case "probability":
+        case "wind_speed_kt":
+        case "wind_gust_kt":
+        case "wind_shear_hgt_ft_agl":
+        case "wind_shear_speed_kt":
+        case "altim_in_hg":
+        case "vert_vis_ft":
+        case "wx_string":
+            if (fieldname === "wx_string") {
+                formattedvalue = decodeWxDescriptions(fieldvalue);
+                html = `<label class="tafwxlabel">${fieldname}: <b>${formattedvalue}</b></label><br />`;
+            }
+            else {
+                html = `<label class="taflabel">${fieldname}: <b>${fieldvalue}</b></label><br />`;
+            }
+            break;
+        case "sky_condition":
+            formattedvalue = decodeSkyCondition(fieldvalue);
+            html = `<label class="tafskyheader">${fieldname}</label><br />${formattedvalue}`;
+            break;
+        case "turbulence_condition":
+        case "icing_condition":
+            formattedvalue = decodeIcingOrTurbulenceCondition(fieldvalue);
+            html = `<label class="tafskyheader">${fieldname}</label><br />${formattedvalue}`;
+            break;
+        case "wind_dir_degrees":
+        case "wind_shear_dir_degrees":
+            html = `<label class="taflabel">${fieldname}: <b>${fieldvalue} Degrees</b></label><br />`;
+            break;
+
+    }
+    return html;
 }
 
 /**
@@ -1284,10 +946,9 @@ function processTraffic(jsondata) {
     "Bearing":92.7782277589171,"Distance":9.616803034808295e+06}
     --------------------------------------------------------------------------------------------*/
     
-    console.context().log(jsondata);
+    console.log(jsondata);
 
-    trafficFeatures.clear();
-    for (let [key, item] of trafficMap) {
+    for (const key in jsondata) {
         let scalesz = getScaleSize();
         let geom = new Point(fromLonLat([item.Lng, item.Lat]));
         
@@ -1296,7 +957,7 @@ function processTraffic(jsondata) {
 
         let trafficmarker = new Icon({
             crossOrigin: "anonymous",
-            src: `${URL_SERVER}/img/${settings.trafficimage}`,
+            src: `/images/${settings.trafficimage}`,
             offset: [0,0],
             opacity: 1,
             scale: .08,
@@ -1316,8 +977,7 @@ function processTraffic(jsondata) {
         
         //trafficmarker.style.transform = "rotate(" + item.Track + "deg)";
         trafficFeature.setId(key);
-        trafficFeatures.push(trafficFeature);
-        trafficFeature.changed();
+        // TODO: Add trafficFeature to the map
     }
 }
 
@@ -1333,7 +993,7 @@ function processMetar(metar) {
         let popupSvg = "";
         let mapDotSvg = "";
         try { 
-            popupSvg = rawMetarToSVG(metar, 150, 150, settings.usemetricunits);
+            popupSvg = rawWeatherTextToSVG(metar, 150, 150, settings.usemetricunits);
             mapDotSvg = getWindBarbSvg(95, 95, metar); 
         }
         catch { }
@@ -1356,6 +1016,10 @@ function processMetar(metar) {
             image: metarmarker
         }));
         metarFeature.setId(metar.station_id);
+        const oldFeature = metarVectorLayer.getSource().getFeatureById(metar.station_id);
+        if (oldFeature) {
+            metarVectorLayer.getSource().removeFeature(oldFeature);
+        }
         metarVectorLayer.getSource().addFeature(metarFeature); 
     }
     catch(error) {
@@ -1365,7 +1029,7 @@ function processMetar(metar) {
 
 /**
  * Place taf feature objects on the map
- * @param {object} taf: JSON object with LOTS of tafs 
+ * @param {object} taf: JSON object
  */
 function processTaf(taf) {
     try {
@@ -1379,6 +1043,10 @@ function processTaf(taf) {
             image: tafMarker
         }));
         tafFeature.setId(taf.station_id);
+        const oldFeature = tafVectorLayer.getSource().getFeatureById(taf.station_id);
+        if (oldFeature) {
+            tafVectorLayer.getSource().removeFeature(oldFeature);
+        }
         tafVectorLayer.getSource().addFeature(tafFeature)
     }
     catch (error){
@@ -1406,7 +1074,13 @@ function processTaf(taf) {
         pirepFeature.setStyle(new Style({
             image: pirepMarker
         }));
-        pirepFeature.setId(pirep.aircraft_ref);
+
+        let id = pirep.aircraft_ref ? pirep.aircraft_ref : pirep.station_id;
+        pirepFeature.setId(id);
+        const oldFeature = pirepVectorLayer.getSource().getFeatureById(id);
+        if (oldFeature) {
+            pirepVectorLayer.getSource().removeFeature(oldFeature);
+        }
         pirepVectorLayer.getSource().addFeature(pirepFeature);
     }
     catch (error){
@@ -1432,10 +1106,6 @@ function resizeDots(newzoom) {
                 metarMarkers[i].setStyle(style); // update the feature's style
             }
         }
-        // //pirepMarker.setScale(newscale * .08);
-        // airportMarker.setScale(newscale);
-        // heliportMarker.setScale(newscale);
-        //tafMarker.setScale(newscale * .2);
         resizing = false;
     }
 }
@@ -1483,179 +1153,12 @@ function getScaleSize() {
     return scale;
 }
 
-// /**
-//  * Tile source for animated weather
-//  */
-// animatedWxTileSource = new TileWMS({
-//     attributions: ['Iowa State University'],
-//     url: settings.animatedwxurl,
-//     params: {'LAYERS': 'nexrad-n0r-wmst'},
-// });
-
-
-// /**
-//  * Add tile data for all layers
-//  */
-// let extent = transformExtent(viewextent, 'EPSG:4326', 'EPSG:3857')
-// debugTileLayer = new TileLayer({
-//     title: "Debug",
-//     type: "overlay",
-//     source: new TileDebug(),
-//     visible: false,
-//     extent: extent,
-//     zIndex: 12
-// });
-
-// animatedWxTileLayer = new TileLayer({
-//     title: "Animated Weather",
-//     extent: extent,
-//     source: animatedWxTileSource,
-//     visible: false,
-//     zIndex: 11
-// });
-
-// metarVectorSource = new VectorSource({
-//     features: metarFeatures
-// });
-// metarVectorLayer = new VectorLayer({
-//     title: "Metars",
-//     source: metarVectorSource,
-//     visible: false,
-//     extent: extent,
-//     zIndex: 12
-// }); 
-
-// airportVectorSource = new VectorSource({
-//     features: airportFeatures
-// });
-// airportVectorLayer = new VectorLayer({
-//     title: "All Airports",
-//     source: airportVectorSource,
-//     visible: false,
-//     extent: extent,
-//     zIndex: 11
-// }); 
-
-// tafVectorSource = new VectorSource({
-//     features: tafFeatures
-// });
-// tafVectorLayer = new VectorLayer({
-//     title: "TAFs",
-//     source: tafVectorSource,
-//     visible: false,
-//     extent: extent,
-//     zIndex: 13
-// });
-
-// pirepVectorSource = new VectorSource({
-//     features: pirepFeatures
-// });
-// pirepVectorLayer = new VectorLayer({
-//     title: "Pireps",
-//     source: pirepVectorSource,
-//     visible: false,
-//     extent: extent, 
-//     zIndex: 14
-// });
-
-// if (settings.usestratux) {
-//     trafficVectorSource = new VectorSource({
-//         features: trafficFeatures
-//     });
-//     trafficVectorLayer = new VectorLayer({
-//         title: "Traffic",
-//         source: trafficVectorSource,
-//         visible: false,
-//         extent: extent,
-//         zIndex: 14
-//     });
-// }
-
-// if (settings.useOSMonlinemap) {
-//     const osmOnlineTileLayer = new TileLayer({
-//         title: "Open Street Maps",
-//         type: "overlay",
-//         source: new OSM(),
-//         visible: true,
-//         extent: extent //,
-//         //zIndex: 8
-//     });
-//     map.addLayer(osmOnlineTileLayer);
-// }
-
-// if (settings.debug) {
-//     map.addLayer(debugTileLayer);
-// }
-
-// map.addLayer(airportVectorLayer);
-// map.addLayer(metarVectorLayer); 
-// map.addLayer(tafVectorLayer);
-// map.addLayer(pirepVectorLayer);
-// if (settings.usestratux) {
-//     map.addLayer(trafficVectorLayer);
-// }
-// map.addLayer(animatedWxTileLayer);
-
-// dblist.reverse();
-// Object.entries(dblist).forEach((db) => {
-//     let dbname = db[1];
-//     let metadata = {};
-//     for (var i = 0; i < metadatasets.length; i++) {
-//         if (metadatasets[i]["key"] === dbname) {
-//             metadata = metadatasets[i]["value"];
-//             break;
-//         } 
-//     }
-
-//     let zOrder = 10;
-//     if (dbname === "terminal") {
-//         zOrder = 12;
-//     }
-
-//     if (JSON.stringify(metadata) != "{}") {
-//         let dburl = URL_GET_TILE.replace("{dbname}", dbname);
-//         var layer = new TileLayer({
-//             title: metadata.description.replace(" Chart", ""),
-//             type: metadata.type,
-//             source: new XYZ({
-//                 url: dburl,
-//                 maxzoom: metadata.maxzoom,
-//                 minzoom: metadata.minzoom,
-//                 attributions: settings.showattribution == true ? metadata.attribution : "",
-//                 attributionsCollapsible: false
-//             }),
-//             visible: false,
-//             extent: extent,
-//             zIndex: zOrder
-//         });
-//         map.addLayer(layer);
-//     } 
-// });
-
-
 
 const layerSwitcher = new LayerSwitcher({
     tipLabel: 'Layers', 
     groupSelectStyle: 'children'
 });
 map.addControl(layerSwitcher);
-
-// airportVectorLayer.on('change:visible', () => {
-//     let visible = airportVectorLayer.get('visible');
-//     regioncontrol.style.visibility = visible ? 'visible' : 'hidden';
-//     if (visible) {
-//         regionselect.options[0].selected = true;
-//         regionselect.value = lastcriteria; 
-//         selectFeaturesByCriteria()
-//         closePopup();
-//     }
-// });
-
-// animatedWxTileLayer.on('change:visible', () => {
-//     let visible = animatedWxTileLayer.get('visible');
-//     animatecontrol.style.visibility = visible ? 'visible' : 'hidden';
-//     visible ? playWeatherRadar() : stopWeatherRadar()
-// });
 
 /**
  * This allows a clicked feature to raise an event
@@ -1681,63 +1184,6 @@ if (settings.savepositionhistory) {
 function getTimeThreeHoursAgo() {
     return new Date(Math.round(Date.now() / 3600000) * 3600000 - 3600000 * 3);
 }
-
-/**
- * For displaying the animation time clock
- */
-// function updateInfo() {
-//     const el = document.getElementById('info');
-//     el.innerHTML = getLocalTime(startDate.toString());
-// }
-
-// /**
-//  * Update the time clock  
-//  */
-// function setTime() {
-//     startDate.setMinutes(startDate.getMinutes() + 15);
-//     if (startDate > Date.now()) {
-//       startDate = getTimeThreeHoursAgo();
-//     }
-//     animatedWxTileSource.updateParams({'TIME': startDate.toISOString()});
-//     updateInfo();
-// }
-// setTime();
-
-/**
- * Stop the weather radar animation
- */
-const stopWeatherRadar = function () {
-    if (animationId !== null) {
-      window.clearInterval(animationId);
-      animationId = null;
-    }
-};
-
-/**
- * Start the weather radar animation
- */
-const playWeatherRadar = function () {
-    stop();
-    animationId = window.setInterval(setTime, 1000 / frameRate);
-};
-
-/**
- * Animation start button element and event listener
- */
-//const startButton = document.getElementById('play');
-//startButton.addEventListener('click', playWeatherRadar, false);
-
-/**
- * Animation stop button element and event listener
- */
-//const stopButton = document.getElementById('pause');
-//stopButton.addEventListener('click', stopWeatherRadar, false);
-
-/**    fieldvalues.set(key, `<td>${subobj}</td>`);
-            
- * Sets an initial time in the timeclock element
- */
-//updateInfo();
 
 /**
  * Convert statute miles to desired unit 
@@ -2854,49 +2300,40 @@ var TYPES = ["METAR", "SPECI"];
 
 /**
  * Parses a raw metar and binds or creates a METAR object
- * @param metarString Raw METAR string
- * @param ref Reference to a METAR object. This objects contents will be shallow replaced with the Raw metars values.
+ * @param weathertext Raw Weather text string
+ * @param ref Reference to a WeatherProcessItem object. This object fields will be shallow replaced with the Raw weather values.
  *  Meaning values will be updated or added but not removed.
  * @returns
  */
-function parseMetar(metarString, ref) {
-    var station = parseStation(metarString);
-    var time = parseDate(metarString);
+function parseWeatherText(weathertext, ref) {
+    var station = parseStation(weathertext);
+    var time = parseDate(weathertext);
     if (ref != null) {
         ref.station = station;
         ref.time = time;
     }
     else {
-        ref = new METAR(undefined, station, time);
+        ref = new WeatherProcessItem(undefined, station, time);
     }
-    //Parse Auto
-    ref.auto = parseAuto(metarString);
-    //Parse Wind
-    ref.wind = parseWind(metarString);
-    //Parse CAVOK
-    ref.cavok = parseCavok(metarString);
-    //Parse Visablility
-    ref.visibility = parseVisibility(metarString);
-    //Parse Runway VIS
-    //TODO
-    //Parse Weather
-    ref.weather = parseWeather(metarString);
-    //Parse Clouds
-    ref.clouds = parseClouds(metarString);
-    //Parse Temp Point Internations 
-    var temps_int = parseTempInternation(metarString);
+    ref.auto = parseAuto(weathertext);
+    ref.wind = parseWind(weathertext);
+    ref.cavok = parseCavok(weathertext);
+    ref.visibility = parseVisibility(weathertext);
+    ref.weather = parseWeather(weathertext);
+    ref.clouds = parseClouds(weathertext);
+    var temps_int = parseTempInternation(weathertext);
     if (temps_int != null) {
         ref.temperature = temps_int[0];
         ref.dewpoint = temps_int[1];
     }
-    //Parse Temp North american Will overwirte international since it is more precise
-    var temps_ne = parseTempNA(metarString);
+    
+    var temps_ne = parseTempNA(weathertext);
     if (temps_ne != null) {
         ref.temperature = temps_ne[0];
         ref.dewpoint = temps_ne[1];
     }
-    //Parse Altimeter
-    ref.altimeter = parseAltimeter(metarString);
+    
+    ref.altimeter = parseAltimeter(weathertext);
     return ref;
 }
 
@@ -3100,72 +2537,61 @@ function parseAltimeter(metar) {
     }
 }
 
-//var Metar_1 = require("./Metar");
-//var Cloud_1 = require("./parts/Cloud");
-//var Weather_1 = require("./parts/Weather");
-//var Wind_1 = require("./parts/Wind");
-/**
- * Extracted Metar message
- */
-var MetarPlot = /** @class */ (function () {
-    function MetarPlot() {
-    }
-    return MetarPlot;
-}());
 
 /**
- * Turns a raw METAR to an SVG image
- * @param rawMetar RAW metar
+ * Turns a Weather JSON object into an SVG image
+ * @param weatherobject weather JSON object
  * @param width css width of svg
  * @param height css height of svg
  * @param metric true for metric units(m, hPa, mps), false for north american units (miles, inHg, Kts)
  * @returns
  */
-function rawMetarToSVG(metar, width, height, metric) {
-    var plot = rawMetarToMetarPlot(metar, metric);
+function rawWeatherTextToSVG(weatherobject, width, height, metric) {
+    var plot = rawWeatherTextToWeatherPlot(weatherobject, metric);
     return metarToSVG(plot, width, height);
 }
 
 /**
  *
- * @param rawMetar raw metar string
+ * @param weatherobject weather JSON object
  * @param metric true for metric units(m, hPa, mps), false for north american units (miles, inHg, Kts)
  * @returns
  */
-function rawMetarToMetarPlot(metarObj, metric) {
+function rawWeatherTextToWeatherPlot(weatherobject, metric) {
     var _a;
-    let rawMetar = metarObj.raw_text;
-    var metar = new METAR(rawMetar, metarObj.station_id, metarObj.observation_time);
-    var wx = metar.weather.map(function (weather) { return weather.abbreviation; }).join("");
+    let rawMetar = weatherobject.raw_text;
+    let time = weatherobject.timestamp;
+    var weatherItem = new WeatherProcessItem(rawMetar, weatherobject.station_id, time);
+    var wx = weatherItem.weather.map(function (weather) { return weather.abbreviation; }).join("");
     //Metric converion
     var pressure;
     var vis = undefined;
-    var temp = metar.temperature;
-    var dp = metar.dewpoint;
+    var temp = weatherItem.temperature;
+    var dp = weatherItem.dewpoint;
     if (metric) {
-        pressure = (metar.altimeter != null) ? Math.round(metar.altimeter * 33.86) : undefined;
-        if (metar.visibility != null) {
-            vis = metar.visibility > 9999 ? 9999 : Math.round(metar.visibility);
+        pressure = (weatherItem.altimeter != null) ? Math.round(weatherItem.altimeter * 33.86) : undefined;
+        if (weatherItem.visibility != null) {
+            vis = weatherItem.visibility > 9999 ? 9999 : Math.round(weatherItem.visibility);
         }
     }
     else {
         temp = cToF(temp);
         dp = cToF(dp);
-        pressure = metar.altimeter;
-        vis = milePrettyPrint((_a = metar.visibility) !== null && _a !== void 0 ? _a : -1);
+        pressure = weatherItem.altimeter;
+        vis = milePrettyPrint((_a = weatherItem.visibility) !== null && _a !== void 0 ? _a : -1);
     }
     return {
         metric: metric !== null && metric !== void 0 ? metric : false,
         visiblity: vis,
         temp: temp,
         dew_point: dp,
-        station: metar.station,
-        wind_direction: (typeof metar.wind.direction === "number") ? metar.wind.direction : undefined,
-        wind_speed: metar.wind.speed,
-        gust_speed: metar.wind.gust,
+        station: weatherItem.station,
+        wind_direction: (typeof weatherItem.wind.direction === "number") ? weatherItem.wind.direction : undefined,
+        wind_speed: weatherItem.wind.speed,
+        gust_speed: weatherItem.wind.gust,
         wx: wx,
         pressure: pressure,
-        coverage: determineCoverage(metar)
+        coverage: determineCoverage(weatherItem)
     };
 }
 
@@ -3182,6 +2608,21 @@ function milePrettyPrint(meters) {
     var text = (Math.round(miles * 4) / 4).toFixed(2).toString();
     return text.replace(".00", "");
 }
+
+function getCategoryColors(category) {
+    switch (category) {
+        case "IFR":
+            return {bgcolor: "#ff0000", fgcolor: "#ffffff"};
+        case "LIFR":
+            return {bgcolor: "#ff00ff", fgcolor: "#000000"};
+        case "MVFR":
+            return {bgcolor: "#0000cd", fgcolor: "#ffffff"};
+        case "VFR":
+        default:
+            return {bgcolor: "#12f23c", fgcolor: "#000000"};
+    }
+}
+
 /**
  * Determines the coverage symbol
  * @param metar
@@ -3270,14 +2711,14 @@ function getWindBarbSvg(width, height, metar) {
                 catcolor = "12f23c";
                 break;
         }
-        svg = `<svg xmlns="http://www.w3.org/2000/svg" ` +
-                  `width="${width}" height="${height}" ` + 
-                  `viewBox="0 0 500 500">` + 
-                  (0, genWind)(thismetar) + 
-                  `<g id="clr">` + 
+    svg = `<svg xmlns="http://www.w3.org/2000/svg" ` +
+                `width="${width}" height="${height}" ` + 
+                `viewBox="0 0 500 500">` + 
+                (0, genWind)(thismetar) + 
+                `<g id="clr">` + 
                        `<circle cx="250" cy="250" r="30" stroke="#000000" stroke-width="5" fill="#${catcolor}"/>` +
-                  `</g>` + 
-               `</svg>`;
+                `</g>` + 
+            `</svg>`;
     }
     catch {}
     return svg; 

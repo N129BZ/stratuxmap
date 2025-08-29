@@ -211,6 +211,23 @@ html, body {
     font-size: smaller;
     width: 100%;
 }
+.taf-popup-content {
+    overflow-y: auto;
+    flex: 1 1 auto;
+    /* Remove excessive padding or margin at the bottom */
+    margin-bottom: 0;
+    padding-bottom: 0;
+}
+.taf-popup-footer {
+    flex: 0 0 auto;
+    padding-top: 4px;    /* Small space above footer */
+    margin-top: 0;       /* Remove extra margin */
+    background: #fff;
+    border-top: 1px solid #ccc;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+}
 .pirepitem {
     background-color:lightyellow;
     color:#000000;
@@ -296,14 +313,15 @@ html, body {
     margin-left: -11px;
 }
 .ol-popup-closer {
+    visibility: hidden;
     text-decoration:none;
-    position: absolute;
+    position: fixed; 
+    bottom: 30px;
+    left: -40px;
     font-family: Arial, Helvetica, sans-serif;
     font-weight: bolder;
     background-color: lightgray;
     color:darkslateblue;
-    top: 90%;
-    left: 10px;
 }
 .ol-airport-closer {
     text-decoration:none;
@@ -314,6 +332,21 @@ html, body {
     color:darkslateblue;
     top: 72%;
     left: 10px;
+}
+.custom-popup-closer {
+    font-family: Arial, Helvetica, sans-serif;
+    font-weight: bold;
+    border: 1px solid #ccc;
+    border-radius: 5px;
+    padding: 4px 12px;
+    float: right;
+    margin-bottom: 8px;
+}
+.footer {
+    position: fixed; 
+    left: 0px;
+    bottom: 0px;
+    height: 30px;
 }
 .dot {
       width:45px;
