@@ -633,7 +633,7 @@ osmTileLayer.on('change:visible', function () {
 
 let pirepVectorLayer = new VectorLayer({
     source: new VectorSource(),
-    title: "Pireps",
+    title: "PIREP",
     visible: false,
     type: "base"
 });
@@ -657,7 +657,7 @@ map.addLayer(airportVectorLayer);
 
 let metarVectorLayer = new VectorLayer({
     source: new VectorSource(),
-    title: "Metars",
+    title: "METAR",
     visible: false,
     zIndex: 13
 });
@@ -665,7 +665,7 @@ map.addLayer(metarVectorLayer);
 
 let tafVectorLayer = new VectorLayer({
     source: new VectorSource(),
-    title: "TAFs",
+    title: "TAF",
     visible: false,
     zIndex: 13
 });
@@ -836,19 +836,19 @@ map.on('click', (evt) => {
         let html = `<div id="#featurepopup"><pre><code><p>`
         html +=    `${css}${name}\n${ident} - ${cat}</label><p></p>`;
         html +=   (time != "" && time != "undefined") ? `Time:&nbsp<b>${time}</b><br/>` : "";
-        html +=   (temp != "" && temp != "undefined") ? `Temp:&nbsp<b>${tempC} °C</b> (${temp})<br/>` : "";
-        html +=   (dewp != "" && dewp != "undefined") ?`Dewpoint:&nbsp<b>${dewpC} °C</b> (${dewp})<br/>` : "";
-        html += (windir != "" && windir != "undefined") ? `Wind Direction:&nbsp<b>${windir}°</b><br/>` : "";
-        html += (winspd != "" && winspd != "undefined") ? `Wind Speed:&nbsp<b>${winspd}&nbspkt</b><br/>` : "";
-        html += (wingst != "" && wingst != "undefined") ? `Wind Gust:&nbsp<b>${wingst}&nbspkt</b><br/>` : "";
-        html +=  (altim != "" && altim != "undefined") ? `Altimeter:&nbsp<b>${altim}&nbsphg</b><br/>` : "";
-        html +=    (vis != "" && vis != "undefined") ? `Horizontal Visibility:&nbsp<b>${vis}</b><br/>` : "";
-        html += (wxcode != "" && wxcode != "undefined") ? `Weather:&nbsp<b>${wxcode}</b><br/>`: "";
+        html +=   (temp != "" && temp != "undefined") ? `Temp:&nbsp<b>${tempC} °C</b> (${temp})<br>` : "";
+        html +=   (dewp != "" && dewp != "undefined") ?`Dewpoint:&nbsp<b>${dewpC} °C</b> (${dewp})<br>` : "";
+        html += (windir != "" && windir != "undefined") ? `Wind Direction:&nbsp<b>${windir}°</b><br>` : "";
+        html += (winspd != "" && winspd != "undefined") ? `Wind Speed:&nbsp<b>${winspd}&nbspkt</b><br>` : "";
+        html += (wingst != "" && wingst != "undefined") ? `Wind Gust:&nbsp<b>${wingst}&nbspkt</b><br>` : "";
+        html +=  (altim != "" && altim != "undefined") ? `Altimeter:&nbsp<b>${altim}&nbsphg</b><br>` : "";
+        html +=    (vis != "" && vis != "undefined") ? `Horizontal Visibility:&nbsp<b>${vis}</b><br>` : "";
+        html += (wxcode != "" && wxcode != "undefined") ? `Weather:&nbsp<b>${wxcode}</b><br>`: "";
         html += (skyconditions != undefined && skyconditions != "") ? `${skyconditions}` : "";
         html += (icingconditions != undefined && icingconditions != "") ? `${icingconditions}` : "";
         html += `</p></code></pre><span class="windsvg">${svg}</span>`;
-        html += `<textarea id="rawdata" class="rawdata">${rawmetar}</textarea><br />`; 
-        html += `<p><button class="ol-popup-closer" onclick="closePopup()">close</button></p></div>`;
+        html += `<textarea id="rawdata" class="rawdata">${rawmetar}</textarea><br>`; 
+        html += `<br><br><button class="ol-popup-closer" onclick="closePopup()">close</button></div>`;
         popupcontent.innerHTML = html;  
     }
 }
@@ -1355,11 +1355,8 @@ function processMetar(metar) {
         metarFeature.setStyle(new Style({
             image: metarmarker
         }));
-        //metarMarkers.push(metarmarker);
         metarFeature.setId(metar.station_id);
-        //metarFeatures.push(metarFeature);
-        metarVectorLayer.getSource().addFeature(metarFeature); // <-- PATCH: add feature to layer source
-        //metarFeature.changed();
+        metarVectorLayer.getSource().addFeature(metarFeature); 
     }
     catch(error) {
         console.log(error.message);
@@ -1368,20 +1365,21 @@ function processMetar(metar) {
 
 /**
  * Place taf feature objects on the map
- * @param {object} tafsobject: JSON object with LOTS of tafs 
+ * @param {object} taf: JSON object with LOTS of tafs 
  */
-function processTaf(tafsobject) {
+function processTaf(taf) {
     try {
-        let taffeature = new Feature({
+        let tafFeature = new Feature({
             ident: taf.station_id,
             taf: taf,
             datatype: "taf",
             geometry: new Point(fromLonLat([taf.longitude, taf.latitude]))
         });
-        taffeature.setId(taf.station_id);
-        taffeature.setStyle(tafStyle);
-        tafFeatures.push(taffeature);
-        taffeature.changed();
+        tafFeature.setStyle(new Style({
+            image: tafMarker
+        }));
+        tafFeature.setId(taf.station_id);
+        tafVectorLayer.getSource().addFeature(tafFeature)
     }
     catch (error){
         console.log(error.message);
@@ -1390,36 +1388,26 @@ function processTaf(tafsobject) {
 
 /**
  * Place pirep features on the map
- * @param {object} pirepsobject: JSON object with LOTS of pireps 
+ * @param {object} pirep: JSON object with LOTS of pireps 
  */
- function processPirep(pirepsobject) {
+ function processPirep(pirep) {
     try {
         // generate a "pseudo-heading" to use if wind dir is absent
         let heading = Math.random()*Math.PI*2;
         if (pirep.wind_dir_degrees) {
             heading = (pirep.wind_dir_degrees * 0.0174533);
         }
-        let pirepfeature = new Feature({
+        let pirepFeature = new Feature({
             ident: pirep.aircraft_ref,
             pirep: pirep,
             datatype: "pirep",
             geometry: new Point(fromLonLat([pirep.longitude, pirep.latitude])),
         });
-        
-        pirepfeature.setId(pirep.aircraft_ref);
-        pirepfeature.setStyle(new Style({
-                                image: new Icon({
-                                    crossOrigin: 'anonymous',
-                                    src: `${URL_SERVER}/img/airplane.svg`,
-                                    //size:[85, 85],
-                                    offset: [0,0],
-                                    opacity: 1,
-                                    scale: .05,
-                                    rotation: heading
-                                })
-                            })
-        );
-        pirepFeatures.push(pirepfeature);
+        pirepFeature.setStyle(new Style({
+            image: pirepMarker
+        }));
+        pirepFeature.setId(pirep.aircraft_ref);
+        pirepVectorLayer.getSource().addFeature(pirepFeature);
     }
     catch (error){
         console.log(error.message);
@@ -2727,8 +2715,8 @@ let RECENT_WEATHER = {
     REVA: "Volcanic Ash",
 };
 
-var GUST_WIDTH = 5;
-var WS_WIDTH = 5;
+var GUST_WIDTH = 8;
+var WS_WIDTH = 8;
 /**
  * Creates a windbarb for the metar
  * @param metar
@@ -2756,7 +2744,7 @@ function genWind(metar) {
             `</g>`;
         wind =
             `<g id="windBarb" transform="rotate(${WDD}, 250, 250)">` + 
-            `<line stroke-width="5" y1="225" x1="250" y2="90" x2="250" stroke="#000" fill="none"/>` +
+            `<line stroke-width="8" y1="225" x1="250" y2="90" x2="250" stroke="#000" fill="none"/>` +
                 `${genBarb1((_f = WSP) !== null && _f !== void 0 ? _f : 0, false)} ` + 
                 `${genBarb2((_g = WSP) !== null && _g !== void 0 ? _g : 0, false)} ` + 
                 `${genBarb3((_h = WSP) !== null && _h !== void 0 ? _h : 0, false)} ` + 
@@ -3228,7 +3216,7 @@ function determineCoverage(metar) {
  */
  function metarToSVG(metar, width, height) {
     var _a, _b, _c, _d, _e, _f;
-    var VIS = (_a = metar.visablity) !== null && _a !== void 0 ? _a : "";
+    var VIS = (_a = metar.visiblity) !== null && _a !== void 0 ? _a : "";
     var TMP = (_b = metar.temp) !== null && _b !== void 0 ? _b : "";
     var DEW = (_c = metar.dew_point) !== null && _c !== void 0 ? _c : "";
     var STA = (_d = metar.station) !== null && _d !== void 0 ? _d : "";
@@ -3287,7 +3275,7 @@ function getWindBarbSvg(width, height, metar) {
                   `viewBox="0 0 500 500">` + 
                   (0, genWind)(thismetar) + 
                   `<g id="clr">` + 
-                       `<circle cx="250" cy="250" r="30" stroke="#000000" stroke-width="3" fill="#${catcolor}"/>` +
+                       `<circle cx="250" cy="250" r="30" stroke="#000000" stroke-width="5" fill="#${catcolor}"/>` +
                   `</g>` + 
                `</svg>`;
     }

@@ -5,25 +5,27 @@ import { attachAirportInfo } from './airportInfo.js'
 
 /**
  * Converts a Stratux METAR object to FAA METAR format
- * @param {Object} stratuxObj - The raw Stratux METAR object
+ * @param {Object} stratuxObject - The raw Stratux METAR object
  * @param {Object} [stationInfo] - Optional lookup for lat/lon/elevation by station_id
  * @returns {Object} FAA-style METAR object
  */
-export async function convertStratuxToFAA(stratuxObj, stationInfo) {
-    // If no stationInfo provided, build from airports.json
-    if (!stationInfo) {
-        stationInfo = await attachAirportInfo(stratuxObj.Location);
-        console.log(stationInfo);
+export async function convertStratuxToFAA(stratuxObject, stationInfo) {
+    
+    if (stratuxObject.Type === "METAR" || stratuxObject.Type === "TAF") {
+        if (!stationInfo) {
+            stationInfo = await attachAirportInfo(stratuxObject.Location);
+            console.log("Airport Info", stationInfo);
+        }
     }
 
-    const cleanedData = stratuxObj.Data.replace(/\s*\n\s*/g, ' ').trim();
+    const cleanedData = stratuxObject.Data.replace(/\s*\n\s*/g, ' ').trim();
 
     // Parse METAR string
-    const metarRaw = `${stratuxObj.Location} ${stratuxObj.Time} ${cleanedData}`;
-    const station_id = stratuxObj.Location;
-    const observation_time = await parseObservationTime(stratuxObj.Time);
+    const metarRaw = `${stratuxObject.Location} ${stratuxObject.Time} ${cleanedData}`;
+    const station_id = stratuxObject.Location;
+    const observation_time = await parseObservationTime(stratuxObject.Time);
     const raw_text = metarRaw;
-    const metar_type = stratuxObj.Type;
+    const metar_type = stratuxObject.Type;
 
     // Basic regex parsing
     const tempDewRegex = /(\d{2})\/(\d{2})/;
@@ -47,12 +49,22 @@ export async function convertStratuxToFAA(stratuxObj, stationInfo) {
         });
     }
 
+    let visMiles = visMatch ? Number(visMatch[1]) : 10;
+    //if (visMiles < 3) debugger;
+    let cond = "";
+
+    if (visMiles < 1) cond = "LIFR";
+    else if (visMiles < 3) cond = "IFR";
+    else if (visMiles < 5) cond = "MVFR";
+    else cond = "VFR";
+
     // Compose output
-    return {
+    let output = {
         raw_text,
+        type: stratuxObject.Type,
         station_id,
         station_name: stationInfo?.name ?? null,
-        timestamp: stratuxObj.Time,
+        timestamp: stratuxObject.Time,
         observation_time,
         latitude: stationInfo?.lat ?? null,
         longitude: stationInfo?.lon ?? null,
@@ -60,19 +72,15 @@ export async function convertStratuxToFAA(stratuxObj, stationInfo) {
         dewpoint_c: tempDewMatch ? Number(tempDewMatch[2]) : null,
         wind_dir_degrees: windMatch ? Number(windMatch[1]) : null,
         wind_speed_kt: windMatch ? Number(windMatch[2]) : null,
-        visibility_statute_mi: visMatch ? visMatch[1] : null,
+        visibility_statute_mi: visMiles,
         altim_in_hg: altimMatch ? (Number(altimMatch[1]) / 100).toFixed(2) : null,
         sky_condition,
-        flight_category: null, // Needs logic or lookup
+        flight_category: cond, 
         metar_type,
         elevation_m: stationInfo?.elevation_m ?? null
     };
-}
 
-function findAirportByICAO(icao) {
-    let response = {};
-    response = airportsData.find(airport => airport.ident === icao);
-    return response;     
+    return output;
 }
 
 async function parseObservationTime(timeStr) {
