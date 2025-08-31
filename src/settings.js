@@ -1,16 +1,12 @@
 const settings = {
-    wxupdateintervalmsec: 480000,
-    keepaliveintervalmsec: 30000,
-    httpport: 8600,
-    wsport: 8650,
     startupzoom: 5,
     useOSMonlinemap: true,
     debug: false,
-    externalcharts: "",
     uselocaltime: true,
     distanceunit: "sm",
     usestratux: true,
-    stratuxip: "127.0.0.1",
+    stratuxip: "localhost",
+    httpport: 8500,
     savepositionhistory: false,
     histintervalmsec: 10000,
     historyDb: "positionhistory.db",
@@ -31,28 +27,6 @@ const settings = {
         nauticalmiles: "nm",
         statutemiles: "sm"
     },
-    messagetypes: {
-        metars: {
-            type: "metars",
-            token: "###"
-        },
-        tafs: {
-            type: "tafs",
-            token: "###"
-        },
-        pireps: {
-            type: "aircraftreports",
-            token: "###"
-        },
-        airports: {
-            type: "airports",
-            token: ""
-        },
-        keepalive: {
-            type: "keepalive",
-            token: "((💜))"
-        }
-    }
 };
 
 export default settings;

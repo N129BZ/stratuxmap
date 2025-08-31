@@ -1,4 +1,3 @@
-
 import 'ol/ol.css';
 import 'ol-layerswitcher/dist/ol-layerswitcher.css';
 import './style.css';
@@ -38,12 +37,12 @@ if (parseInt(URL_PORT) > 0) {
 }
 let URL_HOST_PROTOCOL       = `${URL_PROTOCOL}//`;
 let URL_SERVER              = `${URL_HOST_PROTOCOL}${URL_HOST_BASE}`;
-let URL_WINSOCK             = `ws://${URL_LOCATION}:`;
-let URL_GET_METADATASETS    = `${URL_SERVER}/metadatasets`;
-let URL_GET_DBLIST          = `${URL_SERVER}/databaselist`;
-let URL_GET_TILE            = `${URL_SERVER}/tiles/{dbname}/{z}/{x}/{-y}`;
+// let URL_WINSOCK             = `ws://${URL_LOCATION}:`;
+// let URL_GET_TILESETS        = `${URL_SERVER}/tiles/tilesets`;
+// let URL_GET_DBLIST          = `${URL_SERVER}/databaselist`;
+// let URL_GET_TILE            = `${URL_SERVER}/tiles/{dbname}/{z}/{x}/{-y}`;
 let URL_GET_HISTORY         = `${URL_SERVER}/gethistory`;
-let URL_GET_SETTINGS        = `${URL_SERVER}/getsettings`;
+// let URL_GET_SETTINGS        = `${URL_SERVER}/getsettings`;
 let URL_PUT_HISTORY         = `${URL_SERVER}/savehistory`;
 
 let deg = 0;
@@ -152,45 +151,40 @@ const popupcontent = document.getElementById('popup-content');
  * Websocket objects, flag, and message definition
  * JSON object that is filled by returned settings
  */
-let wsSituation;
-let wsTraffic;
-let wsServer;
-let wssurl;
+// let wsSituation;
+// let wsTraffic;
+// let wsServer;
+// let wssurl;
 let myairplane;
-let wsServerOpen = false;
-let MessageTypes = {};
+// let wsServerOpen = false;
+// let MessageTypes = {};
 let DistanceUnits = {};
 let distanceunit = "";
-let airplaneElement = document.getElementById('airplane');
 
-// /**
-//  * Animation variables 
-//  */
-// let animationId = null;
-// //let startDate = getTimeThreeHoursAgo();
-// let frameRate = 1.0; // frames per second
-// const animatecontrol = document.getElementById('wxbuttons');
-
+const airplaneElement = document.getElementById('airplane');
+const port = URL_PORT ? ":" + URL_PORT : "";
 
 setupStratuxWebsockets();
 function setupStratuxWebsockets() {
-    // let wsturl = settings.stratuxtrafficws.replace("[stratuxip]", settings.stratuxip);
-    // let wsTraffic = new WebSocket(wsturl);
-    // wsTraffic.onmessage = function(evt){
-    //     let data = JSON.parse(evt.data);
-    //     addTrafficItem(data);
-    // }
+    const wsturl = `ws://${URL_LOCATION}${port}/traffic`;
+    let wsTraffic = new WebSocket(wsturl);
+    wsTraffic.onmessage = function(evt){
+        let data = JSON.parse(evt.data);
+        addTrafficItem(data);
+    }
 
-    // let wssurl = settings.stratuxsituationws.replace("[stratuxip]", settings.stratuxip);
-    // let wsSituation = new WebSocket(wssurl);
-    // wsSituation.onmessage = function(evt){
-    //     if (myairplane !== null) {
-    //         let data = JSON.parse(evt.data);
-    //         setOwnshipOrientation(data);
-    //     }
-    // }
+    const wssurl = `ws://${URL_LOCATION}${port}/situation`;
+    let wsSituation = new WebSocket(wssurl);
+    wsSituation.onmessage = function(evt){
+        if (myairplane !== null) {
+            let data = JSON.parse(evt.data);
+            setOwnshipOrientation(data);
+        }
+    }
 
-    let wxurl = "ws://localhost:8550"; //settings.stratuxweatherws.replace("[stratuxip]", settings.stratuxip) + ":8550";
+    const port = settings.httpport ? ":" + settings.httpport : "";
+
+    const wxurl = `ws://${URL_LOCATION}${port}/weather`;
     let wsWeather = new WebSocket(wxurl);
     wsWeather.onmessage = async function(evt){
         let message = JSON.parse(evt.data);

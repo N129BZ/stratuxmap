@@ -1,4 +1,4 @@
 #!/bin/bash
 npm run build
-cp -r -f dist /home/bro/sources/stratuxexpress/
-echo "Build and copy /dist to stratuxexpress COMPLETE!"
+echo "To copy dist to /opt/stratux/www, run:"
+echo "sudo cp -r -f dist /opt/stratux/www"
