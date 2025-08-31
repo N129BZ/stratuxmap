@@ -148,14 +148,19 @@
     background: #fff;
     box-sizing: border-box;
     position: relative; /* for absolute positioning of SVG */
+    font-family: B612;
+    font-size: medium;
 }
 
 .metar-popup-body {
-    max-height: 250px;   /* or whatever fits your layout */
+    max-height: 196px;   /* or whatever fits your layout */
     padding: 8px;
     background: #fff;
     box-sizing: border-box;
     overflow-y: auto;
+    font-family: B612;
+    font-size: medium;
+    display: block;
 }
 .wxbuttons {
     position:absolute;
@@ -205,6 +210,8 @@
 .tafmessage {
     border: 2px;
     width: 400px;
+    font-family: B612;
+    font-size: medium;
 }
 .taflabel {
     font-family: B612;
@@ -358,7 +365,7 @@
     width: 100%;
     max-width: 440px;
     margin-left: 0px;
-    margin-right: 13px;
+    margin-right: 1px;
 }
 .custom-popup-closer {
     font-family: B612;
@@ -366,7 +373,7 @@
     border: 1px solid #000000;
     border-radius: 5px;
     padding: 4px 12px;
-    float: left;
+    float: right;
     margin-bottom: 8px;
 }
 .featurepopup {
@@ -383,9 +390,9 @@
 } */
 .windsvg {
     position: absolute;
-    top: 67px;
+    top: 55px;
     right: 1px;
     height: 130px;
     width: 130px;
-    left: auto;
+    left: 231px;
 }

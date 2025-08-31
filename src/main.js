@@ -486,7 +486,7 @@ map.on('click', (evt) => {
 
     if (ident != "undefined") {
         let name = feature.get('station_name');
-        let html = `<div class="" id="featurepopup"><p>`
+        let html = `<div class="" id="featurepopup">`
         html +=    `${css}${name}<br>${ident} - ${cat}</span><br>`;
         html +=    `<div class="metar-popup-body">`; // beginning of metar-popup-body
         html +=   `Time:&nbsp<b>${time}</b><br>`;
@@ -502,6 +502,7 @@ map.on('click', (evt) => {
         html +=   icingconditions ? `${icingconditions}` : "";
         html += `<span class="windsvg">${svg}</span>`;
         html += `</div>`; // end of metar-popup-body 
+        html += `<hr>`;
         html += `<button class="custom-popup-closer" onclick="closePopup()" style="background:${bgcolor}; color:${fgcolor};">close</button>`
         html += `<textarea id="rawdata" class="rawdata">${rawmetar}</textarea><br>`; 
         console.log("METAR POPUP", html);
