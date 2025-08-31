@@ -14,7 +14,7 @@ export async function convertStratuxToFAA(stratuxObject, stationInfo) {
     if (stratuxObject.Type === "METAR" || stratuxObject.Type === "TAF") {
         if (!stationInfo) {
             stationInfo = await attachAirportInfo(stratuxObject.Location);
-            console.log("Airport Info", stationInfo);
+            //console.log("Airport Info", stationInfo);
         }
     }
     
