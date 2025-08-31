@@ -486,23 +486,25 @@ map.on('click', (evt) => {
 
     if (ident != "undefined") {
         let name = feature.get('station_name');
-        let html = `<div class="" id="featurepopup"><pre><code><p>`
-        html +=    `${css}${name}\n${ident} - ${cat}</span><p></p>`;
-        html +=   `Time:&nbsp<b>${time}</b><br/>`;
-        html +=   (temp != "" && temp != undefined) ? `Temp:&nbsp<b>${tempC} °C</b> (${temp})<br>` : "";
-        html +=   (dewp != "" && dewp != undefined) ?`Dewpoint:&nbsp<b>${dewpC} °C</b> (${dewp})<br>` : "";
-        html += (windir != "" && windir != undefined) ? `Wind Direction:&nbsp<b>${windir}°</b><br>` : "";
-        html += (winspd != "" && winspd != undefined) ? `Wind Speed:&nbsp<b>${winspd}&nbspkt</b><br>` : "";
-        html += (wingst != "" && wingst != undefined) ? `Wind Gust:&nbsp<b>${wingst}&nbspkt</b><br>` : "";
-        html +=  (altim != "" && altim != undefined) ? `Altimeter:&nbsp<b>${altim}&nbsphg</b><br>` : "";
-        html +=    (vis != "" && vis != undefined) ? `Horizontal Visibility:&nbsp<b>${vis}</b><br>` : "";
-        html += (wxcode != "" && wxcode != undefined) ? `Weather:&nbsp<b>${wxcode}</b><br>`: "";
-        html += (skyconditions != undefined && skyconditions != "") ? `${skyconditions}` : "";
-        html += (icingconditions != undefined && icingconditions != "") ? `${icingconditions}` : "";
-        html += `</p></code></pre><span class="windsvg">${svg}</span>`;
+        let html = `<div class="" id="featurepopup"><p>`
+        html +=    `${css}${name}<br>${ident} - ${cat}</span><br>`;
+        html +=    `<div class="metar-popup-body">`; // beginning of metar-popup-body
+        html +=   `Time:&nbsp<b>${time}</b><br>`;
+        html +=   temp ? `Temp:&nbsp<b>${tempC} °C</b> (${temp})<br>` : "";
+        html +=   dewp ? `Dewpoint:&nbsp<b>${dewpC} °C</b> (${dewp})<br>` : "";
+        html +=   windir ? `Wind Direction:&nbsp<b>${windir}°</b><br>` : "";
+        html +=   winspd ? `Wind Speed:&nbsp<b>${winspd}&nbspkt</b><br>` : "";
+        html +=   wingst ? `Wind Gust:&nbsp<b>${wingst}&nbspkt</b><br>` : "";
+        html +=   altim  ? `Altimeter:&nbsp<b>${altim}&nbsphg</b><br>` : "";
+        html +=   vis ? `Horizontal Visibility:&nbsp<b>${vis}</b><br>` : "";
+        html +=   wxcode ? `Weather:&nbsp<b>${wxcode}</b><br>`: "";
+        html +=   skyconditions ? `${skyconditions}` : "";
+        html +=   icingconditions ? `${icingconditions}` : "";
+        html += `<span class="windsvg">${svg}</span>`;
+        html += `</div>`; // end of metar-popup-body 
         html += `<button class="custom-popup-closer" onclick="closePopup()" style="background:${bgcolor}; color:${fgcolor};">close</button>`
         html += `<textarea id="rawdata" class="rawdata">${rawmetar}</textarea><br>`; 
-        //console.log("METAR POPUP", html);
+        console.log("METAR POPUP", html);
         //debugger;
         popupcontent.innerHTML = html;  
     }
@@ -801,12 +803,11 @@ function decodeIcingOrTurbulenceCondition(condition) {
     for (const item in condition) {
         let value = condition[item];
         if (typeof(value) === 'object') {
-            html += "<p>";
             for (const subitem in value) {
                 let subvalue = value[subitem];
                 html += parseConditionField(subitem, subvalue);
             }
-            html += "</p><hr>";
+            html += "<br><hr>";
         } 
         else {
             html += parseConditionField(item, value);

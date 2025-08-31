@@ -149,6 +149,14 @@
     box-sizing: border-box;
     position: relative; /* for absolute positioning of SVG */
 }
+
+.metar-popup-body {
+    max-height: 250px;   /* or whatever fits your layout */
+    padding: 8px;
+    background: #fff;
+    box-sizing: border-box;
+    overflow-y: auto;
+}
 .wxbuttons {
     position:absolute;
     top:82%;
@@ -358,7 +366,7 @@
     border: 1px solid #000000;
     border-radius: 5px;
     padding: 4px 12px;
-    float: right;
+    float: left;
     margin-bottom: 8px;
 }
 .featurepopup {
