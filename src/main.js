@@ -480,7 +480,7 @@ map.on('click', (evt) => {
 
     if (ident != "undefined") {
         let name = feature.get('station_name');
-        let html = `<div class="" id="featurepopup">`
+        let html = `<div class="featurepopup" id="featurepopup">`;
         html +=    `${css}${name}<br>${ident} - ${cat}</span><br>`;
         html +=    `<div class="metar-popup-body">`; // beginning of metar-popup-body
         html +=   `Time:&nbsp<b>${time}</b><br>`;

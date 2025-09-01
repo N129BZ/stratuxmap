@@ -383,11 +383,9 @@
     font-size: medium;
     background: #fff;
     box-sizing: border-box;
-}
-/* #featurepopup {
     font-family: B612;
     font-size:small;
-} */
+}
 .windsvg {
     position: absolute;
     top: 55px;
