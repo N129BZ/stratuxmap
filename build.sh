@@ -2,11 +2,24 @@
 npm run build
 
 distpath="/home/bro/sources/stratuxmap/dist"
-stxpath="/home/bro/sources/stratux"
+stxexpresspath="/home/bro/sources/stratuxexpress/dist"
+stxpath="/home/bro/sources/stratux-es6/stratux/web"
 
-if [ -d "$distpath" ]; then
-    cp -r -f dist "$stxpath"
-    echo "dist copied to $stxpath"
+if [ "$EUID" -ne 0 ]; then
+    if [ -d "$stxexpresspath" ]; then
+        cp -r -f "$distpath"/* "$stxexpresspath"
+        echo "dist copied to $stxexpresspath"
+    fi
+
+    if [ -d "$distpath" ]; then
+        cp -r -f "$distpath"/* "$stxpath"
+        echo "dist copied to $stxpath"
+    fi
 fi
 
-echo "RUN: sudo cp -r -f dist /opt/stratux/www"
+if [ "$EUID" -eq 0 ]; then
+    cp -r -f "$distpath"/* /opt/stratux/www
+    echo "dist copied to /opt/stratux/www"
+else
+    echo "RUN: sudo cp -r -f $distpath/* /opt/stratux/www"
+fi
