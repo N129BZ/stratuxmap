@@ -480,7 +480,7 @@ hr {
     margin-bottom: 8px;
 }
 .featurepopup {
-    width: 360px;
+    width: 385px;
     padding: 12px;
     font-family: B612;
     font-size: medium;
@@ -496,4 +496,17 @@ hr {
     height: 130px;
     width: 130px;
     left: 231px;
+}
+/* Merged from template.css: .closeBtn style */
+.closeBtn {
+    position: absolute;
+    left: 10px;
+    bottom: 42px;
+    z-index: 1000;
+    height: 39px;
+    width: auto;
+    background-color: #00008b;
+    color: #fff;
+    font-family: B612;
+    font-size: large;
 }

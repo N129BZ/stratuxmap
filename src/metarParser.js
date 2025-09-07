@@ -7,9 +7,8 @@ import { rawMetarToSVG, getWindBarbSvg, parseCondition } from './svgMetar.js';
 
 export async function parseMetarData(metarJson) {
     if (!metarJson || !metarJson.Data) return null;
-    const airportInfo = await attachAirportInfo(metarJson.Location);
+    
     let data = metarJson.Data.replace(/\n/g, ' ').replace(/=+$/, '').trim();
-
     const reportTypeMatch = data.match(/^(AUTO|COR)?/);
     const windMatch = data.match(/(\d{3})(\d{2,3})(KT)/);
     const visibilityMatch = data.match(/(\d{1,2})\s?(SM)/);
@@ -57,10 +56,15 @@ export async function parseMetarData(metarJson) {
         altimeter = value;
     }
 
+    try {
+        const airportInfo = await attachAirportInfo(metarJson.Location);
+    }
+    finally {}
+
     let obj = {
         type: metarJson.Type || 'METAR',
         station: metarJson.Location,
-        airport: airportInfo,
+        airport: airportInfo || null,
         lat: (airportInfo && airportInfo.lat != null) ? airportInfo.lat : null,
         lon: (airportInfo && airportInfo.lon != null) ? airportInfo.lon : null,
         time: metarJson.Time,

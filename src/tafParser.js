@@ -20,12 +20,14 @@ export async function parseTafData(tafJson) {
         .filter(code => weatherAcronymKeymap[code]);
     const wxDescriptions = wxMatches.map(code => weatherAcronymKeymap[code]);
 
-    const airportInfo = await attachAirportInfo(tafJson.Location);
+    try {
+        const airportInfo = await attachAirportInfo(tafJson.Location);
+    }finally{}
 
     let outObject = {
         type: tafJson.Type || 'TAF',
         station: tafJson.Location,
-        airport: airportInfo,
+        airport: airportInfo || null,
         lat: (airportInfo && airportInfo.latitude != null) ? airportInfo.latitude : null,
         lon: (airportInfo && airportInfo.longitude != null) ? airportInfo.longitude : null,
         time: tafJson.Time,
@@ -60,12 +62,14 @@ export async function parseTafAmdData(tafJson) {
         .filter(code => weatherAcronymKeymap[code]);
     const wxDescriptions = wxMatches.map(code => weatherAcronymKeymap[code]);
 
-    const airportInfo = await attachAirportInfo(tafJson.Location);
+    try {
+        const airportInfo = await attachAirportInfo(tafJson.Location);
+    }finally{}
 
     return {
         type: tafJson.Type || 'TAF.AMD',
         station: tafJson.Location,
-        airport: airportInfo,
+        airport: airportInfo || null,
         lat: (airportInfo && airportInfo.lat != null) ? airportInfo.lat : null,
         lon: (airportInfo && airportInfo.lon != null) ? airportInfo.lon : null,
         time: tafJson.Time,

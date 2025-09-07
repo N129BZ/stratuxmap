@@ -17,6 +17,11 @@ export async function convertStratuxToFAA(stratuxObject, stationInfo) {
             //console.log("Airport Info", stationInfo);
         }
     }
+    else if (stratuxObject.Type === "PIREP") {
+        if (stratuxObject.Location.length === 3) {
+            stratuxObject.Location = "K" + stratuxObject.Location;
+        }
+    }
     
     // Make sure stratuxObject.Location is a string airport code, e.g. "KORD"
     const cleanedData = stratuxObject.Data.replace(/\s*\n\s*/g, ' ').trim();
