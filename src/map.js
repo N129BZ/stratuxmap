@@ -159,7 +159,8 @@ document.addEventListener('DOMContentLoaded', function() {
                         tafVectorLayer.getSource().addFeature(feature);
                     });
                 }
-
+                
+                console.log("Starting websocket connections.");
                 setupStratuxWebsockets();
                 
             } catch (err) {
@@ -1217,6 +1218,30 @@ document.addEventListener('DOMContentLoaded', function() {
     // Add event listeners for layer visibility changes
     map.getLayers().forEach(layer => {
         layer.on('change:visible', function() {
+            // Save full map state whenever a layer's visibility changes
+            const metarFeatures = metarVectorLayer.getSource().getFeatures().map(f => ({
+                geometry: f.getGeometry().getCoordinates(),
+                properties: f.getProperties()
+            }));
+            const tafFeatures = tafVectorLayer.getSource().getFeatures().map(f => ({
+                geometry: f.getGeometry().getCoordinates(),
+                properties: f.getProperties()
+            }));
+            const view = map.getView();
+            const mapState = {
+                pirep: pirepVectorLayer.getVisible(),
+                metar: metarVectorLayer.getVisible(),
+                taf: tafVectorLayer.getVisible(),
+                traffic: trafficVectorLayer.getVisible(),
+                osm: osmTileLayer.getVisible(),
+                center: view.getCenter(),
+                zoom: view.getZoom(),
+                rotation: view.getRotation(),
+                metarFeatures: metarFeatures,
+                tafFeatures: tafFeatures
+            };
+            localStorage.setItem('mapState', JSON.stringify(mapState));
+            // Optionally, still save last selected layer
             if (layer.getVisible()) {
                 localStorage.setItem('lastSelectedLayer', layer.get('title'));
             }
