@@ -1,34 +1,38 @@
 
 
-export function saveMapState() {
-    const metarFeatures = metarVectorLayer.getSource().getFeatures().map(f => {
-        return {
-            geometry: f.getGeometry().getCoordinates(),
-            properties: f.getProperties()
-        };
-    });
-
-    const tafFeatures = tafVectorLayer.getSource().getFeatures().map(f => {
-        return {
-            geometry: f.getGeometry().getCoordinates(),
-            properties: f.getProperties()
-        };
-    });
-
-    const pirepFeatures = pirepVectorLayer.getSource().getFeatures().map(f => {
-        return {
-            geometry: f.getGeometry().getCoordinates(),
-            properties: f.getProperties()
+export async function saveMapState(metarVectorLayer, tafVectorLayer, 
+                                   pirepVectorLayer, trafficVectorLayer,
+                                   osmTileLayer, map) {
+    const serializeFeature = (f) => {
+        const style = f.getStyle();
+        let styleProps = {};
+        if (style && style.getImage && style.getImage()) {
+            const img = style.getImage();
+            styleProps = {
+                src: img.getSrc && img.getSrc(),
+                scale: img.getScale && img.getScale(),
+                offset: img.getOffset && img.getOffset(),
+                opacity: img.getOpacity && img.getOpacity()
+            };
         }
-    });
+        return {
+            geometry: f.getGeometry().getCoordinates(),
+            properties: f.getProperties(),
+            style: styleProps
+        };
+    };
+
+    const metarFeatures = metarVectorLayer.getSource().getFeatures().map(serializeFeature);
+    const tafFeatures = tafVectorLayer.getSource().getFeatures().map(serializeFeature);
+    const pirepFeatures = pireVectorpLayer.getSource().getFeatures().map(serializeFeature);
 
     const view = map.getView();
     mapState = {
-        pirep: pirepVectorLayer.getVisible(),
-        metar: metarVectorLayer.getVisible(),
-        taf: tafVectorLayer.getVisible(),
-        traffic: trafficVectorLayer.getVisible(),
-        osm: osmTileLayer.getVisible(),
+        pirepVisible: pirepVectorLayer.getVisible(),
+        metarVisible: metarVectorLayer.getVisible(),
+        tafVisible: tafVectorLayer.getVisible(),
+        trafficVisible: trafficVectorLayer.getVisible(),
+        osmVisible: osmTileLayer.getVisible(),
         center: view.getCenter(),
         zoom: view.getZoom(),
         rotation: view.getRotation(),
@@ -39,56 +43,54 @@ export function saveMapState() {
     localStorage.setItem('mapState', JSON.stringify(mapState));
 }
 
-export function restoreMapState() {
+export async function restoreMapState(metarVectorLayer, tafVectorLayer, 
+                                      pirepVectorLayer, trafficVectorLayer,
+                                      osmTileLayer, map) {
     const saved = localStorage.getItem('mapState');
     if (saved) {
         try {
             const mapState = JSON.parse(saved);
             // Layer visibility
-            if (typeof mapState.pirep === "boolean") pirepVectorLayer.setVisible(mapState.pirep);
-            if (typeof mapState.metar === "boolean") metarVectorLayer.setVisible(mapState.metar);
-            if (typeof mapState.taf === "boolean") tafVectorLayer.setVisible(mapState.taf);
-            if (typeof mapState.traffic === "boolean") trafficVectorLayer.setVisible(mapState.traffic);
-            if (typeof mapState.osm === "boolean") osmTileLayer.setVisible(mapState.osm);
+            if (mapState.pirepVisible) pirepVectorLayer.setVisible(mapState.pirepVisible);
+            if (mapState.metarVisible) metarVectorLayer.setVisible(mapState.metarVisible);
+            if (mapState.tafVisible) tafVectorLayer.setVisible(mapState.tafVisible);
+            if (mapState.trafficVisible) trafficVectorLayer.setVisible(mapState.trafficVisible);
+            if (mapState.osmVisible) osmTileLayer.setVisible(mapState.osmVisible);
             // Map view
-            if (Array.isArray(mapState.center) && mapState.center.length === 2) map.getView().setCenter(mapState.center);
+            if (mapState.center.length === 2) map.getView().setCenter(mapState.center);
             if (typeof mapState.zoom === "number") map.getView().setZoom(mapState.zoom);
             if (typeof mapState.rotation === "number") map.getView().setRotation(mapState.rotation);
             
-            if (Array.isArray(mapState.metarFeatures)) {
-                //metarVectorLayer.getSource().clear();
-                mapState.metarFeatures.forEach(f => {
-                    const { geometry, ...props } = f.properties || {};
-                    const feature = new Feature({
-                        geometry: new Point(f.geometry),
-                        ...props
-                    });
-                    metarVectorLayer.getSource().addFeature(feature);
+            const restoreFeature = (f, layer) => {
+                const { geometry, ...props } = f.properties || {};
+                const feature = new Feature({
+                    geometry: new Point(f.geometry),
+                    ...props
                 });
-            }
+                if (f.style && f.style.src) {
+                    feature.setStyle(new Style({
+                        image: new Icon({
+                            src: f.style.src,
+                            scale: f.style.scale,
+                            offset: f.style.offset,
+                            opacity: f.style.opacity
+                        })
+                    }));
+                }
+                layer.getSource().addFeature(feature);
+            };
 
-            if (Array.isArray(mapState.tafFeatures)) {
-                //tafVectorLayer.getSource().clear();
-                mapState.tafFeatures.forEach(f => {
-                    const { geometry, ...props } = f.properties || {};
-                    const feature = new Feature({
-                        geometry: new Point(f.geometry),
-                        ...props
-                    });
-                    tafVectorLayer.getSource().addFeature(feature);
-                });
+            if (Array.isArray(mapState.metarFeatures)) {
+                metarVectorLayer.getSource().clear();
+                mapState.metarFeatures.forEach(f => restoreFeature(f, metarVectorLayer));
             }
-            
+            if (Array.isArray(mapState.tafFeatures)) {
+                tafVectorLayer.getSource().clear();
+                mapState.tafFeatures.forEach(f => restoreFeature(f, tafVectorLayer));
+            }
             if (Array.isArray(mapState.pirepFeatures)) {
-                //pirepVectorLayer.getSource().clear();
-                mapState.pirepFeatures.forEach(f => {
-                    const { geometry, ...props } = f.properties || {};
-                    const feature = new Feature({
-                        geometry: new Point(f.geometry),
-                        ...props
-                    });
-                    pirepVectorLayer.getSource().addFeature(feature);
-                });
+                pirepVectorLayer.getSource().clear();
+                mapState.pirepFeatures.forEach(f => restoreFeature(f, pirepVectorLayer));
             }
         } catch (err) {
             console.log("RESTORE ERROR:", err)
