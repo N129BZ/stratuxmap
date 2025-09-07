@@ -86,88 +86,88 @@ document.addEventListener('DOMContentLoaded', function() {
     popupcontent = document.getElementById('popup-content');
     airplaneElement = document.getElementById('airplane');
     closeButton = document.getElementById('closeBtn');
-    
+
     closeButton.addEventListener("click", (evt) => {
 
-        const metarFeatures = metarVectorLayer.getSource().getFeatures().map(f => {
-            return {
-                geometry: f.getGeometry().getCoordinates(),
-                properties: f.getProperties()
-            };
-        });
+        // const metarFeatures = metarVectorLayer.getSource().getFeatures().map(f => {
+        //     return {
+        //         geometry: f.getGeometry().getCoordinates(),
+        //         properties: f.getProperties()
+        //     };
+        // });
 
-        const tafFeatures = tafVectorLayer.getSource().getFeatures().map(f => {
-            return {
-                geometry: f.getGeometry().getCoordinates(),
-                properties: f.getProperties()
-            };
-        });
+        // const tafFeatures = tafVectorLayer.getSource().getFeatures().map(f => {
+        //     return {
+        //         geometry: f.getGeometry().getCoordinates(),
+        //         properties: f.getProperties()
+        //     };
+        // });
 
-        const view = map.getView();
-        mapState = {
-            pirep: pirepVectorLayer.getVisible(),
-            metar: metarVectorLayer.getVisible(),
-            taf: tafVectorLayer.getVisible(),
-            traffic: trafficVectorLayer.getVisible(),
-            osm: osmTileLayer.getVisible(),
-            center: view.getCenter(),
-            zoom: view.getZoom(),
-            rotation: view.getRotation(),
-            metarFeatures: metarFeatures,
-            tafFeatures: tafFeatures
-        };
-        localStorage.setItem('mapState', JSON.stringify(mapState));
+        // const view = map.getView();
+        // mapState = {
+        //     pirep: pirepVectorLayer.getVisible(),
+        //     metar: metarVectorLayer.getVisible(),
+        //     taf: tafVectorLayer.getVisible(),
+        //     traffic: trafficVectorLayer.getVisible(),
+        //     osm: osmTileLayer.getVisible(),
+        //     center: view.getCenter(),
+        //     zoom: view.getZoom(),
+        //     rotation: view.getRotation(),
+        //     metarFeatures: metarFeatures,
+        //     tafFeatures: tafFeatures
+        // };
+        //localStorage.setItem('mapState', JSON.stringify(mapState));
         window.history.back();
     });
 
-    function restoreMapState() {
-        const saved = localStorage.getItem('mapState');
-        if (saved) {
-            try {
-                const mapState = JSON.parse(saved);
-                // Layer visibility
-                if (typeof mapState.pirep === "boolean") pirepVectorLayer.setVisible(mapState.pirep);
-                if (typeof mapState.metar === "boolean") metarVectorLayer.setVisible(mapState.metar);
-                if (typeof mapState.taf === "boolean") tafVectorLayer.setVisible(mapState.taf);
-                if (typeof mapState.traffic === "boolean") trafficVectorLayer.setVisible(mapState.traffic);
-                if (typeof mapState.osm === "boolean") osmTileLayer.setVisible(mapState.osm);
-                // Map view
-                if (Array.isArray(mapState.center) && mapState.center.length === 2) map.getView().setCenter(mapState.center);
-                if (typeof mapState.zoom === "number") map.getView().setZoom(mapState.zoom);
-                if (typeof mapState.rotation === "number") map.getView().setRotation(mapState.rotation);
+    // function restoreMapState() {
+    //     const saved = localStorage.getItem('mapState');
+    //     if (saved) {
+    //         try {
+    //             const mapState = JSON.parse(saved);
+    //             // Layer visibility
+    //             if (typeof mapState.pirep === "boolean") pirepVectorLayer.setVisible(mapState.pirep);
+    //             if (typeof mapState.metar === "boolean") metarVectorLayer.setVisible(mapState.metar);
+    //             if (typeof mapState.taf === "boolean") tafVectorLayer.setVisible(mapState.taf);
+    //             if (typeof mapState.traffic === "boolean") trafficVectorLayer.setVisible(mapState.traffic);
+    //             if (typeof mapState.osm === "boolean") osmTileLayer.setVisible(mapState.osm);
+    //             // Map view
+    //             if (Array.isArray(mapState.center) && mapState.center.length === 2) map.getView().setCenter(mapState.center);
+    //             if (typeof mapState.zoom === "number") map.getView().setZoom(mapState.zoom);
+    //             if (typeof mapState.rotation === "number") map.getView().setRotation(mapState.rotation);
                 
-                if (Array.isArray(mapState.metarFeatures)) {
-                    metarVectorLayer.getSource().clear();
-                    mapState.metarFeatures.forEach(f => {
-                        const { geometry, ...props } = f.properties || {};
-                        const feature = new Feature({
-                            geometry: new Point(f.geometry),
-                            ...props
-                        });
-                        metarVectorLayer.getSource().addFeature(feature);
-                    });
-                }
+    //             if (Array.isArray(mapState.metarFeatures)) {
+    //                 metarVectorLayer.getSource().clear();
+    //                 mapState.metarFeatures.forEach(f => {
+    //                     const { geometry, ...props } = f.properties || {};
+    //                     const feature = new Feature({
+    //                         geometry: new Point(f.geometry),
+    //                         ...props
+    //                     });
+    //                     metarVectorLayer.getSource().addFeature(feature);
+    //                 });
+    //             }
 
-                if (Array.isArray(mapState.tafFeatures)) {
-                    tafVectorLayer.getSource().clear();
-                    mapState.tafFeatures.forEach(f => {
-                        const { geometry, ...props } = f.properties || {};
-                        const feature = new Feature({
-                            geometry: new Point(f.geometry),
-                            ...props
-                        });
-                        tafVectorLayer.getSource().addFeature(feature);
-                    });
-                }
+    //             if (Array.isArray(mapState.tafFeatures)) {
+    //                 tafVectorLayer.getSource().clear();
+    //                 mapState.tafFeatures.forEach(f => {
+    //                     const { geometry, ...props } = f.properties || {};
+    //                     const feature = new Feature({
+    //                         geometry: new Point(f.geometry),
+    //                         ...props
+    //                     });
+    //                     tafVectorLayer.getSource().addFeature(feature);
+    //                 });
+    //             }
                 
-                console.log("Starting websocket connections.");
-                setupStratuxWebsockets();
+    //             console.log("Starting websocket connections.");
+    //             setupStratuxWebsockets();
                 
-            } catch (err) {
-                console.log("RESTORE ERROR:", err)
-            }
-        }
-    }
+    //         } catch (err) {
+    //             console.log("RESTORE ERROR:", err)
+    //         }
+    //     }
+    // }
 
     /**
      * Classes used by the on-the-fly weather SVG in metar popups
@@ -238,7 +238,8 @@ document.addEventListener('DOMContentLoaded', function() {
         return `${protocol}${location.host}${path}`;
     }
 
-    function setupStratuxWebsockets() {
+    (function setupStratuxWebsockets() {
+        console.log("Starting websocket connections.");
         const wstfc = buildWebSocketUrl("/traffic");
         let wsTraffic = new WebSocket(wstfc);
         wsTraffic.onmessage = function(evt){
@@ -279,7 +280,7 @@ document.addEventListener('DOMContentLoaded', function() {
                     break;
             }
         }
-    }
+    })();
 
     /**
      * Icon markers for airports, TAFs, heliports, etc.
@@ -378,10 +379,6 @@ document.addEventListener('DOMContentLoaded', function() {
         myairplane.setPosition(viewposition);
         map.addOverlay(myairplane);
     }
-
-    map.once('rendercomplete', function() {
-        restoreMapState();
-    });
 
     /**
      * popup close event handler
@@ -2824,3 +2821,126 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     }
 });
+
+function saveMap() {
+    const metarFeatures = metarVectorLayer.getSource().getFeatures().map(f => {
+        const style = f.getStyle();
+        let styleProps = {};
+        if (style && style.getImage && style.getImage()) {
+            const img = style.getImage();
+            styleProps = {
+                src: img.getSrc && img.getSrc(),
+                scale: img.getScale && img.getScale(),
+                offset: img.getOffset && img.getOffset(),
+                opacity: img.getOpacity && img.getOpacity()
+            };
+        }
+        return {
+            geometry: f.getGeometry().getCoordinates(),
+            properties: f.getProperties(),
+            style: styleProps
+        };
+    });
+
+    const tafFeatures = tafVectorLayer.getSource().getFeatures().map(f => {
+        const style = f.getStyle();
+        let styleProps = {};
+        if (style && style.getImage && style.getImage()) {
+            const img = style.getImage();
+            styleProps = {
+                src: img.getSrc && img.getSrc(),
+                scale: img.getScale && img.getScale(),
+                offset: img.getOffset && img.getOffset(),
+                opacity: img.getOpacity && img.getOpacity()
+            };
+        }
+        return {
+            geometry: f.getGeometry().getCoordinates(),
+            properties: f.getProperties(),
+            style: styleProps
+        };
+    });
+        
+    const view = map.getView();
+    mapState = {
+        pirep: pirepVectorLayer.getVisible(),
+        metar: metarVectorLayer.getVisible(),
+        taf: tafVectorLayer.getVisible(),
+        traffic: trafficVectorLayer.getVisible(),
+        osm: osmTileLayer.getVisible(),
+        center: view.getCenter(),
+        zoom: view.getZoom(),
+        rotation: view.getRotation(),
+        metarFeatures: metarFeatures,
+        tafFeatures: tafFeatures
+    };
+    localStorage.setItem('mapState', JSON.stringify(mapState));
+}
+
+function restoreMap() {
+    const saved = localStorage.getItem('mapState');
+    if (saved) {
+        try {
+            const mapState = JSON.parse(saved);
+            
+            // Map view
+            if (Array.isArray(mapState.center) && mapState.center.length === 2) map.getView().setCenter(mapState.center);
+            if (typeof mapState.zoom === "number") map.getView().setZoom(mapState.zoom);
+            if (typeof mapState.rotation === "number") map.getView().setRotation(mapState.rotation);
+            
+            if (Array.isArray(mapState.metarFeatures)) {
+                mapState.metarFeatures.forEach(f => {
+                    const { geometry, ...props } = f.properties || {};
+                    const feature = new Feature({
+                        geometry: new Point(f.geometry),
+                        ...props
+                    });
+                    if (f.style && f.style.src) {
+                        feature.setStyle(new Style({
+                            image: new Icon({
+                                src: f.style.src,
+                                scale: f.style.scale,
+                                offset: f.style.offset,
+                                opacity: f.style.opacity
+                            })
+                        }));
+                    }
+                    metarVectorLayer.getSource().addFeature(feature);
+                });    
+            }
+
+            if (Array.isArray(mapState.tafFeatures)) {
+                mapState.tafFeatures.forEach(f => {
+                    const { geometry, ...props } = f.properties || {};
+                    const feature = new Feature({
+                        geometry: new Point(f.geometry),
+                        ...props
+                    });
+                    if (f.style && f.style.src) {
+                        feature.setStyle(new Style({
+                            image: new Icon({
+                                src: f.style.src,
+                                scale: f.style.scale,
+                                offset: f.style.offset,
+                                opacity: f.style.opacity
+                            })
+                        }));
+                    }
+                    tafVectorLayer.getSource().addFeature(feature);
+                });                    
+            }
+            
+            // Layer visibility
+            if (typeof mapState.pirep === "boolean") pirepVectorLayer.setVisible(mapState.pirep);
+            if (typeof mapState.metar === "boolean") metarVectorLayer.setVisible(mapState.metar);
+            if (typeof mapState.taf === "boolean") tafVectorLayer.setVisible(mapState.taf);
+            if (typeof mapState.traffic === "boolean") trafficVectorLayer.setVisible(mapState.traffic);
+            //if (typeof mapState.osm === "boolean") osmTileLayer.setVisible(mapState.osm);
+
+            
+            
+        } catch (err) {
+            console.log("RESTORE ERROR:", err)
+        }
+    }
+}
