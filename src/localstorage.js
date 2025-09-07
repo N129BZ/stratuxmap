@@ -1,8 +1,11 @@
+import Feature from 'ol/Feature';
+import Point from 'ol/geom/Point';
+import Style from 'ol/style/Style';
+import Icon from 'ol/style/Icon';
 
-
-export async function saveMapState(metarVectorLayer, tafVectorLayer, 
-                                   pirepVectorLayer, trafficVectorLayer,
-                                   osmTileLayer, map) {
+export function saveMapState(metarVectorLayer, tafVectorLayer, 
+                             pirepVectorLayer, trafficVectorLayer,
+                             osmTileLayer, map) {
     const serializeFeature = (f) => {
         const style = f.getStyle();
         let styleProps = {};
@@ -24,28 +27,30 @@ export async function saveMapState(metarVectorLayer, tafVectorLayer,
 
     const metarFeatures = metarVectorLayer.getSource().getFeatures().map(serializeFeature);
     const tafFeatures = tafVectorLayer.getSource().getFeatures().map(serializeFeature);
-    const pirepFeatures = pireVectorpLayer.getSource().getFeatures().map(serializeFeature);
-
+    const pirepFeatures = pirepVectorLayer.getSource().getFeatures().map(serializeFeature);
+    const trafficFeatures = trafficVectorLayer.getSource().getFeatures().map(serializeFeature);
     const view = map.getView();
-    mapState = {
-        pirepVisible: pirepVectorLayer.getVisible(),
+
+    const mapState = {
         metarVisible: metarVectorLayer.getVisible(),
+        metarFeatures: metarFeatures,
         tafVisible: tafVectorLayer.getVisible(),
+        tafFeatures: tafFeatures,
+        pirepVisible: pirepVectorLayer.getVisible(),
+        pirepFeatures: pirepFeatures,
         trafficVisible: trafficVectorLayer.getVisible(),
+        trafficFeatures: trafficFeatures,
         osmVisible: osmTileLayer.getVisible(),
         center: view.getCenter(),
         zoom: view.getZoom(),
-        rotation: view.getRotation(),
-        metarFeatures: metarFeatures,
-        tafFeatures: tafFeatures,
-        pirepFeatures: pirepFeatures
-    };
+        rotation: view.getRotation()
+    } 
     localStorage.setItem('mapState', JSON.stringify(mapState));
 }
 
-export async function restoreMapState(metarVectorLayer, tafVectorLayer, 
-                                      pirepVectorLayer, trafficVectorLayer,
-                                      osmTileLayer, map) {
+export function restoreMapState(metarVectorLayer, tafVectorLayer, 
+                                pirepVectorLayer, trafficVectorLayer,
+                                osmTileLayer, map) {
     const saved = localStorage.getItem('mapState');
     if (saved) {
         try {
@@ -82,15 +87,43 @@ export async function restoreMapState(metarVectorLayer, tafVectorLayer,
 
             if (Array.isArray(mapState.metarFeatures)) {
                 metarVectorLayer.getSource().clear();
-                mapState.metarFeatures.forEach(f => restoreFeature(f, metarVectorLayer));
+                mapState.metarFeatures.forEach(f => {
+                    try {
+                        restoreFeature(f, metarVectorLayer);
+                    } catch (err) {
+                        console.log("Feature restore error (metar):", err, f);
+                    }
+                });
             }
             if (Array.isArray(mapState.tafFeatures)) {
                 tafVectorLayer.getSource().clear();
-                mapState.tafFeatures.forEach(f => restoreFeature(f, tafVectorLayer));
+                mapState.tafFeatures.forEach(f => {
+                    try {
+                        restoreFeature(f, tafVectorLayer);
+                    } catch (err) {
+                        console.log("Feature restore error (taf):", err, f);
+                    }
+                });
             }
             if (Array.isArray(mapState.pirepFeatures)) {
                 pirepVectorLayer.getSource().clear();
-                mapState.pirepFeatures.forEach(f => restoreFeature(f, pirepVectorLayer));
+                mapState.pirepFeatures.forEach(f => {
+                    try {
+                        restoreFeature(f, pirepVectorLayer);
+                    } catch (err) {
+                        console.log("Feature restore error (pirep):", err, f);
+                    }
+                });
+            }
+            if (Array.isArray(mapState.trafficFeatures)) {
+                trafficVectorLayer.getSource().clear();
+                mapState.trafficFeatures.forEach(f => {
+                    try {
+                        restoreFeature(f, trafficVectorLayer);
+                    } catch (err) {
+                        console.log("Feature restore error (pirep):", err, f);
+                    }
+                });
             }
         } catch (err) {
             console.log("RESTORE ERROR:", err)

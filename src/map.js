@@ -81,6 +81,40 @@ let mapState = {};
 
 document.addEventListener('DOMContentLoaded', function() {
     
+    document.addEventListener('visibilitychange', function() {
+        let vs = document.visibilityState
+        console.log('visibilitychange:', vs);
+        try {
+            if (vs === 'hidden') {
+                console.log("SAVING MAP STATE!")
+                saveMapState(metarVectorLayer, trafficVectorLayer, pirepVectorLayer, trafficVectorLayer, osmTileLayer, map);
+            }
+            else if (vs === 'visible') {
+                restoreMapState(metarVectorLayer, trafficVectorLayer, pirepVectorLayer, trafficVectorLayer, osmTileLayer, map);
+            }
+        }
+        catch(err) {
+            console.log("VISIBILITY CHANGE ERROR", err);
+        }
+    });
+    window.addEventListener('beforeunload', async function(e) {
+        console.log("SAVING MAP STATE!");
+        if (map && metarVectorLayer && tafVectorLayer && pirepVectorLayer && trafficVectorLayer && osmTileLayer) {
+            localStorage.setItem('mapStateSaved', Date.now());
+            saveMapState(metarVectorLayer, tafVectorLayer, pirepVectorLayer, trafficVectorLayer, osmTileLayer, map);
+        }
+    });
+    
+    window.addEventListener('load', async function() {
+        console.log("RESTORING MAP STATE!");
+        // After all layers and map are created
+        if (map && map.getView()) {
+            if (metarVectorLayer && tafVectorLayer && pirepVectorLayer && trafficVectorLayer && osmTileLayer) {
+                restoreMapState(metarVectorLayer, tafVectorLayer, pirepVectorLayer, trafficVectorLayer, osmTileLayer, map);
+            }
+        }
+    });
+    
     // DOM is ready for map.html
     tplcontainer = document.getElementById('tplcontainer');
     popup = document.getElementById('popup');
@@ -88,23 +122,8 @@ document.addEventListener('DOMContentLoaded', function() {
     airplaneElement = document.getElementById('airplane');
     closeButton = document.getElementById('closeBtn');
 
-    document.addEventListener('visibilitychange', async function() {
-        if (document.visibilityState === "hidden") {
-            await saveMapState(metarVectorLayer, tafVectorLayer, 
-                               pirepVectorLayer, trafficVectorLayer,
-                               osmTileLayer, map);
-        }
-        else if (document.visibilityState === "visible") {
-            if (metarVectorLayer && tafVectorLayer && pirepVectorLayer && trafficVectorLayer && osmTileLayer && map) {
-                await restoreMapState(metarVectorLayer, tafVectorLayer, 
-                                      pirepVectorLayer, trafficVectorLayer,
-                                      osmTileLayer, map);
-            
-            }
-        }
-    });
-
     closeButton.addEventListener("click", (evt) => {
+        saveMapState(metarVectorLayer, tafVectorLayer, pirepVectorLayer, trafficVectorLayer, osmTileLayer, map);
         window.history.back();
     });
 
@@ -405,7 +424,7 @@ document.addEventListener('DOMContentLoaded', function() {
      * @param {feature} Feature: the metar feature the user clicked on 
      */
     function displayMetarPopup(feature) {
-        let metar = feature.get("metar");
+        let metar = feature.get("data");
         let rawmetar = metar["raw_text"];
         let ident = metar.station_id;
         let svg = feature.get("svgimage");
@@ -486,7 +505,7 @@ document.addEventListener('DOMContentLoaded', function() {
      * @param {feature} Feature: the taf feature the user clicked on
      */
     function displayTafPopup(feature) {
-        let taf = feature.get("taf");
+        let taf = feature.get("data");
         let id = feature.get("ident");
         let rawtaf = taf.raw_text;
         let btncolors = getCategoryColors(taf.flight_category);
@@ -540,7 +559,7 @@ document.addEventListener('DOMContentLoaded', function() {
      * @param {object} feature: the pirep the user clicked on
      */
     function displayPirepPopup(feature) {
-        let pirep = feature.get("pirep");
+        let pirep = feature.get("data");
         let rawpirep = pirep.get("raw_text");
         let outerhtml = `<div class="taftitle">` + 
                             `<span class="taftitlelabel">${pirep.report_type} FROM AIRCRAFT: ${pirep.aircraft_ref}</span><p></p>` +
@@ -1003,7 +1022,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 scale: scaleSize
             });
             let metarFeature = new Feature({
-                metar: metar,
+                data: metar,
                 datatype: "metar",
                 geometry: new Point(fromLonLat([metar.longitude, metar.latitude])),
                 station_name: metar.station_name,
@@ -1032,7 +1051,7 @@ document.addEventListener('DOMContentLoaded', function() {
         try {
             let tafFeature = new Feature({
                 ident: taf.station_id,
-                taf: taf,
+                data: taf,
                 datatype: "taf",
                 geometry: new Point(fromLonLat([taf.longitude, taf.latitude]))
             });
@@ -1064,7 +1083,7 @@ document.addEventListener('DOMContentLoaded', function() {
             }
             let pirepFeature = new Feature({
                 ident: pirep.aircraft_ref,
-                pirep: pirep,
+                data: pirep,
                 datatype: "pirep",
                 geometry: new Point(fromLonLat([pirep.longitude, pirep.latitude])),
             });
@@ -2724,5 +2743,9 @@ document.addEventListener('DOMContentLoaded', function() {
         if (celsius != null) {
             return Math.round(celsius * 9 / 5 + 32);
         }
+    }
+
+    if (map && metarVectorLayer && tafVectorLayer && pirepVectorLayer && trafficVectorLayer && osmTileLayer) {
+        restoreMapState(metarVectorLayer, tafVectorLayer, pirepVectorLayer, trafficVectorLayer, osmTileLayer, map);
     }
 });
