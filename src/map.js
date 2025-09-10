@@ -132,23 +132,6 @@ document.addEventListener('DOMContentLoaded', function() {
             console.log("VISIBILITY CHANGE ERROR", err);
         }
     });
-    window.addEventListener('beforeunload', async function(e) {
-        console.log("SAVING MAP STATE!");
-        if (map && metarVectorLayer && tafVectorLayer && pirepVectorLayer && trafficVectorLayer && osmTileLayer) {
-            localStorage.setItem('mapStateSaved', Date.now());
-            saveMapState(metarVectorLayer, tafVectorLayer, pirepVectorLayer, trafficVectorLayer, osmTileLayer, map);
-        }
-    });
-    
-    window.addEventListener('load', async function() {
-        console.log("RESTORING MAP STATE!");
-        // After all layers and map are created
-        if (map && map.getView()) {
-            if (metarVectorLayer && tafVectorLayer && pirepVectorLayer && trafficVectorLayer && osmTileLayer) {
-                restoreMapState(metarVectorLayer, tafVectorLayer, pirepVectorLayer, trafficVectorLayer, osmTileLayer, map);
-            }
-        }
-    });
     
     // DOM is ready for map.html
     tplcontainer = document.getElementById('tplcontainer');
