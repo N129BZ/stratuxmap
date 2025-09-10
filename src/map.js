@@ -58,6 +58,40 @@ let viewposition = [];
 let offset = [-18, -18];
 const chicagoCoords = fromLonLat([-87.6298, 41.8781]); // Chicago: lon, lat
 
+export class FIFOCache {
+        constructor(maxSize) {
+        this.maxSize = maxSize;
+        this.map = new Map();
+    }
+    set(key, value) {
+        // If key already exists, delete to update insertion order
+        if (this.map.has(key)) {
+            this.map.delete(key);
+        }
+        this.map.set(key, value);
+        // Remove oldest if over maxSize
+        while (this.map.size > this.maxSize) {
+            // Get first inserted key
+            const firstKey = this.map.keys().next().value;
+            this.map.delete(firstKey);
+        }
+    }
+    get(key) {
+        return this.map.get(key);
+    }
+    // Optional: get all values in insertion order
+    values() {
+        return Array.from(this.map.values());
+    }
+};
+
+export const stateCache = {
+    zoom: 0.0,
+    viewposition: [],
+    rotation: 0.0,
+    layervisibility: [],
+    messages: new FIFOCache(300)
+};
 
 /**
  * global variables
@@ -90,6 +124,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 saveMapState(metarVectorLayer, trafficVectorLayer, pirepVectorLayer, trafficVectorLayer, osmTileLayer, map);
             }
             else if (vs === 'visible') {
+                console.log("RESTORING MAP STATE!")
                 restoreMapState(metarVectorLayer, trafficVectorLayer, pirepVectorLayer, trafficVectorLayer, osmTileLayer, map);
             }
         }

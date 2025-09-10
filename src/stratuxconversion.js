@@ -2,6 +2,7 @@
 // Converts Stratux ADS-B websocket weather object to FAA pre-processed object format
 
 import { attachAirportInfo } from './airportInfo.js'
+import { stateCache } from './map.js';
 
 /**
  * Converts a Stratux METAR object to FAA METAR format
@@ -91,6 +92,11 @@ export async function convertStratuxToFAA(stratuxObject, stationInfo) {
         elevation_m: stationInfo?.elevation_m ?? null,
         forecast: forecast,
     };
+
+    try {
+        stateCache.messages.set(station_id, output);
+    }
+    finally {}
 
     return output;
 }
