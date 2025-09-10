@@ -14,13 +14,16 @@ export async function convertStratuxToFAA(stratuxObject, stationInfo) {
     
     if (stratuxObject.Type === "METAR" || stratuxObject.Type === "TAF") {
         if (!stationInfo) {
+            if (stratuxObject.Location.length === 3) {
+                //debugger;
+            }
             stationInfo = await attachAirportInfo(stratuxObject.Location);
             //console.log("Airport Info", stationInfo);
         }
     }
     else if (stratuxObject.Type === "PIREP") {
         if (stratuxObject.Location.length === 3) {
-            stratuxObject.Location = "K" + stratuxObject.Location;
+            stationInfo = "K" + stratuxObject.Location;
         }
         stationInfo = await attachAirportInfo(stratuxObject.Location);
     }
@@ -89,9 +92,9 @@ export async function convertStratuxToFAA(stratuxObject, stationInfo) {
         longitude: stationInfo?.lon ?? "",
         temp_c: tempDewMatch ? Number(tempDewMatch[1]) : "",
         dewpoint_c: tempDewMatch ? Number(tempDewMatch[2]) : "",
-    wind_dir_degrees,
-    wind_speed_kt,
-    wind_gust_kt,
+        wind_dir_degrees,
+        wind_speed_kt,
+        wind_gust_kt,
         visibility_statute_mi: visMiles,
         altim_in_hg: altimMatch ? (Number(altimMatch[1]) / 100).toFixed(2) : "",
         sky_condition,
