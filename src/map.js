@@ -235,25 +235,30 @@ document.addEventListener('DOMContentLoaded', function() {
         const wswx = buildWebSocketUrl("/weather");
         let wsWeather = new WebSocket(wswx);
         wsWeather.onmessage = async function(evt){
-            let message = JSON.parse(evt.data);
+            try {
+                let message = JSON.parse(evt.data);
 
-            // TODO: Winds?
-            if (message.Type === "WINDS") return;
-            
-            let stratuxWeather = await convertStratuxToFAA(message);
+                // TODO: Winds?
+                if (message.Type === "WINDS") return;
+                
+                let stratuxWeather = await convertStratuxToFAA(message);
 
-            switch (message.Type) {
-                case "METAR":
-                case "SPECI":
-                    processMetar(stratuxWeather);
-                    break;
-                case "TAF":
-                case "TAF.AMD":
-                    processTaf(stratuxWeather);
-                    break;
-                case "PIREP":
-                    processPirep(stratuxWeather);
-                    break;
+                switch (message.Type) {
+                    case "METAR":
+                    case "SPECI":
+                        processMetar(stratuxWeather);
+                        break;
+                    case "TAF":
+                    case "TAF.AMD":
+                        processTaf(stratuxWeather);
+                        break;
+                    case "PIREP":
+                        processPirep(stratuxWeather);
+                        break;
+                }
+            } 
+            catch (error) {
+                // ignore errors
             }
         }
     })();

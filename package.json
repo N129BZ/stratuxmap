@@ -15,6 +15,7 @@
     "vite": "^7.0.6"
   },
   "dependencies": {
+    "http": "^0.0.1-security",
     "ol": "latest",
     "ol-layerswitcher": "^4.1.2"
   }
