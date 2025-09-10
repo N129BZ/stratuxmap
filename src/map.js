@@ -30,33 +30,7 @@ import { metarPopupTemplate } from './metartemplate.js';
 import { parsePirepData } from './pirepParser.js';
 import { convertStratuxToFAA } from './stratuxconversion.js';
 import { parseTafAmdData } from './tafParser.js';
-import { saveMapState, restoreMapState } from './localstorage.js';
-
-
- /**
- * Construct all of the application urls 
- */
-let URL_LOCATION            =  location.hostname;
-let URL_PROTOCOL            =  location.protocol;
-let URL_PORT                =  location.port;
-let URL_HOST_BASE           =  URL_LOCATION;
-if (parseInt(URL_PORT) > 0) {
-    URL_HOST_BASE += `:${URL_PORT}`;
-}
-let URL_HOST_PROTOCOL       = `${URL_PROTOCOL}//`;
-let URL_SERVER              = `${URL_HOST_PROTOCOL}${URL_HOST_BASE}`;
-let URL_GET_HISTORY         = `${URL_SERVER}/gethistory`;
-let URL_PUT_HISTORY         = `${URL_SERVER}/savehistory`;
-
-let deg = 0;
-let alt = 0;
-let lng = 0;
-let lat = 0;
-
-let viewextent = [-180, -85, 180, 85];
-let viewposition = [];
-let offset = [-18, -18];
-const chicagoCoords = fromLonLat([-87.6298, 41.8781]); // Chicago: lon, lat
+import { saveMapState, restoreMapState } from './mapstatemanager.js'; //'./localstorage.js';
 
 export class FIFOCache {
         constructor(maxSize) {
@@ -93,6 +67,32 @@ export const stateCache = {
     messages: new FIFOCache(300)
 };
 
+ /**
+ * Construct all of the application urls 
+ */
+let URL_LOCATION            =  location.hostname;
+let URL_PROTOCOL            =  location.protocol;
+let URL_PORT                =  location.port;
+let URL_HOST_BASE           =  URL_LOCATION;
+if (parseInt(URL_PORT) > 0) {
+    URL_HOST_BASE += `:${URL_PORT}`;
+}
+let URL_HOST_PROTOCOL       = `${URL_PROTOCOL}//`;
+let URL_SERVER              = `${URL_HOST_PROTOCOL}${URL_HOST_BASE}`;
+let URL_GET_HISTORY         = `${URL_SERVER}/gethistory`;
+let URL_PUT_HISTORY         = `${URL_SERVER}/savehistory`;
+
+let deg = 0;
+let alt = 0;
+let lng = 0;
+let lat = 0;
+
+let viewextent = [-180, -85, 180, 85];
+let viewposition = [];
+let offset = [-18, -18];
+
+const chicagoCoords = fromLonLat([-87.6298, 41.8781]); // Chicago: lon, lat
+
 /**
  * global variables
  */
@@ -120,12 +120,19 @@ document.addEventListener('DOMContentLoaded', function() {
         console.log('visibilitychange:', vs);
         try {
             if (vs === 'hidden') {
+                stateCache.zoom = map.getView().getZoom();
+                stateCache.viewposition = map.getView().getCenter();
+                stateCache.rotation = map.getView().getRotation();
+                stateCache.layervisibility = map.getLayers().getArray().map(layer => ({
+                    title: layer.get('title'),
+                    visible: typeof layer.getVisible === 'function' ? layer.getVisible() : undefined
+                }))
                 console.log("SAVING MAP STATE!")
-                saveMapState(metarVectorLayer, trafficVectorLayer, pirepVectorLayer, trafficVectorLayer, osmTileLayer, map);
+                saveMapState(); //metarVectorLayer, trafficVectorLayer, pirepVectorLayer, trafficVectorLayer, osmTileLayer, map);
             }
             else if (vs === 'visible') {
                 console.log("RESTORING MAP STATE!")
-                restoreMapState(metarVectorLayer, trafficVectorLayer, pirepVectorLayer, trafficVectorLayer, osmTileLayer, map);
+                restoreMapState(); //metarVectorLayer, trafficVectorLayer, pirepVectorLayer, trafficVectorLayer, osmTileLayer, map);
             }
         }
         catch(err) {
@@ -141,8 +148,44 @@ document.addEventListener('DOMContentLoaded', function() {
     closeButton = document.getElementById('closeBtn');
 
     closeButton.addEventListener("click", (evt) => {
-        saveMapState(metarVectorLayer, tafVectorLayer, pirepVectorLayer, trafficVectorLayer, osmTileLayer, map);
+        save
+        saveMapState(); //metarVectorLayer, tafVectorLayer, pirepVectorLayer, trafficVectorLayer, osmTileLayer, map);
         window.history.back();
+    });
+
+    window.addEventListener('stateReplay', function(e) {
+        let returnedCache = e.detail;
+        map.getView().setZoom(returnedCache.zoom);
+        map.getView().setCenter(returnedCache.viewposition);
+        map.getView().setRotation(returnedCache.rotation);
+        
+        // set the layer visibilities
+        returnedCache.layervisibility.forEach(layerState => {
+            const layers = map.getLayers().getArray();
+            const layer = layers.find(l => l.get('title') === layerState.title);
+            if (layer && typeof layer.setVisible === 'function') {
+                layer.setVisible(layerState.visible);
+            }
+        });
+        
+        // loop through the messages and process by type
+        if (returnedCache && Array.isArray(returnedCache.messages)) {
+            returnedCache.messages.forEach((message, key) => {
+                switch (message.type) {
+                    case "METAR":
+                    case "SPECI":
+                        processMetar(message);
+                        break;
+                    case "TAF":
+                    case "TAF.AMD":
+                        processTaf(message);
+                        break;
+                    case "PIREP":
+                        processPirep(message);
+                        break;
+                }
+            });
+        }
     });
 
     /**
@@ -448,7 +491,7 @@ document.addEventListener('DOMContentLoaded', function() {
      */
     function displayMetarPopup(feature) {
         let metar = feature.get("data");
-        let rawmetar = metar["raw_text"];
+        let rawmetar = metar.raw_text;
         let ident = metar.station_id;
         let svg = feature.get("svgimage");
         let cat = metar.flight_category;
@@ -469,13 +512,14 @@ document.addEventListener('DOMContentLoaded', function() {
             } 
         })();
 
+        
         let tempC = metar.temp_c;
         let dewpC = metar.dewpoint_c;
         let temp = convertCtoF(metar.temp_c);
         let dewp = convertCtoF(metar.dewpoint_c);
         let windir = metar.wind_dir_degrees;
         let winspd = metar.wind_speed_kt + "";
-        let wingst = metar.wind_gust_kt + ""; 
+        let wingst = metar.wind_gust_kt ? metar.wind_gust_kt + "" : "";
         let altim = getAltimeterSetting(metar.altim_in_hg);
         let vis = getDistanceUnits(metar.visibility_statute_mi);
         let wxcode = metar.wx_string !== undefined ? decodeWxDescriptions(metar.wx_string) : "";
@@ -1027,6 +1071,12 @@ document.addEventListener('DOMContentLoaded', function() {
     function processMetar(metar) {
         let scaleSize = getScaleSize();
 
+        // Validate required properties
+        if (!metar || typeof metar.longitude !== 'number' || typeof metar.latitude !== 'number') {
+            console.warn('processMetar: Missing longitude/latitude in metar object', metar);
+            return;
+        }
+
         try {
             let popupSvg = "";
             let mapDotSvg = "";
@@ -1071,6 +1121,11 @@ document.addEventListener('DOMContentLoaded', function() {
      * @param {object} taf: JSON object
      */
     function processTaf(taf) {
+        // Validate required properties
+        if (!taf || typeof taf.longitude !== 'number' || typeof taf.latitude !== 'number') {
+            //console.warn('processTaf: Missing longitude/latitude in taf object', taf);
+            return;
+        }
         try {
             let tafFeature = new Feature({
                 ident: taf.station_id,
@@ -1098,6 +1153,11 @@ document.addEventListener('DOMContentLoaded', function() {
      * @param {object} pirep: JSON object with LOTS of pireps 
      */
     function processPirep(pirep) {
+        // Validate required properties
+        if (!pirep || typeof pirep.longitude !== 'number' || typeof pirep.latitude !== 'number') {
+            //console.warn('processPirep: Missing longitude/latitude in pirep object', pirep);
+            return;
+        }
         try {
             // generate a "pseudo-heading" to use if wind dir is absent
             let heading = Math.random()*Math.PI*2;
@@ -2343,7 +2403,7 @@ document.addEventListener('DOMContentLoaded', function() {
     function parseWeatherText(weathertext, ref) {
         var station = parseStation(weathertext);
         var time = parseDate(weathertext);
-        if (ref != null) {
+        if (ref) {
             ref.station = station;
             ref.time = time;
         }

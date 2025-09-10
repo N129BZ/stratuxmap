@@ -10,10 +10,10 @@ if [ "$EUID" -ne 0 ]; then
     cp -r -f "$distpath"/* "$stxexpresspath"
     echo "dist copied to $stxexpresspath"
 
-    # if [ -d "$distpath" ]; then
-    #     cp -r -f "$distpath"/* "$stxpath"
-    #     echo "dist copied to $stxpath"
-    # fi
+    if [ -d "$distpath" ]; then
+        cp -r -f "$distpath"/* "$stxpath"
+        echo "dist copied to $stxpath"
+    fi
 fi
 
 if [ "$EUID" -eq 0 ]; then

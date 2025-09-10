@@ -9,8 +9,21 @@ export async function parseTafData(tafJson) {
 
     const periodMatch = data.match(/(\d{4}\/\d{4})/);
     const changeIndicators = [...data.matchAll(/(FM\d{6}|PROB\d{2}|TEMPO|BECMG)/g)].map(m => m[1]);
-    const windMatches = [...data.matchAll(/(\d{3})(\d{2,3})(KT)/g)];
-    const wind = windMatches.map(match => `${match[1]} ${match[2]} ${match[3]}`);
+    // Updated wind regex to capture gusts
+    const windMatches = [...data.matchAll(/(\d{3})(\d{2,3})G?(\d{2,3})?KT/g)];
+    const wind = windMatches.map(match => {
+        let windStr = `${match[1]} ${match[2]}KT`;
+        if (match[3]) windStr = `${match[1]} ${match[2]}G${match[3]}KT`;
+        return windStr;
+    });
+
+    // Optionally extract peak wind remarks (PK WND)
+    const pkWndMatch = data.match(/PK WND (\d{3})(\d{2,3})\/(\d{4})/);
+    let peakWind = pkWndMatch ? {
+        direction: pkWndMatch[1],
+        speed: pkWndMatch[2],
+        time: pkWndMatch[3]
+    } : null;
     const visibilityMatches = [...data.matchAll(/(\d{1,2})\s?(SM|P6SM)/g)];
     const visibility = visibilityMatches.map(match => `${match[1]} ${match[2]}`);
     const skyMatches = [...data.matchAll(/(FEW\d{3}|SCT\d{3}|BKN\d{3}|OVC\d{3}|BKN\d{3}CB)/g)];
@@ -34,6 +47,7 @@ export async function parseTafData(tafJson) {
         period: periodMatch ? periodMatch[1] : null,
         changeIndicators,
         wind,
+        peakWind,
         visibility,
         sky,
         weather: wxMatches,
@@ -51,8 +65,21 @@ export async function parseTafAmdData(tafJson) {
 
     const periodMatch = data.match(/(\d{4}\/\d{4})/);
     const changeIndicators = [...data.matchAll(/(FM\d{6}|PROB\d{2}|TEMPO|BECMG)/g)].map(m => m[1]);
-    const windMatches = [...data.matchAll(/(\d{3})(\d{2,3})(KT)/g)];
-    const wind = windMatches.map(match => `${match[1]} ${match[2]} ${match[3]}`);
+    // Updated wind regex to capture gusts
+    const windMatches = [...data.matchAll(/(\d{3})(\d{2,3})G?(\d{2,3})?KT/g)];
+    const wind = windMatches.map(match => {
+        let windStr = `${match[1]} ${match[2]}KT`;
+        if (match[3]) windStr = `${match[1]} ${match[2]}G${match[3]}KT`;
+        return windStr;
+    });
+
+    // Optionally extract peak wind remarks (PK WND)
+    const pkWndMatch = data.match(/PK WND (\d{3})(\d{2,3})\/(\d{4})/);
+    let peakWind = pkWndMatch ? {
+        direction: pkWndMatch[1],
+        speed: pkWndMatch[2],
+        time: pkWndMatch[3]
+    } : null;
     const visibilityMatches = [...data.matchAll(/(\d{1,2})\s?(SM|P6SM)/g)];
     const visibility = visibilityMatches.map(match => `${match[1]} ${match[2]}`);
     const skyMatches = [...data.matchAll(/(FEW\d{3}|SCT\d{3}|BKN\d{3}|OVC\d{3}|BKN\d{3}CB)/g)];
@@ -76,6 +103,7 @@ export async function parseTafAmdData(tafJson) {
         period: periodMatch ? periodMatch[1] : null,
         changeIndicators,
         wind,
+        peakWind,
         visibility,
         sky,
         weather: wxMatches,

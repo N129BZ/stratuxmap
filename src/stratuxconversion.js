@@ -22,6 +22,7 @@ export async function convertStratuxToFAA(stratuxObject, stationInfo) {
         if (stratuxObject.Location.length === 3) {
             stratuxObject.Location = "K" + stratuxObject.Location;
         }
+        stationInfo = await attachAirportInfo(stratuxObject.Location);
     }
     
     // Make sure stratuxObject.Location is a string airport code, e.g. "KORD"
@@ -37,12 +38,14 @@ export async function convertStratuxToFAA(stratuxObject, stationInfo) {
     const weatherRaw = `${stratuxObject.Location} ${timestamp} ${cleanedData}`;
     const station_id = stratuxObject.Location;
     const observation_time = await parseObservationTime(loc_time);
+    //if (!weatherRaw) debugger; 
     const raw_text = weatherRaw;
     const metar_type = stratuxObject.Type;
 
     // Basic regex parsing
     const tempDewRegex = /(\d{2})\/(\d{2})/;
-    const windRegex = /(\d{3})(\d{2})KT/;
+    // Wind regex: direction, speed, optional gusts, always followed by KT
+    const windRegex = /(\d{3})(\d{2})G?(\d{2})?KT/;
     const altimRegex = /A(\d{4})/;
     const visRegex = /(\d{1,2})SM/;
     const skyRegex = /(FEW|SCT|BKN|OVC)(\d{3})/g;
@@ -51,6 +54,11 @@ export async function convertStratuxToFAA(stratuxObject, stationInfo) {
     const windMatch = weatherRaw.match(windRegex);
     const altimMatch = weatherRaw.match(altimRegex);
     const visMatch = weatherRaw.match(visRegex);
+
+    // Extract wind values robustly
+    let wind_dir_degrees = windMatch ? Number(windMatch[1]) : "";
+    let wind_speed_kt = windMatch ? Number(windMatch[2]) : "";
+    let wind_gust_kt = windMatch && windMatch[3] ? Number(windMatch[3]) : "";
 
     // Sky conditions
     let sky_condition = [];
@@ -72,26 +80,28 @@ export async function convertStratuxToFAA(stratuxObject, stationInfo) {
 
     let output = {
         raw_text,
-        //color: 
         type: stratuxObject.Type,
         station_id: station_id,
-        station_name: stationInfo?.name ?? null,
+        station_name: stationInfo?.name ?? "",
         timestamp: stratuxObject.Time,
         observation_time,
-        latitude: stationInfo?.lat ?? null,
-        longitude: stationInfo?.lon ?? null,
-        temp_c: tempDewMatch ? Number(tempDewMatch[1]) : null,
-        dewpoint_c: tempDewMatch ? Number(tempDewMatch[2]) : null,
-        wind_dir_degrees: windMatch ? Number(windMatch[1]) : null,
-        wind_speed_kt: windMatch ? Number(windMatch[2]) : null,
+        latitude: stationInfo?.lat ?? "",
+        longitude: stationInfo?.lon ?? "",
+        temp_c: tempDewMatch ? Number(tempDewMatch[1]) : "",
+        dewpoint_c: tempDewMatch ? Number(tempDewMatch[2]) : "",
+    wind_dir_degrees,
+    wind_speed_kt,
+    wind_gust_kt,
         visibility_statute_mi: visMiles,
-        altim_in_hg: altimMatch ? (Number(altimMatch[1]) / 100).toFixed(2) : null,
+        altim_in_hg: altimMatch ? (Number(altimMatch[1]) / 100).toFixed(2) : "",
         sky_condition,
         flight_category: cond, 
         metar_type,
-        elevation_m: stationInfo?.elevation_m ?? null,
+        elevation_m: stationInfo?.elevation_m ?? "",
         forecast: forecast,
     };
+
+    console.log(output);
 
     try {
         stateCache.messages.set(station_id, output);
@@ -142,15 +152,32 @@ function parseWeatherForecast(tafData) {
         }
 
         // Parse wind, visibility, and sky conditions
+        // Support both standard and 'WND' wind formats
+        let windMatch = null;
+        let wind_dir_degrees = "";
+        let wind_speed_kt = "";
+        let wind_gust_kt = "";
         const windRegex = /(\d{3})(\d{2})G?(\d{2})?KT/;
-        const visRegex = /(\d{1,2})SM/;
-        const skyRegex = /(FEW|SCT|BKN|OVC)(\d{3})/g;
+        const windWndRegex = /WND\s*(\d{3})(\d{2})G?(\d{2})?KT/;
+        if (line.includes("WND")) {
+            windMatch = line.match(windWndRegex);
+        } else {
+            windMatch = line.match(windRegex);
+        }
+        if (windMatch) {
+            wind_dir_degrees = Number(windMatch[1]);
+            wind_speed_kt = Number(windMatch[2]);
+            wind_gust_kt = windMatch[3] ? Number(windMatch[3]) : "";
+        } else {
+            console.log(`NO WIND MATCH FOR TAF: ${tafData}`);
+        }
 
-        const windMatch = line.match(windRegex);
+        const visRegex = /(\d{1,2})SM/;
         const visMatch = line.match(visRegex);
 
         // Sky conditions
         let sky_condition = [];
+        const skyRegex = /(FEW|SCT|BKN|OVC)(\d{3})/g;
         let skyMatch;
         while ((skyMatch = skyRegex.exec(line)) !== null) {
             sky_condition.push({
@@ -163,10 +190,10 @@ function parseWeatherForecast(tafData) {
             type,
             time,
             text: line,
-            wind_dir_degrees: windMatch ? Number(windMatch[1]) : null,
-            wind_speed_kt: windMatch ? Number(windMatch[2]) : null,
-            wind_gust_kt: windMatch && windMatch[3] ? Number(windMatch[3]) : null,
-            visibility_statute_mi: visMatch ? Number(visMatch[1]) : null,
+            wind_dir_degrees,
+            wind_speed_kt,
+            wind_gust_kt,
+            visibility_statute_mi: visMatch ? Number(visMatch[1]) : "",
             sky_condition
         });
     }
