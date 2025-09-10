@@ -31,6 +31,7 @@ import { parsePirepData } from './pirepParser.js';
 import { convertStratuxToFAA } from './stratuxconversion.js';
 import { parseTafAmdData } from './tafParser.js';
 import { saveMapState, restoreMapState } from './mapstatemanager.js'; //'./localstorage.js';
+import { getDatabaseList, getMetadatsets } from './tilehander.js';
 
 export class FIFOCache {
         constructor(maxSize) {
@@ -79,8 +80,9 @@ if (parseInt(URL_PORT) > 0) {
 }
 let URL_HOST_PROTOCOL       = `${URL_PROTOCOL}//`;
 let URL_SERVER              = `${URL_HOST_PROTOCOL}${URL_HOST_BASE}`;
-let URL_GET_HISTORY         = `${URL_SERVER}/gethistory`;
-let URL_PUT_HISTORY         = `${URL_SERVER}/savehistory`;
+let URL_GET_TILE            = `${URL_HOST_BASE}/tiles/{dbname}/{z}/{x}/{-y}`;
+let URL_GET_HISTORY         = `${URL_HOST_BASE}/gethistory`;
+let URL_PUT_HISTORY         = `${URL_HOST_BASE}/savehistory`;
 
 let deg = 0;
 let alt = 0;
@@ -96,8 +98,9 @@ const chicagoCoords = fromLonLat([-87.6298, 41.8781]); // Chicago: lon, lat
 /**
  * global variables
  */
-let dblist = {};
-let metadatasets = {};
+//let dblist = await getDatabaseList();
+//let metadatasets = await getMetadatsets();
+
 let last_longitude = 0;
 let last_latitude = 0;
 let last_heading = 0;
@@ -115,6 +118,8 @@ let mapState = {};
 
 document.addEventListener('DOMContentLoaded', function() {
     
+    
+
     document.addEventListener('visibilitychange', function() {
         let vs = document.visibilityState
         console.log('visibilitychange:', vs);
@@ -404,6 +409,50 @@ document.addEventListener('DOMContentLoaded', function() {
         map.addOverlay(myairplane);
     }
 
+    
+    try {
+        if (dblist) {
+            dblist.reverse();
+            Object.entries(dblist).forEach((db) => {
+                let dbname = db[1];
+                let metadata = {};
+                for (var i = 0; i < metadatasets.length; i++) {
+                    if (metadatasets[i]["key"] === dbname) {
+                        metadata = metadatasets[i]["value"];
+                        break;
+                    } 
+                }
+
+                let zOrder = 10;
+                if (dbname === "terminal") {
+                    zOrder = 12;
+                }
+
+                if (JSON.stringify(metadata) != "{}") {
+                    let dburl = URL_GET_TILE.replace("{dbname}", dbname);
+                    var layer = new ol.layer.Tile({
+                        title: metadata.description.replace(" Chart", ""),
+                        type: metadata.type,
+                        source: new ol.source.XYZ({
+                            url: dburl,
+                            maxzoom: metadata.maxzoom,
+                            minzoom: metadata.minzoom,
+                            attributions: settings.showattribution == true ? metadata.attribution : "",
+                            attributionsCollapsible: false
+                        }),
+                        visible: false,
+                        extent: extent,
+                        zIndex: zOrder
+                    });
+                    map.addLayer(layer);
+                } 
+            });
+        }
+    }
+    catch {
+        // do nothing
+    }
+
     const layerSwitcher = new LayerSwitcher({
         tipLabel: 'Layers', 
         groupSelectStyle: 'children'
@@ -561,7 +610,7 @@ document.addEventListener('DOMContentLoaded', function() {
             html += `<hr>`;
             html += `<button class="custom-popup-closer" onclick="closePopup()" style="background:${bgcolor}; color:${fgcolor};">close</button>`
             html += `<textarea id="rawdata" class="rawdata">${rawmetar}</textarea><br>`; 
-            console.log("METAR POPUP", html);
+            //console.log("METAR POPUP", html);
             //debugger;
             popupcontent.innerHTML = html;  
         }
@@ -1073,7 +1122,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
         // Validate required properties
         if (!metar || typeof metar.longitude !== 'number' || typeof metar.latitude !== 'number') {
-            console.warn('processMetar: Missing longitude/latitude in metar object', metar);
+            //console.warn('processMetar: Missing longitude/latitude in metar object', metar);
             return;
         }
 

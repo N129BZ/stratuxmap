@@ -104,7 +104,7 @@ export async function convertStratuxToFAA(stratuxObject, stationInfo) {
         forecast: forecast,
     };
 
-    console.log(output);
+    //console.log(output);
 
     try {
         stateCache.messages.set(station_id, output);
