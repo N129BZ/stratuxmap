@@ -64,7 +64,7 @@ export const stateCache = {
     viewposition: [],
     rotation: 0.0,
     layervisibility: [],
-    messages: new FIFOCache(300)
+    messages: new FIFOCache(150)
 };
 
  /**
