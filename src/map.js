@@ -71,18 +71,9 @@ export const stateCache = {
  /**
  * Construct all of the application urls 
  */
-let URL_LOCATION            =  location.hostname;
-let URL_PROTOCOL            =  location.protocol;
-let URL_PORT                =  location.port;
-let URL_HOST_BASE           =  URL_LOCATION;
-if (parseInt(URL_PORT) > 0) {
-    URL_HOST_BASE += `:${URL_PORT}`;
-}
-let URL_HOST_PROTOCOL       = `${URL_PROTOCOL}//`;
-let URL_SERVER              = `${URL_HOST_PROTOCOL}${URL_HOST_BASE}`;
-let URL_GET_TILE            = `${URL_HOST_BASE}/tiles/{dbname}/{z}/{x}/{-y}`;
-let URL_GET_HISTORY         = `${URL_HOST_BASE}/gethistory`;
-let URL_PUT_HISTORY         = `${URL_HOST_BASE}/savehistory`;
+//let URL_HOST_PROTOCOL       = `${URL_PROTOCOL}//`;
+let URL_GET_HISTORY         = `/gethistory`;
+let URL_PUT_HISTORY         = `/savehistory`;
 
 let deg = 0;
 let alt = 0;
@@ -407,18 +398,19 @@ document.addEventListener('DOMContentLoaded', function() {
         map.addOverlay(myairplane);
     }
     
-    setupTileDatabases();
+    loadTileDatabases();
 
-    async function setupTileDatabases() {
+    async function loadTileDatabases() {
         try {
 
+            let extent = transformExtent(viewextent, 'EPSG:4326', 'EPSG:3857')
             let dblist = await getDatabaseList();
             let metadatasets = await getMetadatsets();
             
             if (dblist && metadatasets) {
                 dblist.reverse();
                 Object.entries(dblist).forEach((db) => {
-                    let dbname = db[1];
+                    let dbname = db[1].toLowerCase();
                     let metadata = {};
                     for (var i = 0; i < metadatasets.length; i++) {
                         if (metadatasets[i]["key"] === dbname) {
@@ -432,11 +424,13 @@ document.addEventListener('DOMContentLoaded', function() {
                         zOrder = 12;
                     }
 
-                    if (JSON.stringify(metadata) != "{}") {
-                        let url = URL_GET_TILE.replace("{dbname}", dbname);
+                    if (metadata) {
+                        let title = "";
+                        if (metadata.description) {
+                            title = metadata.description.replace(" Chart", "");
+                        }
+                        let url = `/tiles/${dbname}/{z}/{x}/{-y}`
                         var layer = new TileLayer({
-                            title: metadata.description.replace(" Chart", ""),
-                            type: metadata.type,
                             source: new XYZ({
                                 url: url,
                                 maxzoom: metadata.maxzoom,
@@ -444,8 +438,10 @@ document.addEventListener('DOMContentLoaded', function() {
                                 attributions: metadata.attribution,
                                 attributionsCollapsible: false
                             }),
-                            visible: true,
-                           //extent: extent,
+                            title: title,
+                            type: metadata.type,
+                            visible: false,
+                            extent: extent,
                             zIndex: zOrder
                         });
                         map.addLayer(layer);
@@ -455,7 +451,6 @@ document.addEventListener('DOMContentLoaded', function() {
         }
         catch (err){
             console.log("TILE DB SETUP ERROR:", err);
-            debugger;
         }
     }
 
@@ -948,7 +943,7 @@ document.addEventListener('DOMContentLoaded', function() {
             case "icing_intensity":
                 image = getConditionImage(rawfieldname, fieldvalue);
                 html += `<span class="pirepitem">${fieldname}</span>`;
-                html += `<div class="conditionimage"><image src="${URL_SERVER}/img/${image}"></div><br>`;
+                html += `<div class="conditionimage"><image src="/images/${image}"></div><br>`;
                 break;
             case "turbulence_base_ft_msl":
             case "icing_base_ft_msl":
@@ -1402,18 +1397,21 @@ document.addEventListener('DOMContentLoaded', function() {
     function savePositionHistory() {
         if (last_longitude !== lng || last_latitude !== lat) {
             if (lng + lat + deg + alt > 0) {
-                let postage = { longitude: lng, 
-                    latitude: lat, 
+                let postage = {
+                    longitude: lng,
+                    latitude: lat,
                     heading: deg,
-                    altitude: Math.round(alt) };
-
-                var xhr = new XMLHttpRequest();
-                xhr.open("POST", URL_PUT_HISTORY);
-                xhr.setRequestHeader("Content-Type", "application/json");
-                try {    
-                    xhr.send(JSON.stringify(postage));
-                }
-                finally {}
+                    altitude: Math.round(alt)
+                };
+                fetch('/putpositionhistory', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(postage)
+                }).catch(err => {
+                    console.error('Failed to save position history:', err);
+                });
             }
         }
     }
