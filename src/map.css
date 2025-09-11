@@ -322,7 +322,7 @@ hr {
 }
 .taflabel {
     font-family: B612;
-    font-size: smaller;
+    font-size: medium;
 }
 .taftitle {
     width:400px;
@@ -486,8 +486,8 @@ hr {
     margin-bottom: 8px;
 }
 .featurepopup {
-    width: 385px;
-    padding: 12px;
+    width: 361px;
+    padding: 0px;
     font-family: B612;
     font-size: medium;
     background: #fff;

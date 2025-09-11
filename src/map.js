@@ -98,9 +98,8 @@ const chicagoCoords = fromLonLat([-87.6298, 41.8781]); // Chicago: lon, lat
 /**
  * global variables
  */
-//let dblist = await getDatabaseList();
-//let metadatasets = await getMetadatsets();
-
+let dblist = {}; //getDatabaseList();
+let metadatasets = {}; //= getMetadatsets();
 let last_longitude = 0;
 let last_latitude = 0;
 let last_heading = 0;
@@ -118,8 +117,6 @@ let mapState = {};
 
 document.addEventListener('DOMContentLoaded', function() {
     
-    
-
     document.addEventListener('visibilitychange', function() {
         let vs = document.visibilityState
         console.log('visibilitychange:', vs);
@@ -153,43 +150,44 @@ document.addEventListener('DOMContentLoaded', function() {
     closeButton = document.getElementById('closeBtn');
 
     closeButton.addEventListener("click", (evt) => {
-        save
-        saveMapState(); //metarVectorLayer, tafVectorLayer, pirepVectorLayer, trafficVectorLayer, osmTileLayer, map);
+        saveMapState(); 
         window.history.back();
     });
 
     window.addEventListener('stateReplay', function(e) {
         let returnedCache = e.detail;
-        map.getView().setZoom(returnedCache.zoom);
-        map.getView().setCenter(returnedCache.viewposition);
-        map.getView().setRotation(returnedCache.rotation);
-        
-        // set the layer visibilities
-        returnedCache.layervisibility.forEach(layerState => {
-            const layers = map.getLayers().getArray();
-            const layer = layers.find(l => l.get('title') === layerState.title);
-            if (layer && typeof layer.setVisible === 'function') {
-                layer.setVisible(layerState.visible);
-            }
-        });
-        
-        // loop through the messages and process by type
-        if (returnedCache && Array.isArray(returnedCache.messages)) {
-            returnedCache.messages.forEach((message, key) => {
-                switch (message.type) {
-                    case "METAR":
-                    case "SPECI":
-                        processMetar(message);
-                        break;
-                    case "TAF":
-                    case "TAF.AMD":
-                        processTaf(message);
-                        break;
-                    case "PIREP":
-                        processPirep(message);
-                        break;
+        if(returnedCache.zoom && returnedCache.viewposition && returnedCache.rotation) {
+            map.getView().setZoom(returnedCache.zoom);
+            map.getView().setCenter(returnedCache.viewposition);
+            map.getView().setRotation(returnedCache.rotation);
+            
+            // set the layer visibilities
+            returnedCache.layervisibility.forEach(layerState => {
+                const layers = map.getLayers().getArray();
+                const layer = layers.find(l => l.get('title') === layerState.title);
+                if (layer && typeof layer.setVisible === 'function') {
+                    layer.setVisible(layerState.visible);
                 }
             });
+            
+            // loop through the messages and process by type
+            if (returnedCache && Array.isArray(returnedCache.messages)) {
+                returnedCache.messages.forEach((message, key) => {
+                    switch (message.type) {
+                        case "METAR":
+                        case "SPECI":
+                            processMetar(message);
+                            break;
+                        case "TAF":
+                        case "TAF.AMD":
+                            processTaf(message);
+                            break;
+                        case "PIREP":
+                            processPirep(message);
+                            break;
+                    }
+                });
+            }
         }
     });
 
@@ -408,49 +406,57 @@ document.addEventListener('DOMContentLoaded', function() {
         myairplane.setPosition(viewposition);
         map.addOverlay(myairplane);
     }
-
     
-    try {
-        if (dblist) {
-            dblist.reverse();
-            Object.entries(dblist).forEach((db) => {
-                let dbname = db[1];
-                let metadata = {};
-                for (var i = 0; i < metadatasets.length; i++) {
-                    if (metadatasets[i]["key"] === dbname) {
-                        metadata = metadatasets[i]["value"];
-                        break;
+    setupTileDatabases();
+
+    async function setupTileDatabases() {
+        try {
+
+            let dblist = await getDatabaseList();
+            let metadatasets = await getMetadatsets();
+            
+            if (dblist && metadatasets) {
+                dblist.reverse();
+                Object.entries(dblist).forEach((db) => {
+                    let dbname = db[1];
+                    let metadata = {};
+                    for (var i = 0; i < metadatasets.length; i++) {
+                        if (metadatasets[i]["key"] === dbname) {
+                            metadata = metadatasets[i]["value"];
+                            break;
+                        } 
+                    }
+
+                    let zOrder = 10;
+                    if (dbname === "terminal") {
+                        zOrder = 12;
+                    }
+
+                    if (JSON.stringify(metadata) != "{}") {
+                        let url = URL_GET_TILE.replace("{dbname}", dbname);
+                        var layer = new TileLayer({
+                            title: metadata.description.replace(" Chart", ""),
+                            type: metadata.type,
+                            source: new XYZ({
+                                url: url,
+                                maxzoom: metadata.maxzoom,
+                                minzoom: metadata.minzoom,
+                                attributions: metadata.attribution,
+                                attributionsCollapsible: false
+                            }),
+                            visible: true,
+                           //extent: extent,
+                            zIndex: zOrder
+                        });
+                        map.addLayer(layer);
                     } 
-                }
-
-                let zOrder = 10;
-                if (dbname === "terminal") {
-                    zOrder = 12;
-                }
-
-                if (JSON.stringify(metadata) != "{}") {
-                    let dburl = URL_GET_TILE.replace("{dbname}", dbname);
-                    var layer = new ol.layer.Tile({
-                        title: metadata.description.replace(" Chart", ""),
-                        type: metadata.type,
-                        source: new ol.source.XYZ({
-                            url: dburl,
-                            maxzoom: metadata.maxzoom,
-                            minzoom: metadata.minzoom,
-                            attributions: settings.showattribution == true ? metadata.attribution : "",
-                            attributionsCollapsible: false
-                        }),
-                        visible: false,
-                        extent: extent,
-                        zIndex: zOrder
-                    });
-                    map.addLayer(layer);
-                } 
-            });
+                });
+            }
         }
-    }
-    catch {
-        // do nothing
+        catch (err){
+            console.log("TILE DB SETUP ERROR:", err);
+            debugger;
+        }
     }
 
     const layerSwitcher = new LayerSwitcher({
@@ -608,7 +614,7 @@ document.addEventListener('DOMContentLoaded', function() {
             html += `<span class="windsvg">${svg}</span>`;
             html += `</div>`; // end of metar-popup-body 
             html += `<hr>`;
-            html += `<button class="custom-popup-closer" onclick="closePopup()" style="background:${bgcolor}; color:${fgcolor};">close</button>`
+            html += `<button class="custom-popup-closer" onclick="closePopup()" style="background:${bgcolor}; color:${fgcolor};">Close</button>`
             html += `<textarea id="rawdata" class="rawdata">${rawmetar}</textarea><br>`; 
             //console.log("METAR POPUP", html);
             //debugger;
@@ -662,7 +668,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
         let temphtml = outerhtml.replace("###", html) + `</p></div>`; // end of forecast div
         let footerhtml = `<div class="taf-popup-footer">`; // beginning of footer div
-        footerhtml +=        `<button class="custom-popup-closer" onclick="closePopup()" style="background:${bgcolor}; color:${fgcolor};">close</button>`;
+        footerhtml +=        `<button class="custom-popup-closer" onclick="closePopup()" style="background:${bgcolor}; color:${fgcolor};">Close</button>`;
         footerhtml +=        `<textarea id="rawdata" class="rawdata">${rawtaf}</textarea><br>`;
         footerhtml +=    `</div>`;  // end of footer div
         footerhtml += `</div>`; // end of taf-popup-container div

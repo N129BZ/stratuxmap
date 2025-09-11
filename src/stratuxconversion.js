@@ -131,48 +131,44 @@ function parseWeatherForecast(tafData) {
     const forecastPeriods = [];
 
     for (const line of lines) {
+        const normalizedLine = line.replace(/\s+/g, ' ').trim();
         // Identify type
         let type = "MAIN";
         let time = null;
         let match;
 
-        if (line.startsWith("FM")) {
+        if (normalizedLine.startsWith("FM")) {
             type = "FM";
-            match = line.match(/^FM(\d{6})/);
+            match = normalizedLine.match(/^FM(\d{6})/);
             time = match ? match[1] : null;
-        } else if (line.startsWith("TEMPO")) {
+        } else if (normalizedLine.startsWith("TEMPO")) {
             type = "TEMPO";
-            match = line.match(/^TEMPO\s+(\d{4})\/(\d{4})/);
+            match = normalizedLine.match(/^TEMPO\s+(\d{4})\/(\d{4})/);
             time = match ? { from: match[1], to: match[2] } : null;
-        } else if (line.startsWith("PROB")) {
+        } else if (normalizedLine.startsWith("PROB")) {
             type = "PROB";
-            match = line.match(/^PROB(\d{2})\s+(\d{4})\/(\d{4})/);
+            match = normalizedLine.match(/^PROB(\d{2})\s+(\d{4})\/(\d{4})/);
             time = match ? { prob: match[1], from: match[2], to: match[3] } : null;
-        } else if (line.startsWith("BECMG")) {
+        } else if (normalizedLine.startsWith("BECMG")) {
             type = "BECMG";
-            match = line.match(/^BECMG\s+(\d{4})\/(\d{4})/);
+            match = normalizedLine.match(/^BECMG\s+(\d{4})\/(\d{4})/);
             time = match ? { from: match[1], to: match[2] } : null;
         }
 
         // Parse wind, visibility, and sky conditions
-        // Support both standard and 'WND' wind formats
-        let windMatch = null;
+        // Use matchAll to find the first wind group in each line
         let wind_dir_degrees = "";
         let wind_speed_kt = "";
         let wind_gust_kt = "";
-        const windRegex = /(\d{3})(\d{2})G?(\d{2})?KT/;
-        const windWndRegex = /WND\s*(\d{3})(\d{2})G?(\d{2})?KT/;
-        if (line.includes("WND")) {
-            windMatch = line.match(windWndRegex);
-        } else {
-            windMatch = line.match(windRegex);
-        }
-        if (windMatch) {
+        const windRegexGlobal = /(\d{3})(\d{2})G?(\d{2})?KT/g;
+        let windMatchArr = [...normalizedLine.matchAll(windRegexGlobal)];
+        if (windMatchArr.length > 0) {
+            let windMatch = windMatchArr[0];
             wind_dir_degrees = Number(windMatch[1]);
             wind_speed_kt = Number(windMatch[2]);
             wind_gust_kt = windMatch[3] ? Number(windMatch[3]) : "";
         } else {
-            console.log(`NO WIND MATCH FOR TAF: ${tafData}`);
+            // console.log(`NO WIND MATCH FOR TAF: ${tafData}`);
         }
 
         const visRegex = /(\d{1,2})SM/;
