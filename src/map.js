@@ -71,9 +71,22 @@ export const stateCache = {
  /**
  * Construct all of the application urls 
  */
-//let URL_HOST_PROTOCOL       = `${URL_PROTOCOL}//`;
-let URL_GET_HISTORY         = `/gethistory`;
-let URL_PUT_HISTORY         = `/savehistory`;
+const URL_LOCATION            = location.hostname;
+const URL_PORT                = location.port;
+let URL_HOST_BASE             = URL_LOCATION;
+if (parseInt(URL_PORT) > 0) {
+    URL_HOST_BASE += `:${URL_PORT}`;
+}
+const URL_HOST_PROTOCOL       = 'http://';
+const URL_SERVER              = `${URL_HOST_PROTOCOL}${URL_HOST_BASE}`;
+const URL_WINSOCK             = `ws://${URL_HOST_BASE}`;
+const URL_GET_METADATASETS    = `${URL_SERVER}/metadatasets`;
+const URL_GET_DBLIST          = `${URL_SERVER}/databaselist`;
+const URL_GET_TILE            = `${URL_SERVER}/tiles/{dbname}/{z}/{x}/{-y}`;
+const URL_GET_HISTORY         = `${URL_SERVER}/gethistory`;
+const URL_GET_SETTINGS        = `${URL_SERVER}/getsettings`;
+const URL_PUT_HISTORY         = `${URL_SERVER}/savehistory`;
+const URL_GET_HELIPORTS       = `${URL_SERVER}/getheliports`;
 
 let deg = 0;
 let alt = 0;
@@ -429,10 +442,11 @@ document.addEventListener('DOMContentLoaded', function() {
                         if (metadata.description) {
                             title = metadata.description.replace(" Chart", "");
                         }
-                        let url = `/tiles/${dbname}/{z}/{x}/{-y}`
+
+                        let dburl = URL_GET_TILE.replace("{dbname}", dbname);
                         var layer = new TileLayer({
                             source: new XYZ({
-                                url: url,
+                                url: dburl,
                                 maxzoom: metadata.maxzoom,
                                 minzoom: metadata.minzoom,
                                 attributions: metadata.attribution,

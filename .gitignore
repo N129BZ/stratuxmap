@@ -11,5 +11,4 @@ main_old.js
 .DS_Store
 Thumbs.db
 # Ignore IDE/editor files
-.vscode/
 .idea/
