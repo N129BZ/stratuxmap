@@ -31,7 +31,7 @@ import { parsePirepData } from './pirepParser.js';
 import { convertStratuxToFAA } from './stratuxconversion.js';
 import { parseTafAmdData } from './tafParser.js';
 import { saveMapState, restoreMapState } from './mapstatemanager.js'; //'./localstorage.js';
-import { getDatabaseList, getMetadatsets } from './tilehander.js';
+import { getDatabaseList, getMetadataset } from './tilehander.js';
 
 export class FIFOCache {
         constructor(maxSize) {
@@ -416,51 +416,42 @@ document.addEventListener('DOMContentLoaded', function() {
     async function loadTileDatabases() {
         try {
 
-            let extent = transformExtent(viewextent, 'EPSG:4326', 'EPSG:3857')
+            let extent = transformExtent(viewextent, 'EPSG:4326', 'EPSG:3857');
             let dblist = await getDatabaseList();
-            let metadatasets = await getMetadatsets();
-            
-            if (dblist && metadatasets) {
+
+            if (dblist) {
                 dblist.reverse();
-                Object.entries(dblist).forEach((db) => {
-                    let dbname = db[1].toLowerCase();
-                    let metadata = {};
-                    for (var i = 0; i < metadatasets.length; i++) {
-                        if (metadatasets[i]["key"] === dbname) {
-                            metadata = metadatasets[i]["value"];
-                            break;
-                        } 
-                    }
+                for (const [key, data] of Object.entries(dblist)) {
+                    let metadata = data.value;
+                    let dbname = data.key.toLowerCase();
+
+                    // Fetch metadata for this db asynchronously
+                    //let metadata = await getMetadataset(dbname);
 
                     let zOrder = 10;
                     if (dbname === "terminal") {
                         zOrder = 12;
                     }
 
-                    if (metadata) {
-                        let title = "";
-                        if (metadata.description) {
-                            title = metadata.description.replace(" Chart", "");
-                        }
+                    let title = metadata.description ? metadata.description.replace(" Chart", "") : dbname;
 
-                        let dburl = URL_GET_TILE.replace("{dbname}", dbname);
-                        var layer = new TileLayer({
-                            source: new XYZ({
-                                url: dburl,
-                                maxzoom: metadata.maxzoom,
-                                minzoom: metadata.minzoom,
-                                attributions: metadata.attribution,
-                                attributionsCollapsible: false
-                            }),
-                            title: title,
-                            type: metadata.type,
-                            visible: false,
-                            extent: extent,
-                            zIndex: zOrder
-                        });
-                        map.addLayer(layer);
-                    } 
-                });
+                    let dburl = URL_GET_TILE.replace("{dbname}", dbname);
+                    var layer = new TileLayer({
+                        source: new XYZ({
+                            url: dburl,
+                            maxzoom: metadata && metadata.maxzoom ? metadata.maxzoom : undefined,
+                            minzoom: metadata && metadata.minzoom ? metadata.minzoom : undefined,
+                            attributions: metadata && metadata.attribution ? metadata.attribution : undefined,
+                            attributionsCollapsible: false
+                        }),
+                        title: title,
+                        type: metadata && metadata.type ? metadata.type : undefined,
+                        visible: false,
+                        extent: extent,
+                        zIndex: zOrder
+                    });
+                    map.addLayer(layer);
+                }
             }
         }
         catch (err){

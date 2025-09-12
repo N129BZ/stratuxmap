@@ -1,13 +1,13 @@
 
 
 export async function getDatabaseList() {
-    const response = await fetch('/databaselist');
+    const response = await fetch('/tiles/tilesets');
     const data = await response.json();
     return data;
 }
 
-export async function getMetadatsets() {
-    const response = await fetch('/metadatasets');
+export async function getMetadataset(dbname) {
+    const response = await fetch(`/metadataset?db=${dbname}`);
     const data = await response.json();
     return data;
 }
