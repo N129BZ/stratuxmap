@@ -25,16 +25,16 @@ import mapsettings from './mapsettings.js';
 import { attachAirportInfo } from './airportInfo.js';
 import { parseWeatherMessage } from './messageparser.js';
 import { parseMetarData } from './metarParser.js'
-import { renderMetarPopup } from './metartemplate.js';  
+import { renderMetarPopup } from './metartemplate.js';
 import { metarPopupTemplate } from './metartemplate.js';
 import { parsePirepData } from './pirepParser.js';
 import { convertStratuxToFAA } from './stratuxconversion.js';
 import { parseTafAmdData } from './tafParser.js';
 import { saveMapState, restoreMapState } from './mapstatemanager.js'; //'./localstorage.js';
-import { getDatabaseList, getMetadataset } from './tilehander.js';
+import { getDatabaseList } from './tilehander.js';
 
 export class FIFOCache {
-        constructor(maxSize) {
+    constructor(maxSize) {
         this.maxSize = maxSize;
         this.map = new Map();
     }
@@ -68,25 +68,25 @@ export const stateCache = {
     messages: new FIFOCache(150)
 };
 
- /**
- * Construct all of the application urls 
- */
-const URL_LOCATION            = location.hostname;
-const URL_PORT                = location.port;
-let URL_HOST_BASE             = URL_LOCATION;
+/**
+* Construct all of the application urls 
+*/
+const URL_LOCATION = location.hostname;
+const URL_PORT = location.port;
+let URL_HOST_BASE = URL_LOCATION;
 if (parseInt(URL_PORT) > 0) {
     URL_HOST_BASE += `:${URL_PORT}`;
 }
-const URL_HOST_PROTOCOL       = 'http://';
-const URL_SERVER              = `${URL_HOST_PROTOCOL}${URL_HOST_BASE}`;
-const URL_WINSOCK             = `ws://${URL_HOST_BASE}`;
-const URL_GET_METADATASETS    = `${URL_SERVER}/metadatasets`;
-const URL_GET_DBLIST          = `${URL_SERVER}/databaselist`;
-const URL_GET_TILE            = `${URL_SERVER}/tiles/{dbname}/{z}/{x}/{-y}`;
-const URL_GET_HISTORY         = `${URL_SERVER}/gethistory`;
-const URL_GET_SETTINGS        = `${URL_SERVER}/getsettings`;
-const URL_PUT_HISTORY         = `${URL_SERVER}/savehistory`;
-const URL_GET_HELIPORTS       = `${URL_SERVER}/getheliports`;
+const URL_HOST_PROTOCOL = 'http://';
+const URL_SERVER = `${URL_HOST_PROTOCOL}${URL_HOST_BASE}`;
+const URL_WINSOCK = `ws://${URL_HOST_BASE}`;
+const URL_GET_METADATASETS = `${URL_SERVER}/metadatasets`;
+const URL_GET_DBLIST = `${URL_SERVER}/databaselist`;
+const URL_GET_TILE = `${URL_SERVER}/tiles/{dbname}/{z}/{x}/{-y}`;
+const URL_GET_HISTORY = `${URL_SERVER}/gethistory`;
+const URL_GET_SETTINGS = `${URL_SERVER}/getsettings`;
+const URL_PUT_HISTORY = `${URL_SERVER}/savehistory`;
+const URL_GET_HELIPORTS = `${URL_SERVER}/getheliports`;
 
 let deg = 0;
 let alt = 0;
@@ -113,15 +113,15 @@ let tplcontainer = {};
 let DistanceUnits = {};
 let distanceunit = "";
 let closeButton = {};
-let popup = {}; 
-let popupcontent = {}; 
+let popup = {};
+let popupcontent = {};
 let airplaneElement = {};
 let layerState = {};
 let mapState = {};
 
-document.addEventListener('DOMContentLoaded', function() {
-    
-    document.addEventListener('visibilitychange', function() {
+document.addEventListener('DOMContentLoaded', function () {
+
+    document.addEventListener('visibilitychange', function () {
         let vs = document.visibilityState
         console.log('visibilitychange:', vs);
         try {
@@ -134,18 +134,18 @@ document.addEventListener('DOMContentLoaded', function() {
                     visible: typeof layer.getVisible === 'function' ? layer.getVisible() : undefined
                 }))
                 console.log("SAVING MAP STATE!")
-                saveMapState(); //metarVectorLayer, trafficVectorLayer, pirepVectorLayer, trafficVectorLayer, osmTileLayer, map);
+                saveMapState();
             }
             else if (vs === 'visible') {
                 console.log("RESTORING MAP STATE!")
-                restoreMapState(); //metarVectorLayer, trafficVectorLayer, pirepVectorLayer, trafficVectorLayer, osmTileLayer, map);
+                restoreMapState();
             }
         }
-        catch(err) {
+        catch (err) {
             console.log("VISIBILITY CHANGE ERROR", err);
         }
     });
-    
+
     // DOM is ready for map.html
     tplcontainer = document.getElementById('tplcontainer');
     popup = document.getElementById('popup');
@@ -154,17 +154,17 @@ document.addEventListener('DOMContentLoaded', function() {
     closeButton = document.getElementById('closeBtn');
 
     closeButton.addEventListener("click", (evt) => {
-        saveMapState(); 
+        saveMapState();
         window.history.back();
     });
 
-    window.addEventListener('stateReplay', function(e) {
+    window.addEventListener('stateReplay', function (e) {
         let returnedCache = e.detail;
-        if(returnedCache.zoom && returnedCache.viewposition && returnedCache.rotation) {
+        if (returnedCache.zoom && returnedCache.viewposition && returnedCache.rotation) {
             map.getView().setZoom(returnedCache.zoom);
             map.getView().setCenter(returnedCache.viewposition);
             map.getView().setRotation(returnedCache.rotation);
-            
+
             // set the layer visibilities
             returnedCache.layervisibility.forEach(layerState => {
                 const layers = map.getLayers().getArray();
@@ -173,7 +173,7 @@ document.addEventListener('DOMContentLoaded', function() {
                     layer.setVisible(layerState.visible);
                 }
             });
-            
+
             // loop through the messages and process by type
             if (returnedCache && Array.isArray(returnedCache.messages)) {
                 returnedCache.messages.forEach((message, key) => {
@@ -205,7 +205,7 @@ document.addEventListener('DOMContentLoaded', function() {
          * @param station staion name for instance creation
          * @param time time for instance creation
          */
-        constructor (weathertext, station, time) {
+        constructor(weathertext, station, time) {
             //Wind speed, direction and unit
             this.wind;// = new Wind();
             //List of weather conditions reported
@@ -224,7 +224,7 @@ document.addEventListener('DOMContentLoaded', function() {
         direction = 0;
         speed = 0;
         unit = "";
-        constructor() {}
+        constructor() { }
     };
     class Variation {
         constructor() {
@@ -268,14 +268,14 @@ document.addEventListener('DOMContentLoaded', function() {
         console.log("Starting websocket connections.");
         const wstfc = buildWebSocketUrl("/traffic");
         let wsTraffic = new WebSocket(wstfc);
-        wsTraffic.onmessage = function(evt){
+        wsTraffic.onmessage = function (evt) {
             let data = JSON.parse(evt.data);
             addTrafficItem(data);
         }
 
         const wssit = buildWebSocketUrl("/situation");
-        let wsSituation  = new WebSocket(wssit);
-        wsSituation.onmessage = function(evt){
+        let wsSituation = new WebSocket(wssit);
+        wsSituation.onmessage = function (evt) {
             if (myairplane !== null) {
                 let data = JSON.parse(evt.data);
                 setOwnshipOrientation(data);
@@ -283,14 +283,15 @@ document.addEventListener('DOMContentLoaded', function() {
         }
 
         const wswx = buildWebSocketUrl("/weather");
+        //const wswx = "http://127.0.0.1/weather";
         let wsWeather = new WebSocket(wswx);
-        wsWeather.onmessage = async function(evt){
+        wsWeather.onmessage = async function (evt) {
             try {
                 let message = JSON.parse(evt.data);
 
                 // TODO: Winds?
                 if (message.Type === "WINDS") return;
-                
+
                 let stratuxWeather = await convertStratuxToFAA(message);
 
                 switch (message.Type) {
@@ -306,7 +307,7 @@ document.addEventListener('DOMContentLoaded', function() {
                         processPirep(stratuxWeather);
                         break;
                 }
-            } 
+            }
             catch (error) {
                 // ignore errors
             }
@@ -328,8 +329,8 @@ document.addEventListener('DOMContentLoaded', function() {
     let pirepMarker = new Icon({
         crossOrigin: 'anonymous',
         src: '/images/pirep.png',
-        size:[85, 85],
-        offset: [0,0],
+        size: [85, 85],
+        offset: [0, 0],
         opacity: 1,
         scale: .50
     });
@@ -347,7 +348,7 @@ document.addEventListener('DOMContentLoaded', function() {
     const map = new OLMap({
         target: 'map',
         view: new View({
-            center: chicagoCoords,        
+            center: chicagoCoords,
             zoom: mapsettings.startupzoom,
             enableRotation: false,
             minZoom: 1,
@@ -371,7 +372,7 @@ document.addEventListener('DOMContentLoaded', function() {
         source: new VectorSource(),
         title: "Pireps",
         visible: false,
-        zindex: 11
+        zindex: 99
     });
     map.addLayer(pirepVectorLayer);
 
@@ -379,7 +380,7 @@ document.addEventListener('DOMContentLoaded', function() {
         source: new VectorSource(),
         title: "Metars",
         visible: false,
-        zIndex: 13
+        zIndex: 99
     });
     map.addLayer(metarVectorLayer);
 
@@ -387,7 +388,7 @@ document.addEventListener('DOMContentLoaded', function() {
         source: new VectorSource(),
         title: "TAFs",
         visible: false,
-        zIndex: 13
+        zIndex: 88
     });
     map.addLayer(tafVectorLayer);
 
@@ -395,13 +396,13 @@ document.addEventListener('DOMContentLoaded', function() {
         source: new VectorSource(),
         title: "Traffic",
         visible: false,
-        zIndex: 14
+        zIndex: 99
     });
     map.addLayer(trafficVectorLayer);
 
     console.log("Creating ownship position layer");
     const myairplane = new Overlay({
-            element: airplaneElement
+        element: airplaneElement
     });
     if (offset) {
         myairplane.setOffset(offset);
@@ -410,23 +411,21 @@ document.addEventListener('DOMContentLoaded', function() {
         myairplane.setPosition(viewposition);
         map.addOverlay(myairplane);
     }
-    
+
     loadTileDatabases();
 
     async function loadTileDatabases() {
         try {
 
+            const response = await fetch('/tiles/tilesets');
+            const dblist = await response.json();
+
             let extent = transformExtent(viewextent, 'EPSG:4326', 'EPSG:3857');
-            let dblist = await getDatabaseList();
 
             if (dblist) {
-                dblist.reverse();
-                for (const [key, data] of Object.entries(dblist)) {
-                    let metadata = data.value;
-                    let dbname = data.key.toLowerCase();
-
-                    // Fetch metadata for this db asynchronously
-                    //let metadata = await getMetadataset(dbname);
+                const entries = Object.entries(dblist).reverse();
+                for (const [dbname, metadata] of entries) {
+                    let lcdbname = dbname["0"].toLowerCase();
 
                     let zOrder = 10;
                     if (dbname === "terminal") {
@@ -454,13 +453,13 @@ document.addEventListener('DOMContentLoaded', function() {
                 }
             }
         }
-        catch (err){
+        catch (err) {
             console.log("TILE DB SETUP ERROR:", err);
         }
     }
 
     const layerSwitcher = new LayerSwitcher({
-        tipLabel: 'Layers', 
+        tipLabel: 'Layers',
         groupSelectStyle: 'children'
     });
     map.addControl(layerSwitcher);
@@ -483,7 +482,7 @@ document.addEventListener('DOMContentLoaded', function() {
         try {
             trafficMap.delete(traffic.Icao_addr);
         }
-        catch(err){
+        catch (err) {
             // do nothing
         }
         if (traffic.AgeLastAlt < 50 && traffic.Speed > 0) {
@@ -495,7 +494,7 @@ document.addEventListener('DOMContentLoaded', function() {
     /**
      * Event to handle scaling of feature images
      */
-    map.on('moveend', function(e) {
+    map.on('moveend', function (e) {
         let newZoom = map.getView().getZoom();
         if (currentZoom != newZoom) {
             resizeDots(newZoom);
@@ -508,34 +507,53 @@ document.addEventListener('DOMContentLoaded', function() {
      * Event to view Metar/TAF popup & closure
      */
     map.on('click', (evt) => {
-        let hasfeature = false;
-        //let coords = toLonLat(evt.coordinate);
-        
+        let features = [];
         map.forEachFeatureAtPixel(evt.pixel, (feature) => {
             if (feature) {
-                hasfeature = true;
-                let datatype = feature.get("datatype");
-                if (datatype === "metar") {
-                    displayMetarPopup(feature);
-                }
-                else if (datatype === "taf"){
-                    displayTafPopup(feature);
-                }
-                else if (datatype === "pirep") {
-                    displayPirepPopup(feature);
-                }
-                else if (datatype === "airport") { // simple airport marker
-                    displayAirportPopup(feature);
-                }
-                else if (datatype === "traffic") {
-                    //BAMHERE
-                    displayTrafficPopup(feature);
-                }
-                let coordinate = evt.coordinate;
-                popupoverlay.setPosition(coordinate);
+                features.push(feature);
             }
         });
-        if (!hasfeature) {
+        let handled = false;
+        // Prioritize METAR, then TAF, then others
+        const metarFeature = features.find(f => f.get('datatype') === 'metar');
+        if (metarFeature) {
+            displayMetarPopup(metarFeature);
+            popupoverlay.setPosition(evt.coordinate);
+            handled = true;
+        }
+        else {
+            const tafFeature = features.find(f => f.get('datatype') === 'taf');
+            if (tafFeature) {
+                displayTafPopup(tafFeature);
+                popupoverlay.setPosition(evt.coordinate);
+                handled = true;
+            }
+            else {
+                const pirepFeature = features.find(f => f.get('datatype') === 'pirep');
+                if (pirepFeature) {
+                    displayPirepPopup(pirepFeature);
+                    popupoverlay.setPosition(evt.coordinate);
+                    handled = true;
+                }
+                else {
+                    const airportFeature = features.find(f => f.get('datatype') === 'airport');
+                    if (airportFeature) {
+                        displayAirportPopup(airportFeature);
+                        popupoverlay.setPosition(evt.coordinate);
+                        handled = true;
+                    }
+                    else {
+                        const trafficFeature = features.find(f => f.get('datatype') === 'traffic');
+                        if (trafficFeature) {
+                            displayTrafficPopup(trafficFeature);
+                            popupoverlay.setPosition(evt.coordinate);
+                            handled = true;
+                        }
+                    }
+                }
+            }
+        }
+        if (!handled) {
             closePopup();
         }
     });
@@ -550,12 +568,12 @@ document.addEventListener('DOMContentLoaded', function() {
         let ident = metar.station_id;
         let svg = feature.get("svgimage");
         let cat = metar.flight_category;
-        
-        if (cat == undefined || cat == "undefined"){
+
+        if (cat == undefined || cat == "undefined") {
             cat = "VFR";
         }
-        
-        let time = (function() {
+
+        let time = (function () {
             if (metar.observation_time) {
                 return metar.observation_time;
             }
@@ -564,10 +582,10 @@ document.addEventListener('DOMContentLoaded', function() {
             }
             else {
                 return new Date();
-            } 
+            }
         })();
 
-        
+
         let tempC = metar.temp_c;
         let dewpC = metar.dewpoint_c;
         let temp = convertCtoF(metar.temp_c);
@@ -589,7 +607,7 @@ document.addEventListener('DOMContentLoaded', function() {
         if (icingcondition !== undefined) {
             icingconditions = decodeIcingOrTurbulenceCondition(icingcondition, taflabelCssClass);
         }
-        
+
         let btncolors = getCategoryColors(cat);
         let bgcolor = btncolors.bgcolor;
         let fgcolor = btncolors.fgcolor;
@@ -598,27 +616,27 @@ document.addEventListener('DOMContentLoaded', function() {
         if (ident != "undefined") {
             let name = feature.get('station_name');
             let html = `<div class="featurepopup" id="featurepopup">`;
-            html +=    `${css}${name}<br>${ident} - ${cat}</span><br>`;
-            html +=    `<div class="metar-popup-body">`; // beginning of metar-popup-body
-            html +=   `Time:&nbsp<b>${time}</b><br>`;
-            html +=   temp ? `Temp:&nbsp<b>${tempC} °C</b> (${temp})<br>` : "";
-            html +=   dewp ? `Dewpoint:&nbsp<b>${dewpC} °C</b> (${dewp})<br>` : "";
-            html +=   windir ? `Wind Direction:&nbsp<b>${windir}°</b><br>` : "";
-            html +=   winspd ? `Wind Speed:&nbsp<b>${winspd}&nbspkt</b><br>` : "";
-            html +=   wingst ? `Wind Gust:&nbsp<b>${wingst}&nbspkt</b><br>` : "";
-            html +=   altim  ? `Altimeter:&nbsp<b>${altim}&nbsphg</b><br>` : "";
-            html +=   vis ? `Horizontal Visibility:&nbsp<b>${vis}</b><br>` : "";
-            html +=   wxcode ? `Weather:&nbsp<b>${wxcode}</b><br>`: "";
-            html +=   skyconditions ? `${skyconditions}` : "";
-            html +=   icingconditions ? `${icingconditions}` : "";
+            html += `${css}${name}<br>${ident} - ${cat}</span><br>`;
+            html += `<div class="metar-popup-body">`; // beginning of metar-popup-body
+            html += `Time:&nbsp<b>${time}</b><br>`;
+            html += temp ? `Temp:&nbsp<b>${tempC} °C</b> (${temp})<br>` : "";
+            html += dewp ? `Dewpoint:&nbsp<b>${dewpC} °C</b> (${dewp})<br>` : "";
+            html += windir ? `Wind Direction:&nbsp<b>${windir}°</b><br>` : "";
+            html += winspd ? `Wind Speed:&nbsp<b>${winspd}&nbspkt</b><br>` : "";
+            html += wingst ? `Wind Gust:&nbsp<b>${wingst}&nbspkt</b><br>` : "";
+            html += altim ? `Altimeter:&nbsp<b>${altim}&nbsphg</b><br>` : "";
+            html += vis ? `Horizontal Visibility:&nbsp<b>${vis}</b><br>` : "";
+            html += wxcode ? `Weather:&nbsp<b>${wxcode}</b><br>` : "";
+            html += skyconditions ? `${skyconditions}` : "";
+            html += icingconditions ? `${icingconditions}` : "";
             html += `<span class="windsvg">${svg}</span>`;
             html += `</div>`; // end of metar-popup-body 
             html += `<hr>`;
             html += `<button class="custom-popup-closer" onclick="closePopup()" style="background:${bgcolor}; color:${fgcolor};">Close</button>`
-            html += `<textarea id="rawdata" class="rawdata">${rawmetar}</textarea><br>`; 
+            html += `<textarea id="rawdata" class="rawdata">${rawmetar}</textarea><br>`;
             //console.log("METAR POPUP", html);
             //debugger;
-            popupcontent.innerHTML = html;  
+            popupcontent.innerHTML = html;
         }
     }
 
@@ -634,43 +652,43 @@ document.addEventListener('DOMContentLoaded', function() {
         let bgcolor = btncolors.bgcolor;
         let fgcolor = btncolors.fgcolor;
         let forecast = taf.forecast;
-        
+
         let outerhtml = `<div style="display:block;">` +
-                            `<span class="taftitlelabel" style="background-color:${bgcolor}; color:${fgcolor};">Terminal Area Forecast - ${id}</span>` +
-                            `<div class="taf-popup-content">` +
-                                `<div class="taf">` + 
-                                    `<pre><code>` +
-                                    `<table class="tafmessage" id="taftable">` +
-                                        `<tr class="tafbody">` + 
-                                            `<td id="tafdata">###</td>` +
-                                        `</tr>` +
-                                    `</table>` +
-                                    `</code></pre>` +                 
-                                `</div>`;
+            `<span class="taftitlelabel" style="background-color:${bgcolor}; color:${fgcolor};">Terminal Area Forecast - ${id}</span>` +
+            `<div class="taf-popup-content">` +
+            `<div class="taf">` +
+            `<pre><code>` +
+            `<table class="tafmessage" id="taftable">` +
+            `<tr class="tafbody">` +
+            `<td id="tafdata">###</td>` +
+            `</tr>` +
+            `</table>` +
+            `</code></pre>` +
+            `</div>`;
 
         let html = "<div>"; // beginning of forecast div
-        
+
         for (const item in forecast) {
             let value = forecast[item];
-            if (typeof(value) === 'object') {
+            if (typeof (value) === 'object') {
                 for (const subitem in value) {
                     let subvalue = value[subitem];
                     let fcv = parseForecastField(subitem, subvalue);
-                    if (fcv) html += fcv; 
+                    if (fcv) html += fcv;
                 }
                 //html += "</p><hr>";
-            } 
+            }
             else {
                 let pff = parseForecastField(item, value);
-                if (pff) html += pff; 
+                if (pff) html += pff;
             }
         }
 
         let temphtml = outerhtml.replace("###", html) + `</p></div>`; // end of forecast div
         let footerhtml = `<div class="taf-popup-footer">`; // beginning of footer div
-        footerhtml +=        `<button class="custom-popup-closer" onclick="closePopup()" style="background:${bgcolor}; color:${fgcolor};">Close</button>`;
-        footerhtml +=        `<textarea id="rawdata" class="rawdata">${rawtaf}</textarea><br>`;
-        footerhtml +=    `</div>`;  // end of footer div
+        footerhtml += `<button class="custom-popup-closer" onclick="closePopup()" style="background:${bgcolor}; color:${fgcolor};">Close</button>`;
+        footerhtml += `<textarea id="rawdata" class="rawdata">${rawtaf}</textarea><br>`;
+        footerhtml += `</div>`;  // end of footer div
         footerhtml += `</div>`; // end of taf-popup-container div
         let innerhtml = temphtml + footerhtml;
         popupcontent.innerHTML = innerhtml;
@@ -683,19 +701,19 @@ document.addEventListener('DOMContentLoaded', function() {
     function displayPirepPopup(feature) {
         let pirep = feature.get("data");
         let rawpirep = pirep.get("raw_text");
-        let outerhtml = `<div class="taftitle">` + 
-                            `<span class="taftitlelabel">${pirep.report_type} FROM AIRCRAFT: ${pirep.aircraft_ref}</span><p></p>` +
-                        `</div>` +
-                        `<div class="taf">` + 
-                            `<pre><code>` +
-                            `<table class="tafmessage" id="taftable">` +
-                                `<tr class="tafbody">` + 
-                                    `<td id="tafdata">###</td>` +
-                                `</tr>` +
-                            `</table>` +
-                            `</code></pre>` +                 
-                        `</div>` + 
-                        `<br><br>`;
+        let outerhtml = `<div class="taftitle">` +
+            `<span class="taftitlelabel">${pirep.report_type} FROM AIRCRAFT: ${pirep.aircraft_ref}</span><p></p>` +
+            `</div>` +
+            `<div class="taf">` +
+            `<pre><code>` +
+            `<table class="tafmessage" id="taftable">` +
+            `<tr class="tafbody">` +
+            `<td id="tafdata">###</td>` +
+            `</tr>` +
+            `</table>` +
+            `</code></pre>` +
+            `</div>` +
+            `<br><br>`;
 
         let html = "<div>";
         let pireplabel = `<span class="pirepitem">`
@@ -771,7 +789,7 @@ document.addEventListener('DOMContentLoaded', function() {
             }
         }
         html += `<button class="custom-popup-closer" onclick="closePopup()" style="background:${bgcolor}; color:${fgcolor};">close</button>`
-        html += `<textarea id="rawdata" class="rawdata">${rawpirep}</textarea><br>`; 
+        html += `<textarea id="rawdata" class="rawdata">${rawpirep}</textarea><br>`;
         let innerhtml = outerhtml.replace("###", html);
         popupcontent.innerHTML = innerhtml;
     }
@@ -785,68 +803,68 @@ document.addEventListener('DOMContentLoaded', function() {
     function parseForecastField(rawfieldname, fieldvalue) {
         let html = "";
         let fieldname = tafFieldKeymap.get(rawfieldname);
-        
+
         if (fieldname && rawfieldname) {
             let formattedvalue = null;
-                switch (rawfieldname) {
-                    case "fcst_time_from":
-                        let thistime = fieldvalue;
-                        if (mapsettingsuselocaltime) {
-                            thistime = getLocalTime(fieldvalue);
-                        }
-                        html = `<span class="fcstlabel"><b>${thistime}</b></span>`;
-                        break;
-                    case "fcst_time_to": // I'm going to ignore this field to save space on the popup
+            switch (rawfieldname) {
+                case "fcst_time_from":
+                    let thistime = fieldvalue;
+                    if (mapsettingsuselocaltime) {
+                        thistime = getLocalTime(fieldvalue);
+                    }
+                    html = `<span class="fcstlabel"><b>${thistime}</b></span>`;
+                    break;
+                case "fcst_time_to": // I'm going to ignore this field to save space on the popup
                     //html = `&nbspto&nbsp<b>${fieldvalue}</b></span><br>`
                     //html = `<span class="fcstlabel">${formattedvalue}</span><br>`;
-                        break;
-                    case "change_indicator":
-                        let changevalue = getWeatherAcronymDescription(fieldvalue);
-                        if (changevalue) {
-                            html = `<span class="taflabel">${fieldname}: <b>${changevalue}</b></span><br>`;
-                        }
-                        break;
-                    case "temperature":
-                    case "time_becoming":
-                    case "probability":
-                    case "wind_speed_kt":
-                    case "wind_gust_kt":
-                    case "wind_shear_hgt_ft_agl":
-                    case "wind_shear_speed_kt":
-                    case "altim_in_hg":
-                    case "vert_vis_ft":
-                    case "wx_string":
-                        if (fieldname === "wx_string") {
-                            formattedvalue = decodeWxDescriptions(fieldvalue);
-                            if (formattedvalue) {
-                                html = `<span class="tafwxlabel">${fieldname}: <b>${formattedvalue}</b></span><br>`;
-                            }
-                        }
-                        else {
-                            if (fieldvalue) {
-                                html = `<span class="taflabel">${fieldname}: <b>${fieldvalue}</b></span><br>`;
-                            }
-                        }
-                        break;
-                    case "sky_condition":
-                        formattedvalue = decodeSkyCondition(fieldvalue);
+                    break;
+                case "change_indicator":
+                    let changevalue = getWeatherAcronymDescription(fieldvalue);
+                    if (changevalue) {
+                        html = `<span class="taflabel">${fieldname}: <b>${changevalue}</b></span><br>`;
+                    }
+                    break;
+                case "temperature":
+                case "time_becoming":
+                case "probability":
+                case "wind_speed_kt":
+                case "wind_gust_kt":
+                case "wind_shear_hgt_ft_agl":
+                case "wind_shear_speed_kt":
+                case "altim_in_hg":
+                case "vert_vis_ft":
+                case "wx_string":
+                    if (fieldname === "wx_string") {
+                        formattedvalue = decodeWxDescriptions(fieldvalue);
                         if (formattedvalue) {
-                            html = `<span class="tafskyheader">${fieldname}</span><br>${formattedvalue}`;
+                            html = `<span class="tafwxlabel">${fieldname}: <b>${formattedvalue}</b></span><br>`;
                         }
-                        break;
-                    case "turbulence_condition":
-                    case "icing_condition":
-                        formattedvalue = decodeIcingOrTurbulenceCondition(fieldvalue);
-                        if (formattedvalue) {
-                            html = `<span class="tafskyheader">${fieldname}</span><br>${formattedvalue}`;
+                    }
+                    else {
+                        if (fieldvalue) {
+                            html = `<span class="taflabel">${fieldname}: <b>${fieldvalue}</b></span><br>`;
                         }
-                        break;
-                    case "wind_dir_degrees":
-                    case "wind_shear_dir_degrees":
-                        if (fieldvalue) {  
-                            html = `<span class="taflabel">${fieldname}: <b>${fieldvalue}°</b></span><br>`;
-                        }
-                        break;
+                    }
+                    break;
+                case "sky_condition":
+                    formattedvalue = decodeSkyCondition(fieldvalue);
+                    if (formattedvalue) {
+                        html = `<span class="tafskyheader">${fieldname}</span><br>${formattedvalue}`;
+                    }
+                    break;
+                case "turbulence_condition":
+                case "icing_condition":
+                    formattedvalue = decodeIcingOrTurbulenceCondition(fieldvalue);
+                    if (formattedvalue) {
+                        html = `<span class="tafskyheader">${fieldname}</span><br>${formattedvalue}`;
+                    }
+                    break;
+                case "wind_dir_degrees":
+                case "wind_shear_dir_degrees":
+                    if (fieldvalue) {
+                        html = `<span class="taflabel">${fieldname}: <b>${fieldvalue}°</b></span><br>`;
+                    }
+                    break;
 
             }
         }
@@ -869,7 +887,7 @@ document.addEventListener('DOMContentLoaded', function() {
                     if (condition) {
                         let fieldname = "";
                         let fieldvalue = "";
-                        if (typeof(condition) === "object") {
+                        if (typeof (condition) === "object") {
                             for (const index in condition) {
                                 fieldname = getFieldDescription(index);
                                 fieldvalue = condition[index];
@@ -914,18 +932,18 @@ document.addEventListener('DOMContentLoaded', function() {
         let html = "";
         for (const item in condition) {
             let value = condition[item];
-            if (typeof(value) === 'object') {
+            if (typeof (value) === 'object') {
                 for (const subitem in value) {
                     let subvalue = value[subitem];
                     html += parseConditionField(subitem, subvalue);
                 }
                 html += "<br><hr>";
-            } 
+            }
             else {
                 html += parseConditionField(item, value);
             }
-        }        
-        return html;        
+        }
+        return html;
     }
 
     /**
@@ -943,7 +961,7 @@ document.addEventListener('DOMContentLoaded', function() {
             case "turbulence_type":
             case "icing_type":
                 html += `<span class="pirepitem">${fieldname}: <b>${fieldvalue}</b></span><br>`;
-                break; 
+                break;
             case "turbulence_intensity":
             case "icing_intensity":
                 image = getConditionImage(rawfieldname, fieldvalue);
@@ -1000,18 +1018,18 @@ document.addEventListener('DOMContentLoaded', function() {
                     image = "/images/IceSevere.png";
                     break;
             }
-        }   
-        else if (conditiontype === "turbulence_intensity") { 
+        }
+        else if (conditiontype === "turbulence_intensity") {
             switch (conditionvalue) {
                 case "NEG":
-                case "NEGclr": 
+                case "NEGclr":
                     image = "/images/Nil.png";
                     break;
                 case "SMTH-LGT":
                 case "LGT":
                     image = "/images/TurbSmoothLight.png";
                 case "LGT-CHOP":
-                    image = "/images/TurbLight.png";    
+                    image = "/images/TurbLight.png";
                     break;
                 case "CHOP":
                 case "LGT-MOD":
@@ -1033,7 +1051,7 @@ document.addEventListener('DOMContentLoaded', function() {
         else {
             image = "";
         }
-        
+
         return image;
     }
 
@@ -1045,10 +1063,10 @@ document.addEventListener('DOMContentLoaded', function() {
         let ident = feature.get("ident");
         let name = feature.get("station_name");
         let html = `<div id="#featurepopup"><pre><code><p>`;
-            html += `<span class="airportpopuplabel">${name} - ${ident}</span><p></p>`;
-            html += `</p></code></pre></div>`;
-            html += `<p><button class="ol-airport-closer" onclick="closePopup()">close</button></p>`;
-        popupcontent.innerHTML = html; 
+        html += `<span class="airportpopuplabel">${name} - ${ident}</span><p></p>`;
+        html += `</p></code></pre></div>`;
+        html += `<p><button class="ol-airport-closer" onclick="closePopup()">close</button></p>`;
+        popupcontent.innerHTML = html;
     }
 
     /**
@@ -1057,13 +1075,13 @@ document.addEventListener('DOMContentLoaded', function() {
      */
     function displayTrafficPopup(feature) {
         let jsondata = feature.get("jsondata");
-
+        //metarVectorLayer, trafficVectorLayer, pirepVectorLayer, trafficVectorLayer, osmTileLayer, map);
         let name = jsondata.Tail; //getFormattedAirportName(ident)
         let html = `<div id="#featurepopup"><pre><code><p>`;
-            html += `<span>${jsondata.Reg}:alt=${jsondata.Alt},course=${jsondata.Track}@${jsondata.Speed}kt</span><p></p>`;
-            html += `</p></code></pre></div>`;
-            html += `<p><button class="ol-airport-closer" onclick="closePopup()">close</button></p>`;
-        popupcontent.innerHTML = html; 
+        html += `<span>${jsondata.Reg}:alt=${jsondata.Alt},course=${jsondata.Track}@${jsondata.Speed}kt</span><p></p>`;
+        html += `</p></code></pre></div>`;
+        html += `<p><button class="ol-airport-closer" onclick="closePopup()">close</button></p>`;
+        popupcontent.innerHTML = html;
     }
 
     /**
@@ -1083,25 +1101,25 @@ document.addEventListener('DOMContentLoaded', function() {
         "Last_source":1,"ExtrapolatedPosition":false,"BearingDist_valid":true,
         "Bearing":92.7782277589171,"Distance":9.616803034808295e+06}
         --------------------------------------------------------------------------------------------*/
-        
+
         console.log(trafficObject);
 
         for (const key in trafficObject) {
             let scalesz = getScaleSize();
             let geom = new Point(fromLonLat([trafficObject.Lng, trafficObject.Lat]));
-            
+
             // convert Track degrees to radians
             let tradians = trafficObject.Track * 0.0174533;
 
             let trafficmarker = new Icon({
                 crossOrigin: "anonymous",
                 src: `/images/${mapsettings.trafficimage}`,
-                offset: [0,0],
+                offset: [0, 0],
                 opacity: 1,
                 scale: .08,
-                rotation: tradians  
+                rotation: tradians
             });
-            
+
             let trafficFeature = new Feature({
                 ident: key,
                 jsondata: trafficObject,
@@ -1112,7 +1130,7 @@ document.addEventListener('DOMContentLoaded', function() {
             trafficFeature.setStyle(new Style({
                 image: trafficmarker
             }));
-            
+
             //trafficmarker.style.transform = "rotate(" + item.Track + "deg)";
             trafficFeature.setId(key);
             // TODO: Add trafficFeature to the map
@@ -1136,16 +1154,16 @@ document.addEventListener('DOMContentLoaded', function() {
             let popupSvg = "";
             let mapDotSvg = "";
             let airportInfo = null;
-            try { 
+            try {
                 popupSvg = rawWeatherTextToSVG(metar, 150, 150, mapsettings.usemetricunits);
-                mapDotSvg = getWindBarbSvg(95, 95, metar); 
+                mapDotSvg = getWindBarbSvg(95, 95, metar);
             }
             catch { }
-            
+
             let metarmarker = new Icon({
                 crossOrigin: 'anonymous',
                 src: `data:image/svg+xml;utf8,${encodeURIComponent(mapDotSvg)}`,
-                offset: [0,0],
+                offset: [0, 0],
                 opacity: 1,
                 scale: scaleSize
             });
@@ -1154,7 +1172,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 datatype: "metar",
                 geometry: new Point(fromLonLat([metar.longitude, metar.latitude])),
                 station_name: metar.station_name,
-                svgimage: popupSvg 
+                svgimage: popupSvg
             });
             metarFeature.setStyle(new Style({
                 image: metarmarker
@@ -1164,9 +1182,9 @@ document.addEventListener('DOMContentLoaded', function() {
             if (oldFeature) {
                 metarVectorLayer.getSource().removeFeature(oldFeature);
             }
-            metarVectorLayer.getSource().addFeature(metarFeature); 
+            metarVectorLayer.getSource().addFeature(metarFeature);
         }
-        catch(error) {
+        catch (error) {
             console.log(error.message);
         }
     }
@@ -1198,7 +1216,7 @@ document.addEventListener('DOMContentLoaded', function() {
             }
             tafVectorLayer.getSource().addFeature(tafFeature)
         }
-        catch (error){
+        catch (error) {
             console.log(error.message);
         }
     }
@@ -1215,7 +1233,7 @@ document.addEventListener('DOMContentLoaded', function() {
         }
         try {
             // generate a "pseudo-heading" to use if wind dir is absent
-            let heading = Math.random()*Math.PI*2;
+            let heading = Math.random() * Math.PI * 2;
             if (pirep.wind_dir_degrees) {
                 heading = (pirep.wind_dir_degrees * 0.0174533);
             }
@@ -1237,7 +1255,7 @@ document.addEventListener('DOMContentLoaded', function() {
             }
             pirepVectorLayer.getSource().addFeature(pirepFeature);
         }
-        catch (error){
+        catch (error) {
             console.log(error.message);
         }
     }
@@ -1266,14 +1284,14 @@ document.addEventListener('DOMContentLoaded', function() {
 
     function getScaleSize() {
         let scale = 1;
-        switch(true) {
+        switch (true) {
             case currentZoom >= 0 && currentZoom < 1:
                 scale = .05;
                 break;
             case currentZoom >= 1 && currentZoom < 2:
                 scale = .075;
                 break;
-            case currentZoom >=2 && currentZoom < 3:
+            case currentZoom >= 2 && currentZoom < 3:
                 scale = .10;
                 break;
             case currentZoom >= 3 && currentZoom < 4:
@@ -1341,7 +1359,7 @@ document.addEventListener('DOMContentLoaded', function() {
         let num = parseFloat(miles);
         let label = "mi";
         switch (distanceunit) {
-            case DistanceUnits.kilometers: 
+            case DistanceUnits.kilometers:
                 num = miles * 1.609344;
                 label = "km"
                 break;
@@ -1360,7 +1378,7 @@ document.addEventListener('DOMContentLoaded', function() {
      */
     const convertCtoF = ((temp) => {
         if (temp == undefined) return "";
-        let num = (temp * 9/5 + 32);
+        let num = (temp * 9 / 5 + 32);
         if (num === NaN || num === undefined) return "";
         else return `${num.toFixed(1)} F°`;
     });
@@ -1441,7 +1459,7 @@ document.addEventListener('DOMContentLoaded', function() {
     function formatZuluDate(zuludate) {
         let workstring = zuludate.split("T");
         let zstring = workstring[1].slice(0, -1);
-        return  `${workstring[0]} ${zstring} Z`;
+        return `${workstring[0]} ${zstring} Z`;
     }
 
     /**
@@ -1461,43 +1479,43 @@ document.addEventListener('DOMContentLoaded', function() {
 
         hours = hours % 12;
         hours = hours ? hours : 12; // the hour '0' should be '12'
-        minutes = minutes < 10 ? '0'+minutes : minutes;
+        minutes = minutes < 10 ? '0' + minutes : minutes;
 
         let timex = date.toString().split("GMT");
         let time = timex[1];
 
         if (time.search("Eastern Standard") > -1) {
-            tzone = "(EST)"; 
+            tzone = "(EST)";
         }
         if (time.search("Eastern Daylignt") > -1) {
-            tzone = "(EDT)"; 
+            tzone = "(EDT)";
         }
         if (time.search("Central Standard") > -1) {
-            tzone = "(CST)"; 
+            tzone = "(CST)";
         }
         if (time.search("Central Daylight") > -1) {
-            tzone = "(CDT)"; 
+            tzone = "(CDT)";
         }
         if (time.search("Mountain Standard") > -1) {
-            tzone = "(MST)"; 
+            tzone = "(MST)";
         }
         if (time.search("Mountain Daylight") > -1) {
-            tzone = "(MDT)"; 
+            tzone = "(MDT)";
         }
         if (time.search("Pacific Standard") > -1) {
-            tzone = "(PST)"; 
+            tzone = "(PST)";
         }
         if (time.search("Pacific Daylight") > -1) {
-            tzone = "(PDT)"; 
+            tzone = "(PDT)";
         }
         if (time.search("Alaska Standard") > -1) {
-            tzone = "(AKST)"; 
+            tzone = "(AKST)";
         }
         if (time.search("Alaska Daylight") > -1) {
-            tzone = "(AKDT)"; 
+            tzone = "(AKDT)";
         }
         if (time.search("Atlantic Standard") > -1) {
-            tzone = "(AST)"; 
+            tzone = "(AST)";
         }
         if (time.search("Atlantic Daylight") > -1) {
             tzone = "(ADT)";
@@ -1523,11 +1541,11 @@ document.addEventListener('DOMContentLoaded', function() {
      */
     function getFormattedAirportName(ident) {
         let retvalue = airportNameKeymap.get(ident);
-        if (retvalue === undefined || 
+        if (retvalue === undefined ||
             retvalue === "undefined" ||
             retvalue === "") {
             retvalue = "";
-        } 
+        }
         else {
             retvalue = retvalue.replace("/", "\n");
             retvalue = retvalue.replace(",", "\n");
@@ -1623,13 +1641,13 @@ document.addEventListener('DOMContentLoaded', function() {
     function loadMetarFieldKeymap() {
         metarFieldKeymap.set("change_indicator", "Change indicator");
         metarFieldKeymap.set("raw_text", "raw text");
-        metarFieldKeymap.set("station_id", "station id"); 
+        metarFieldKeymap.set("station_id", "station id");
         metarFieldKeymap.set("observation_time", "Observation Time");
         metarFieldKeymap.set("latitude", "latitude");
         metarFieldKeymap.set("longitude", "longitude");
         metarFieldKeymap.set("temp_c", "Temp °C");
         metarFieldKeymap.set("dewpoint_c", "Dewpoint °C");
-        metarFieldKeymap.set("wind_dir_degrees", "Wind direction"); 
+        metarFieldKeymap.set("wind_dir_degrees", "Wind direction");
         metarFieldKeymap.set("wind_speed_kt", "Wind speed knots");
         metarFieldKeymap.set("wind_gust_kt", "Wind gust knots");
         metarFieldKeymap.set("visibility_statute_mi", "Horizontal visibility in statute miles");
@@ -1767,7 +1785,7 @@ document.addEventListener('DOMContentLoaded', function() {
         skyConditionKeymap.set("PROB", "Probability");
         skyConditionKeymap.set("CB", "Cumulo-Nimbus");
         skyConditionKeymap.set("IMC", "Instrument meteorological conditions"),
-        skyConditionKeymap.set("IMPR", "Improving");
+            skyConditionKeymap.set("IMPR", "Improving");
         skyConditionKeymap.set("INC", "In Clouds");
         skyConditionKeymap.set("INS", "Inches");
         skyConditionKeymap.set("INTER", "Intermittent");
@@ -1972,12 +1990,12 @@ document.addEventListener('DOMContentLoaded', function() {
         icingCodeKeymap.set("1", "Light");
         icingCodeKeymap.set("2", "Light in clouds")
         icingCodeKeymap.set("3", "Light in precipitation")
-        icingCodeKeymap.set("4", "Moderate");   
+        icingCodeKeymap.set("4", "Moderate");
         icingCodeKeymap.set("5", "Moderate in clouds");
         icingCodeKeymap.set("6", "Moderate in precipitation");
         icingCodeKeymap.set("7", "Severe");
         icingCodeKeymap.set("8", "Severe in clouds");
-        icingCodeKeymap.set("9", "Severe in precipitation");     
+        icingCodeKeymap.set("9", "Severe in precipitation");
     }
 
     /**
@@ -1986,26 +2004,26 @@ document.addEventListener('DOMContentLoaded', function() {
      * @returns string, readable description of code 
      */
     function getTurbulenceCodeDescription(code) {
-    let retvalue = turbulenceCodeKeymap.get(code);
-    if (retvalue === undefined) retvalue = code;
-    return retvalue;
+        let retvalue = turbulenceCodeKeymap.get(code);
+        if (retvalue === undefined) retvalue = code;
+        return retvalue;
     }
     /**
      * Load readable descriptions for Turbulence codes
      */
     function loadTurbulenceCodeKeymap() {
-    turbulenceCodeKeymap.set("0", "Light");
-    turbulenceCodeKeymap.set("1", "Light");
-    turbulenceCodeKeymap.set("2", "Moderate in clean air occasionally")
-    turbulenceCodeKeymap.set("3", "Moderate in clean air frequent");
-    turbulenceCodeKeymap.set("4", "Moderate in clouds occasionally");   
-    turbulenceCodeKeymap.set("5", "Moderate in clouds frequently");
-    turbulenceCodeKeymap.set("6", "Severe in clean air occasionally");
-    turbulenceCodeKeymap.set("7", "Severe in clean air frequent");
-    turbulenceCodeKeymap.set("8", "Severe in clouds occasionally");
-    turbulenceCodeKeymap.set("9", "Severe in clouds frequently");
-    turbulenceCodeKeymap.set("X", "Extreme");
-    turbulenceCodeKeymap.set("x", "Extreme");
+        turbulenceCodeKeymap.set("0", "Light");
+        turbulenceCodeKeymap.set("1", "Light");
+        turbulenceCodeKeymap.set("2", "Moderate in clean air occasionally")
+        turbulenceCodeKeymap.set("3", "Moderate in clean air frequent");
+        turbulenceCodeKeymap.set("4", "Moderate in clouds occasionally");
+        turbulenceCodeKeymap.set("5", "Moderate in clouds frequently");
+        turbulenceCodeKeymap.set("6", "Severe in clean air occasionally");
+        turbulenceCodeKeymap.set("7", "Severe in clean air frequent");
+        turbulenceCodeKeymap.set("8", "Severe in clouds occasionally");
+        turbulenceCodeKeymap.set("9", "Severe in clouds frequently");
+        turbulenceCodeKeymap.set("X", "Extreme");
+        turbulenceCodeKeymap.set("x", "Extreme");
     }
 
     const CONDITIONS = {
@@ -2335,20 +2353,20 @@ document.addEventListener('DOMContentLoaded', function() {
         else {
             gust = (metar.gust_speed === null || metar.gust_speed === undefined) ? "" :
                 `<g id="gustBarb" transform="rotate(${WDD}, 250, 250)"> ` +
-                    `${genBarb1((_a = WGSP) !== null && _a !== void 0 ? _a : 0, true)} ` + 
-                    `${genBarb2((_b = WGSP) !== null && _b !== void 0 ? _b : 0, true)} ` + 
-                    `${genBarb3((_c = WGSP) !== null && _c !== void 0 ? _c : 0, true)} ` + 
-                    `${genBarb4((_d = WGSP) !== null && _d !== void 0 ? _d : 0, true)} ` + 
-                    `${genBarb5((_e = WGSP) !== null && _e !== void 0 ? _e : 0, true)} ` + 
+                `${genBarb1((_a = WGSP) !== null && _a !== void 0 ? _a : 0, true)} ` +
+                `${genBarb2((_b = WGSP) !== null && _b !== void 0 ? _b : 0, true)} ` +
+                `${genBarb3((_c = WGSP) !== null && _c !== void 0 ? _c : 0, true)} ` +
+                `${genBarb4((_d = WGSP) !== null && _d !== void 0 ? _d : 0, true)} ` +
+                `${genBarb5((_e = WGSP) !== null && _e !== void 0 ? _e : 0, true)} ` +
                 `</g>`;
             wind =
-                `<g id="windBarb" transform="rotate(${WDD}, 250, 250)">` + 
+                `<g id="windBarb" transform="rotate(${WDD}, 250, 250)">` +
                 `<line stroke-width="8" y1="225" x1="250" y2="90" x2="250" stroke="#000" fill="none"/>` +
-                    `${genBarb1((_f = WSP) !== null && _f !== void 0 ? _f : 0, false)} ` + 
-                    `${genBarb2((_g = WSP) !== null && _g !== void 0 ? _g : 0, false)} ` + 
-                    `${genBarb3((_h = WSP) !== null && _h !== void 0 ? _h : 0, false)} ` + 
-                    `${genBarb4((_j = WSP) !== null && _j !== void 0 ? _j : 0, false)} ` + 
-                    `${genBarb5((_k = WSP) !== null && _k !== void 0 ? _k : 0, false)} ` + 
+                `${genBarb1((_f = WSP) !== null && _f !== void 0 ? _f : 0, false)} ` +
+                `${genBarb2((_g = WSP) !== null && _g !== void 0 ? _g : 0, false)} ` +
+                `${genBarb3((_h = WSP) !== null && _h !== void 0 ? _h : 0, false)} ` +
+                `${genBarb4((_j = WSP) !== null && _j !== void 0 ? _j : 0, false)} ` +
+                `${genBarb5((_k = WSP) !== null && _k !== void 0 ? _k : 0, false)} ` +
                 `</g>`;
         }
         return gust + wind;
@@ -2479,13 +2497,13 @@ document.addEventListener('DOMContentLoaded', function() {
             ref.temperature = temps_int[0];
             ref.dewpoint = temps_int[1];
         }
-        
+
         var temps_ne = parseTempNA(weathertext);
         if (temps_ne != null) {
             ref.temperature = temps_ne[0];
             ref.dewpoint = temps_ne[1];
         }
-        
+
         ref.altimeter = parseAltimeter(weathertext);
         return ref;
     }
@@ -2599,7 +2617,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 });
             }
         }
-        catch {}
+        catch { }
         return new Array();
     }
 
@@ -2765,14 +2783,14 @@ document.addEventListener('DOMContentLoaded', function() {
     function getCategoryColors(category) {
         switch (category) {
             case "IFR":
-                return {bgcolor: "#ff0000", fgcolor: "#ffffff"};
+                return { bgcolor: "#ff0000", fgcolor: "#ffffff" };
             case "LIFR":
-                return {bgcolor: "#ff00ff", fgcolor: "#000000"};
-            case "MVFR": 
-                return {bgcolor: "#0000cd", fgcolor: "#ffffff"};
+                return { bgcolor: "#ff00ff", fgcolor: "#000000" };
+            case "MVFR":
+                return { bgcolor: "#0000cd", fgcolor: "#ffffff" };
             case "VFR":
             default:
-                return {bgcolor: "#12f23c", fgcolor: "#000000"};
+                return { bgcolor: "#12f23c", fgcolor: "#000000" };
         }
     }
 
@@ -2816,14 +2834,14 @@ document.addEventListener('DOMContentLoaded', function() {
         var STA = (_d = metar.station) !== null && _d !== void 0 ? _d : "";
         var ALT = (_e = metar.pressure) !== null && _e !== void 0 ? _e : "";
         return `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 500 500"> ` +
-            `<style> ` + 
-                    `.txt{ font-size: 47.5px; font-family: sans-serif; } ` +
-                    `.tmp{ fill: red } ` + 
-                    `.sta{ fill: grey } ` + 
-                    `.dew{ fill: blue } ` +
-                    `.vis{ fill: violet } ` +
+            `<style> ` +
+            `.txt{ font-size: 47.5px; font-family: sans-serif; } ` +
+            `.tmp{ fill: red } ` +
+            `.sta{ fill: grey } ` +
+            `.dew{ fill: blue } ` +
+            `.vis{ fill: violet } ` +
             `</style> ${(0, genWind)(metar)} ${(0, getWeatherSVG)((_f = metar.wx) !== null && _f !== void 0 ? _f : "")} ` +
-            `         ${(0, genCoverage)(metar.coverage, metar.condition)} ` + 
+            `         ${(0, genCoverage)(metar.coverage, metar.condition)} ` +
             `<g id="text"><text class="vis txt" fill="#000000" stroke="#000" stroke-width="0" x="80" y="260" text-anchor="middle" ` +
             `xml:space="preserve">${VIS}</text><text class="tmp txt" fill="#000000" stroke="#000" stroke-width="0" x="160" y="220" text-anchor="middle" ` +
             `xml:space="preserve">${TMP}</text><text class="dew txt" fill="#000000" stroke="#000" stroke-width="0" x="160"  y="315" text-anchor="middle" ` +
@@ -2851,12 +2869,12 @@ document.addEventListener('DOMContentLoaded', function() {
         try {
             switch (metar.flight_category) {
                 case "IFR":
-                    catcolor ="ff0000";
+                    catcolor = "ff0000";
                     break;
                 case "LIFR":
                     catcolor = "ff00ff";
                     break;
-                case "MVFR": 
+                case "MVFR":
                     catcolor = "0000cd";
                     break;
                 case "VFR":
@@ -2864,17 +2882,17 @@ document.addEventListener('DOMContentLoaded', function() {
                     catcolor = "12f23c";
                     break;
             }
-        svg = `<svg xmlns="http://www.w3.org/2000/svg" ` +
-                    `width="${width}" height="${height}" ` + 
-                    `viewBox="0 0 500 500">` + 
-                    (0, genWind)(thismetar) + 
-                    `<g id="clr">` + 
-                        `<circle cx="250" cy="250" r="30" stroke="#000000" stroke-width="5" fill="#${catcolor}"/>` +
-                    `</g>` + 
+            svg = `<svg xmlns="http://www.w3.org/2000/svg" ` +
+                `width="${width}" height="${height}" ` +
+                `viewBox="0 0 500 500">` +
+                (0, genWind)(thismetar) +
+                `<g id="clr">` +
+                `<circle cx="250" cy="250" r="30" stroke="#000000" stroke-width="5" fill="#${catcolor}"/>` +
+                `</g>` +
                 `</svg>`;
         }
-        catch {}
-        return svg; 
+        catch { }
+        return svg;
     }
     /**
      * Convert ºF to ºF
