@@ -5,33 +5,19 @@ import { Map as OLMap, View } from 'ol';
 import TileLayer from 'ol/layer/Tile';
 import { TileWMS, XYZ } from 'ol/source';
 import OSM from 'ol/source/OSM';
-import TileDebug from 'ol/source/TileDebug';
 import { fromLonLat, toLonLat, transformExtent } from 'ol/proj';
 import Feature from 'ol/Feature';
 import Point from 'ol/geom/Point';
-import Vector from 'ol/layer/Vector'
 import VectorLayer from 'ol/layer/Vector';
 import VectorSource from 'ol/source/Vector';
 import Style from 'ol/style/Style';
 import Icon from 'ol/style/Icon';
-import Collection from 'ol/Collection';
-import CircleStyle from 'ol/style/Circle';
-import Fill from 'ol/style/Fill';
-import Stroke from 'ol/style/Stroke';
 import Overlay from 'ol/Overlay';
 import { defaults as defaultControls, ScaleLine } from 'ol/control';
 import LayerSwitcher from 'ol-layerswitcher';
 import mapsettings from './mapsettings.js';
-import { attachAirportInfo } from './airportInfo.js';
-import { parseWeatherMessage } from './messageparser.js';
-import { parseMetarData } from './metarParser.js'
-import { renderMetarPopup } from './metartemplate.js';
-import { metarPopupTemplate } from './metartemplate.js';
-import { parsePirepData } from './pirepParser.js';
 import { convertStratuxToFAA } from './stratuxconversion.js';
-import { parseTafAmdData } from './tafParser.js';
-import { saveMapState, restoreMapState } from './mapstatemanager.js'; //'./localstorage.js';
-import { getDatabaseList } from './tilehander.js';
+import { saveMapState, restoreMapState, getMapState } from './mapstatemanager.js'; //'./localstorage.js';
 
 export class FIFOCache {
     constructor(maxSize) {
@@ -119,9 +105,61 @@ let airplaneElement = {};
 let layerState = {};
 let mapState = {};
 
-document.addEventListener('DOMContentLoaded', function () {
+document.addEventListener('DOMContentLoaded', async function () {
 
-    document.addEventListener('visibilitychange', function () {
+    // DOM is ready for map.html
+    tplcontainer = document.getElementById('tplcontainer');
+    popup = document.getElementById('popup');
+    popupcontent = document.getElementById('popup-content');
+    airplaneElement = document.getElementById('airplane');
+    closeButton = document.getElementById('closeBtn');
+
+    closeButton.addEventListener("click", async (evt) => {
+        await saveMapState();
+        window.history.back();
+    });
+
+    // Register stateReplay event listener BEFORE calling restoreMapState
+    window.addEventListener('stateReplay', async function (e) {
+        const stateCache = e.detail;
+        if (stateCache) { //}.zoom && stateCache.viewposition && stateCache.rotation) {
+            map.getView().setZoom(stateCache.zoom);
+            map.getView().setCenter(stateCache.viewposition);
+            map.getView().setRotation(stateCache.rotation);
+
+            // set the layer visibilities
+            for (const layerState of stateCache.layervisibility) {
+                const layers = map.getLayers().getArray();
+                const layer = layers.find(l => l.get('title') === layerState.title);
+                if (layer && typeof layer.setVisible === 'function') {
+                    layer.setVisible(layerState.visible); // if setVisible is async, otherwise remove await
+                }
+            }
+
+            const messages = Array.isArray(stateCache.messages)
+                ? stateCache.messages.map(m => m.message || m)
+                : [];
+
+            // loop through the messages and process by type
+            for (const message of messages) {
+                switch (message.type) {
+                    case "METAR":
+                    case "SPECI":
+                        await processMetar(message);
+                        break;
+                    case "TAF":
+                    case "TAF.AMD":
+                        await processTaf(message);
+                        break;
+                    case "PIREP":
+                        await processPirep(message);
+                        break;
+                }
+            }
+        }
+    });
+
+    document.addEventListener('visibilitychange', async function () {
         let vs = document.visibilityState
         console.log('visibilitychange:', vs);
         try {
@@ -134,64 +172,15 @@ document.addEventListener('DOMContentLoaded', function () {
                     visible: typeof layer.getVisible === 'function' ? layer.getVisible() : undefined
                 }))
                 console.log("SAVING MAP STATE!")
-                saveMapState();
+                await saveMapState();
             }
             else if (vs === 'visible') {
                 console.log("RESTORING MAP STATE!")
-                restoreMapState();
+                await restoreMapState();
             }
         }
         catch (err) {
             console.log("VISIBILITY CHANGE ERROR", err);
-        }
-    });
-
-    // DOM is ready for map.html
-    tplcontainer = document.getElementById('tplcontainer');
-    popup = document.getElementById('popup');
-    popupcontent = document.getElementById('popup-content');
-    airplaneElement = document.getElementById('airplane');
-    closeButton = document.getElementById('closeBtn');
-
-    closeButton.addEventListener("click", (evt) => {
-        saveMapState();
-        window.history.back();
-    });
-
-    window.addEventListener('stateReplay', function (e) {
-        let returnedCache = e.detail;
-        if (returnedCache.zoom && returnedCache.viewposition && returnedCache.rotation) {
-            map.getView().setZoom(returnedCache.zoom);
-            map.getView().setCenter(returnedCache.viewposition);
-            map.getView().setRotation(returnedCache.rotation);
-
-            // set the layer visibilities
-            returnedCache.layervisibility.forEach(layerState => {
-                const layers = map.getLayers().getArray();
-                const layer = layers.find(l => l.get('title') === layerState.title);
-                if (layer && typeof layer.setVisible === 'function') {
-                    layer.setVisible(layerState.visible);
-                }
-            });
-
-            // loop through the messages and process by type
-            if (returnedCache && Array.isArray(returnedCache.messages)) {
-                returnedCache.messages.forEach((message, key) => {
-                    switch (message.type) {
-                        case "METAR":
-                        case "SPECI":
-                            processMetar(message);
-                            break;
-                        case "TAF":
-                        case "TAF.AMD":
-                            processTaf(message);
-                            break;
-                        case "PIREP":
-                            processPirep(message);
-                            break;
-                    }
-                });
-            }
         }
     });
 
@@ -266,21 +255,21 @@ document.addEventListener('DOMContentLoaded', function () {
 
     (function setupStratuxWebsockets() {
         console.log("Starting websocket connections.");
-        const wstfc = buildWebSocketUrl("/traffic");
-        let wsTraffic = new WebSocket(wstfc);
-        wsTraffic.onmessage = function (evt) {
-            let data = JSON.parse(evt.data);
-            addTrafficItem(data);
-        }
+        // const wstfc = buildWebSocketUrl("/traffic");
+        // let wsTraffic = new WebSocket(wstfc);
+        // wsTraffic.onmessage = function (evt) {
+        //     let data = JSON.parse(evt.data);
+        //     addTrafficItem(data);
+        // }
 
-        const wssit = buildWebSocketUrl("/situation");
-        let wsSituation = new WebSocket(wssit);
-        wsSituation.onmessage = function (evt) {
-            if (myairplane !== null) {
-                let data = JSON.parse(evt.data);
-                setOwnshipOrientation(data);
-            }
-        }
+        // const wssit = buildWebSocketUrl("/situation");
+        // let wsSituation = new WebSocket(wssit);
+        // wsSituation.onmessage = function (evt) {
+        //     if (myairplane !== null) {
+        //         let data = JSON.parse(evt.data);
+        //         setOwnshipOrientation(data);
+        //     }
+        // }
 
         const wswx = buildWebSocketUrl("/weather");
         //const wswx = "http://127.0.0.1/weather";
@@ -289,27 +278,29 @@ document.addEventListener('DOMContentLoaded', function () {
             try {
                 let message = JSON.parse(evt.data);
 
+                let stratuxWeather = await convertStratuxToFAA(message);
+
+                if (stratuxWeather === null) return;
+                
                 // TODO: Winds?
                 if (message.Type === "WINDS") return;
-
-                let stratuxWeather = await convertStratuxToFAA(message);
 
                 switch (message.Type) {
                     case "METAR":
                     case "SPECI":
-                        processMetar(stratuxWeather);
+                        await processMetar(stratuxWeather);
                         break;
                     case "TAF":
                     case "TAF.AMD":
-                        processTaf(stratuxWeather);
+                        await processTaf(stratuxWeather);
                         break;
                     case "PIREP":
-                        processPirep(stratuxWeather);
+                        await processPirep(stratuxWeather);
                         break;
                 }
             }
             catch (error) {
-                // ignore errors
+                console.log("WEBSOCKET ERROR:", error);
             }
         }
     })();
@@ -425,14 +416,16 @@ document.addEventListener('DOMContentLoaded', function () {
             if (dblist) {
                 const entries = Object.entries(dblist).reverse();
                 for (const [dbname, metadata] of entries) {
-                    let lcdbname = dbname["0"].toLowerCase();
-
+                    
                     let zOrder = 10;
                     if (dbname === "terminal") {
                         zOrder = 12;
                     }
 
                     let title = metadata.description ? metadata.description.replace(" Chart", "") : dbname;
+                    if (title === "osm.mbtiles") title = "OSM Offline";
+                    let layertype = metadata.type === "baselayer" ? "base" : metadata.type;
+                    
 
                     let dburl = URL_GET_TILE.replace("{dbname}", dbname);
                     var layer = new TileLayer({
@@ -444,12 +437,17 @@ document.addEventListener('DOMContentLoaded', function () {
                             attributionsCollapsible: false
                         }),
                         title: title,
-                        type: metadata && metadata.type ? metadata.type : undefined,
+                        type: layertype,
                         visible: false,
                         extent: extent,
                         zIndex: zOrder
                     });
-                    map.addLayer(layer);
+                    if (dbname === "osm" || dbname === "osm.mbtiles") {
+                        map.getLayers().insertAt(1, layer);
+                    }
+                    else {
+                        map.addLayer(layer);
+                    }
                 }
             }
         }
@@ -1102,7 +1100,7 @@ document.addEventListener('DOMContentLoaded', function () {
         "Bearing":92.7782277589171,"Distance":9.616803034808295e+06}
         --------------------------------------------------------------------------------------------*/
 
-        console.log(trafficObject);
+        //console.log(trafficObject);
 
         for (const key in trafficObject) {
             let scalesz = getScaleSize();
@@ -1141,12 +1139,12 @@ document.addEventListener('DOMContentLoaded', function () {
      * Place metar features on the map. color-coded to the conditions
      * @param {object} metar object: JSON object with metar data
      */
-    function processMetar(metar) {
+    async function processMetar(metar) {
         let scaleSize = getScaleSize();
 
         // Validate required properties
         if (!metar || typeof metar.longitude !== 'number' || typeof metar.latitude !== 'number') {
-            //console.warn('processMetar: Missing longitude/latitude in metar object', metar);
+            console.warn('processMetar: Missing longitude/latitude in metar object', metar);
             return;
         }
 
@@ -1183,6 +1181,8 @@ document.addEventListener('DOMContentLoaded', function () {
                 metarVectorLayer.getSource().removeFeature(oldFeature);
             }
             metarVectorLayer.getSource().addFeature(metarFeature);
+            metarFeature.changed();
+            metarVectorLayer.changed();
         }
         catch (error) {
             console.log(error.message);
@@ -1193,7 +1193,7 @@ document.addEventListener('DOMContentLoaded', function () {
      * Place taf feature objects on the map
      * @param {object} taf: JSON object
      */
-    function processTaf(taf) {
+    async function processTaf(taf) {
         // Validate required properties
         if (!taf || typeof taf.longitude !== 'number' || typeof taf.latitude !== 'number') {
             //console.warn('processTaf: Missing longitude/latitude in taf object', taf);
@@ -1215,6 +1215,8 @@ document.addEventListener('DOMContentLoaded', function () {
                 tafVectorLayer.getSource().removeFeature(oldFeature);
             }
             tafVectorLayer.getSource().addFeature(tafFeature)
+            tafFeature.changed();
+            tafVectorLayer.changed();
         }
         catch (error) {
             console.log(error.message);
@@ -1225,7 +1227,7 @@ document.addEventListener('DOMContentLoaded', function () {
      * Place pirep features on the map
      * @param {object} pirep: JSON object with LOTS of pireps 
      */
-    function processPirep(pirep) {
+    async function processPirep(pirep) {
         // Validate required properties
         if (!pirep || typeof pirep.longitude !== 'number' || typeof pirep.latitude !== 'number') {
             //console.warn('processPirep: Missing longitude/latitude in pirep object', pirep);
@@ -1254,6 +1256,8 @@ document.addEventListener('DOMContentLoaded', function () {
                 pirepVectorLayer.getSource().removeFeature(oldFeature);
             }
             pirepVectorLayer.getSource().addFeature(pirepFeature);
+            pirepFeature.changed();
+            pirepVectorLayer.changed();
         }
         catch (error) {
             console.log(error.message);
@@ -2905,6 +2909,6 @@ document.addEventListener('DOMContentLoaded', function () {
     }
 
     if (map && metarVectorLayer && tafVectorLayer && pirepVectorLayer && trafficVectorLayer && osmTileLayer) {
-        restoreMapState(metarVectorLayer, tafVectorLayer, pirepVectorLayer, trafficVectorLayer, osmTileLayer, map);
+        restoreMapState();
     }
 });

@@ -1,7 +1,6 @@
 // stratuxconversion.js
 // Converts Stratux ADS-B websocket weather object to FAA pre-processed object format
 
-import { attachAirportInfo } from './airportInfo.js'
 import { stateCache } from './map.js';
 
 /**
@@ -12,22 +11,19 @@ import { stateCache } from './map.js';
  */
 export async function convertStratuxToFAA(stratuxObject, stationInfo) {
     
-    if (stratuxObject.Type === "METAR" || stratuxObject.Type === "TAF") {
-        if (!stationInfo) {
-            if (stratuxObject.Location.length === 3) {
-                //debugger;
-            }
-            stationInfo = await attachAirportInfo(stratuxObject.Location);
-            //console.log("Airport Info", stationInfo);
-        }
+    let location = stratuxObject.Location;
+
+    if (location.length === 3) {
+        location = `K${location}`;
+        stratuxObject.Location = location; 
     }
-    else if (stratuxObject.Type === "PIREP") {
-        if (stratuxObject.Location.length === 3) {
-            stationInfo = "K" + stratuxObject.Location;
-        }
-        stationInfo = await attachAirportInfo(stratuxObject.Location);
-    }
+
+    stationInfo = await attachAirportInfo(location);
     
+    if (stationInfo.lat === 0 || stationInfo.lon === 0) {
+        return null;
+    }
+
     // Make sure stratuxObject.Location is a string airport code, e.g. "KORD"
     const cleanedData = stratuxObject.Data.replace(/\s*\n\s*/g, ' ').trim();
     const forecast = parseWeatherForecast(stratuxObject.Data);
@@ -38,8 +34,8 @@ export async function convertStratuxToFAA(stratuxObject, stationInfo) {
 
 
     // Weather handling
-    const weatherRaw = `${stratuxObject.Location} ${timestamp} ${cleanedData}`;
-    const station_id = stratuxObject.Location;
+    const weatherRaw = `${location} ${timestamp} ${cleanedData}`;
+    const station_id = location;
     const observation_time = await parseObservationTime(loc_time);
     //if (!weatherRaw) debugger; 
     const raw_text = weatherRaw;
@@ -84,7 +80,7 @@ export async function convertStratuxToFAA(stratuxObject, stationInfo) {
     let output = {
         raw_text,
         type: stratuxObject.Type,
-        station_id: station_id,
+        station_id: location,
         station_name: stationInfo?.name ?? "",
         timestamp: stratuxObject.Time,
         observation_time,
@@ -104,14 +100,27 @@ export async function convertStratuxToFAA(stratuxObject, stationInfo) {
         forecast: forecast,
     };
 
-    //console.log(output);
-
     try {
-        stateCache.messages.set(station_id, output);
+        stateCache.messages.set(location, output);
     }
     finally {}
 
     return output;
+}
+
+async function attachAirportInfo(station) {
+    try {
+        const response = await fetch(`/airport?id=${station}`);
+        if (!response.ok) {
+            return {};
+        }
+        const airport = await response.json();
+        return airport; 
+    }
+    catch (error) 
+    {
+        return {};
+    }
 }
 
 /**

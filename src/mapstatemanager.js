@@ -3,7 +3,7 @@
 import { stateCache, FIFOCache } from './map.js';
 
 
-export function saveMapState() {
+export async function saveMapState() {
     try {
         // Serialize messages Map to array
         let messagesArray = [];
@@ -16,8 +16,8 @@ export function saveMapState() {
             ...stateCache,
             messages: messagesArray
         };
-        console.log("SAVING MAP STATE");
-        fetch('/savemapstate', {
+
+        await fetch('/savemapstate', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(stateToSave)
@@ -28,18 +28,38 @@ export function saveMapState() {
     }
 }
 
-export function restoreMapState() {
+export async function restoreMapState() {
     try {
-        fetch('/getmapstate')
-            .then(res => res.json())
-            .then(restoredState => {
-                if(!restoredState) return;
-                const replayEvent = new CustomEvent('stateReplay', { detail: restoredState });
-                window.dispatchEvent(replayEvent);
-        });
-            
-    }
-    catch(err) {
+        const res = await fetch('/getmapstate');
+        const restoredState = await res.json();
+        if (!restoredState) {
+            return null;
+        }
+        const replayEvent = new CustomEvent('stateReplay', { detail: restoredState });
+        window.dispatchEvent(replayEvent);
+        return restoredState;
+    } 
+    catch (err) {
         console.log("restoreMapState Error:", err);
+        return null;
+    }
+}
+
+export async function getMapState(raiseRestoreEvent) {
+    try {
+        const res = await fetch('/getmapstate');
+        const restoredState = await res.json();
+        if (!restoredState) {
+            return null;
+        }
+        else if (raiseRestoreEvent) {
+            const replayEvent = new CustomEvent('stateReplay', { detail: restoredState });
+            window.dispatchEvent(replayEvent);
+        }
+        return restoredState;
+    } 
+    catch (err) {
+        console.log("getMapState Error:", err);
+        return null;
     }
 }
