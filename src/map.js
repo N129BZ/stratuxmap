@@ -2910,5 +2910,6 @@ document.addEventListener('DOMContentLoaded', async function () {
 
     if (map && metarVectorLayer && tafVectorLayer && pirepVectorLayer && trafficVectorLayer && osmTileLayer) {
         restoreMapState();
+        console.log("Restored map state from cache!")
     }
 });
