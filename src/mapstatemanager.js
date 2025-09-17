@@ -35,7 +35,8 @@ export async function restoreMapState() {
         const res = await fetch('/getmapstate');
         const restoredState = await res.json();
         if (!restoredState) {
-            return null;
+            console.log("No restored state found!");
+            return;
         }
         const now = Math.floor(Date.now() / 1000);
         const maxAgeMinutes = 10; // set your desired age limit here
@@ -55,10 +56,8 @@ export async function restoreMapState() {
         }
         const replayEvent = new CustomEvent('stateReplay', { detail });
         window.dispatchEvent(replayEvent);
-        return detail;
     } 
     catch (err) {
         console.log("restoreMapState Error:", err);
-        return null;
     }
 }

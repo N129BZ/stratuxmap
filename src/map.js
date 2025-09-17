@@ -152,9 +152,6 @@ document.addEventListener('DOMContentLoaded', async function () {
     // Register stateReplay event listener BEFORE calling restoreMapState
     window.addEventListener('stateReplay', async function (e) {
         const stateCache = e.detail;
-        
-        inReplayEvent = true;
-
         if (typeof stateCache.zoom === 'number' &&
             Array.isArray(stateCache.viewposition) &&
             stateCache.viewposition.length === 2 &&
@@ -203,9 +200,6 @@ document.addEventListener('DOMContentLoaded', async function () {
                 console.log("Error in stateReplay event handler:", error)
             }
         }
-
-        inReplayEvent = false;
-
     });
 
     document.addEventListener('visibilitychange', async function () {
@@ -224,8 +218,12 @@ document.addEventListener('DOMContentLoaded', async function () {
                 await saveMapState();
             }
             else if (vs === 'visible') {
-                console.log("RESTORING MAP STATE!")
-                await restoreMapState();
+                if (!inReplayEvent) {
+                    console.log("Line 228: visibilitychange event, restoring map state.");
+                    await restoreMapState();
+                } else {
+                    console.log("Skipped restoreMapState due to inReplayEvent");
+                }
             }
         }
         catch (err) {
@@ -2917,7 +2915,10 @@ document.addEventListener('DOMContentLoaded', async function () {
     }
 
     if (!inReplayEvent) {
+        inReplayEvent = true;
+        console.log("Line 2924: DOMContentLoaded, restoring map state.");
         await restoreMapState();
+        inReplayEvent = false;
     }
 });
 
