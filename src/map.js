@@ -65,14 +65,14 @@ if (parseInt(URL_PORT) > 0) {
 }
 const URL_HOST_PROTOCOL = 'http://';
 const URL_SERVER = `${URL_HOST_PROTOCOL}${URL_HOST_BASE}`;
-const URL_WINSOCK = `ws://${URL_HOST_BASE}`;
-const URL_GET_METADATASETS = `${URL_SERVER}/metadatasets`;
-const URL_GET_DBLIST = `${URL_SERVER}/databaselist`;
+//const URL_WINSOCK = `ws://${URL_HOST_BASE}`;
+//const URL_GET_METADATASETS = `${URL_SERVER}/metadatasets`;
+//const URL_GET_DBLIST = `${URL_SERVER}/databaselist`;
 const URL_GET_TILE = `${URL_SERVER}/tiles/{dbname}/{z}/{x}/{-y}`;
-const URL_GET_HISTORY = `${URL_SERVER}/gethistory`;
-const URL_GET_SETTINGS = `${URL_SERVER}/getsettings`;
-const URL_PUT_HISTORY = `${URL_SERVER}/savehistory`;
-const URL_GET_HELIPORTS = `${URL_SERVER}/getheliports`;
+//const URL_GET_HISTORY = `${URL_SERVER}/gethistory`;
+//const URL_GET_SETTINGS = `${URL_SERVER}/getsettings`;
+//const URL_PUT_HISTORY = `${URL_SERVER}/savehistory`;
+//const URL_GET_HELIPORTS = `${URL_SERVER}/getheliports`;
 
 let deg = 0;
 let alt = 0;
@@ -88,13 +88,13 @@ const chicagoCoords = fromLonLat([-87.6298, 41.8781]); // Chicago: lon, lat
 /**
  * global variables
  */
-let dblist = {}; //getDatabaseList();
-let metadatasets = {}; //= getMetadatsets();
+//let dblist = {}; //getDatabaseList();
+//let metadatasets = {}; //= getMetadatsets();
 let last_longitude = 0;
 let last_latitude = 0;
 let last_heading = 0;
 let currentZoom = 9.0;
-let lastcriteria = "allregions";
+//let lastcriteria = "allregions";
 let tplcontainer = {};
 let DistanceUnits = {};
 let distanceunit = "";
@@ -102,8 +102,8 @@ let closeButton = {};
 let popup = {};
 let popupcontent = {};
 let airplaneElement = {};
-let layerState = {};
-let mapState = {};
+//let layerState = {};
+//let mapState = {};
 
 document.addEventListener('DOMContentLoaded', async function () {
 
@@ -128,7 +128,7 @@ document.addEventListener('DOMContentLoaded', async function () {
             typeof stateCache.viewposition[0] === 'number' &&
             typeof stateCache.viewposition[1] === 'number' &&
             typeof stateCache.rotation === 'number') {
-                
+
             try {
                 map.getView().setZoom(stateCache.zoom);
                 map.getView().setCenter(stateCache.viewposition);
@@ -322,7 +322,7 @@ document.addEventListener('DOMContentLoaded', async function () {
      */
     let tafMarker = new Icon({
         crossOrigin: 'anonymous',
-        src: '/images/taf.svg',
+        src: '/images/taf.png',
         size: [126, 90],
         offset: [0, 0],
         opacity: 1,
@@ -1208,7 +1208,6 @@ document.addEventListener('DOMContentLoaded', async function () {
     async function processTaf(taf) {
         // Validate required properties
         if (!taf || typeof taf.longitude !== 'number' || typeof taf.latitude !== 'number') {
-            //console.warn('processTaf: Missing longitude/latitude in taf object', taf);
             return;
         }
         try {
@@ -2920,9 +2919,7 @@ document.addEventListener('DOMContentLoaded', async function () {
         }
     }
 
+    await restoreMapState();
 
-    try {
-        restoreMapState();
-    }
-    finally{}
 });
+
