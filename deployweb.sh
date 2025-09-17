@@ -2,7 +2,7 @@
 # Copy contents of stratux/map into /opt/stratux/www
 
 SRC_DIR="$(dirname "$0")/stratux/map"
-DEST_DIR="/opt/stratux/www"
+DEST_DIR="/opt/stratux/map/"
 
 # Copy all contents, preserving permissions and attributes
 cp -a "$SRC_DIR/." "$DEST_DIR/"

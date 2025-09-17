@@ -17,7 +17,7 @@ import { defaults as defaultControls, ScaleLine } from 'ol/control';
 import LayerSwitcher from 'ol-layerswitcher';
 import mapsettings from './mapsettings.js';
 import { convertStratuxToFAA } from './stratuxconversion.js';
-import { saveMapState, restoreMapState, getMapState } from './mapstatemanager.js'; //'./localstorage.js';
+import { saveMapState, restoreMapState } from './mapstatemanager.js'; //'./localstorage.js';
 
 export class FIFOCache {
     constructor(maxSize) {
@@ -122,39 +122,52 @@ document.addEventListener('DOMContentLoaded', async function () {
     // Register stateReplay event listener BEFORE calling restoreMapState
     window.addEventListener('stateReplay', async function (e) {
         const stateCache = e.detail;
-        if (stateCache) { //}.zoom && stateCache.viewposition && stateCache.rotation) {
-            map.getView().setZoom(stateCache.zoom);
-            map.getView().setCenter(stateCache.viewposition);
-            map.getView().setRotation(stateCache.rotation);
+        if (typeof stateCache.zoom === 'number' &&
+            Array.isArray(stateCache.viewposition) &&
+            stateCache.viewposition.length === 2 &&
+            typeof stateCache.viewposition[0] === 'number' &&
+            typeof stateCache.viewposition[1] === 'number' &&
+            typeof stateCache.rotation === 'number') {
+                
+            try {
+                map.getView().setZoom(stateCache.zoom);
+                map.getView().setCenter(stateCache.viewposition);
+                map.getView().setRotation(stateCache.rotation);
 
-            // set the layer visibilities
-            for (const layerState of stateCache.layervisibility) {
-                const layers = map.getLayers().getArray();
-                const layer = layers.find(l => l.get('title') === layerState.title);
-                if (layer && typeof layer.setVisible === 'function') {
-                    layer.setVisible(layerState.visible); // if setVisible is async, otherwise remove await
+                // set the layer visibilities
+                if (Array.isArray(stateCache.layervisibility)) {
+                    for (const layerState of stateCache.layervisibility) {
+                        const layers = map.getLayers().getArray();
+                        const layer = layers.find(l => l.get('title') === layerState.title);
+                        if (layer && typeof layer.setVisible === 'function') {
+                            layer.setVisible(layerState.visible);
+                        }
+                    }
+                }
+
+                const messages = Array.isArray(stateCache.messages)
+                    ? stateCache.messages.map(m => m.message || m)
+                    : [];
+
+                // loop through the messages and process by type
+                for (const message of messages) {
+                    switch (message.type) {
+                        case "METAR":
+                        case "SPECI":
+                            await processMetar(message);
+                            break;
+                        case "TAF":
+                        case "TAF.AMD":
+                            await processTaf(message);
+                            break;
+                        case "PIREP":
+                            await processPirep(message);
+                            break;
+                    }
                 }
             }
-
-            const messages = Array.isArray(stateCache.messages)
-                ? stateCache.messages.map(m => m.message || m)
-                : [];
-
-            // loop through the messages and process by type
-            for (const message of messages) {
-                switch (message.type) {
-                    case "METAR":
-                    case "SPECI":
-                        await processMetar(message);
-                        break;
-                    case "TAF":
-                    case "TAF.AMD":
-                        await processTaf(message);
-                        break;
-                    case "PIREP":
-                        await processPirep(message);
-                        break;
-                }
+            catch(error) {
+                console.log("Error in stateReplay event handler:", error)
             }
         }
     });
@@ -255,24 +268,23 @@ document.addEventListener('DOMContentLoaded', async function () {
 
     (function setupStratuxWebsockets() {
         console.log("Starting websocket connections.");
-        // const wstfc = buildWebSocketUrl("/traffic");
-        // let wsTraffic = new WebSocket(wstfc);
-        // wsTraffic.onmessage = function (evt) {
-        //     let data = JSON.parse(evt.data);
-        //     addTrafficItem(data);
-        // }
+        const wstfc = buildWebSocketUrl("/traffic");
+        let wsTraffic = new WebSocket(wstfc);
+        wsTraffic.onmessage = function (evt) {
+            let data = JSON.parse(evt.data);
+            addTrafficItem(data);
+        }
 
-        // const wssit = buildWebSocketUrl("/situation");
-        // let wsSituation = new WebSocket(wssit);
-        // wsSituation.onmessage = function (evt) {
-        //     if (myairplane !== null) {
-        //         let data = JSON.parse(evt.data);
-        //         setOwnshipOrientation(data);
-        //     }
-        // }
+        const wssit = buildWebSocketUrl("/situation");
+        let wsSituation = new WebSocket(wssit);
+        wsSituation.onmessage = function (evt) {
+            if (myairplane !== null) {
+                let data = JSON.parse(evt.data);
+                setOwnshipOrientation(data);
+            }
+        }
 
         const wswx = buildWebSocketUrl("/weather");
-        //const wswx = "http://127.0.0.1/weather";
         let wsWeather = new WebSocket(wswx);
         wsWeather.onmessage = async function (evt) {
             try {
@@ -1144,7 +1156,7 @@ document.addEventListener('DOMContentLoaded', async function () {
 
         // Validate required properties
         if (!metar || typeof metar.longitude !== 'number' || typeof metar.latitude !== 'number') {
-            console.warn('processMetar: Missing longitude/latitude in metar object', metar);
+            //console.warn('processMetar: Missing longitude/latitude in metar object', metar);
             return;
         }
 
@@ -2908,8 +2920,9 @@ document.addEventListener('DOMContentLoaded', async function () {
         }
     }
 
-    if (map && metarVectorLayer && tafVectorLayer && pirepVectorLayer && trafficVectorLayer && osmTileLayer) {
+
+    try {
         restoreMapState();
-        console.log("Restored map state from cache!")
     }
+    finally{}
 });
