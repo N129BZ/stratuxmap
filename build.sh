@@ -23,5 +23,5 @@ if [ "$EUID" -eq 0 ]; then
     cp -r -f "$stxpath"/* "$optpath"
     echo "dist copied to $optpath"
 else
-    echo "RUN: sudo cp -r -f $distpath/* /opt/stratux/www/map"
+    echo "RUN: sudo cp -r -f $distpath/* $optpath"
 fi

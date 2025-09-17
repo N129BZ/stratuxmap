@@ -17,7 +17,7 @@ import { defaults as defaultControls, ScaleLine } from 'ol/control';
 import LayerSwitcher from 'ol-layerswitcher';
 import mapsettings from './mapsettings.js';
 import { convertStratuxToFAA } from './stratuxconversion.js';
-import { saveMapState, restoreMapState } from './mapstatemanager.js'; //'./localstorage.js';
+import { saveMapState, restoreMapState } from './mapstatemanager.js'; 
 
 export class FIFOCache {
     constructor(maxSize) {
@@ -55,6 +55,47 @@ export const stateCache = {
 };
 
 /**
+ * Classes used by the on-the-fly weather SVG in metar popups
+ */
+class WeatherProcessItem {
+    /**
+     * Extracted Metar data in a human readable format.
+     * @param weathertext raw metar string if provided station and time will be ignored and replaced with the content in the raw METAR
+     * @param station staion name for instance creation
+     * @param time time for instance creation
+     */
+    constructor(weathertext, station, time) {
+        //Wind speed, direction and unit
+        this.wind;// = new Wind();
+        //List of weather conditions reported
+        this.weather = new Array();
+        //List of Cloud observations
+        this.clouds = new Array();
+        this.station = station !== null && station !== void 0 ? station : "----";
+        this.time = time !== null && time !== void 0 ? time : new Date();
+        this.flightCategory = "";
+        if (weathertext != null) {
+            parseWeatherText(weathertext, this);
+        }
+    }
+}
+class Wind {
+    direction = 0;
+    speed = 0;
+    unit = "";
+    constructor() { }
+};
+class Variation {
+    constructor() {
+    }
+};
+class Cloud {
+    constructor() {
+    }
+};
+/**************** END OF SVG GENERATION CLASSES *****************/
+
+/**
 * Construct all of the application urls 
 */
 const URL_LOCATION = location.hostname;
@@ -65,14 +106,7 @@ if (parseInt(URL_PORT) > 0) {
 }
 const URL_HOST_PROTOCOL = 'http://';
 const URL_SERVER = `${URL_HOST_PROTOCOL}${URL_HOST_BASE}`;
-//const URL_WINSOCK = `ws://${URL_HOST_BASE}`;
-//const URL_GET_METADATASETS = `${URL_SERVER}/metadatasets`;
-//const URL_GET_DBLIST = `${URL_SERVER}/databaselist`;
 const URL_GET_TILE = `${URL_SERVER}/tiles/{dbname}/{z}/{x}/{-y}`;
-//const URL_GET_HISTORY = `${URL_SERVER}/gethistory`;
-//const URL_GET_SETTINGS = `${URL_SERVER}/getsettings`;
-//const URL_PUT_HISTORY = `${URL_SERVER}/savehistory`;
-//const URL_GET_HELIPORTS = `${URL_SERVER}/getheliports`;
 
 let deg = 0;
 let alt = 0;
@@ -88,13 +122,10 @@ const chicagoCoords = fromLonLat([-87.6298, 41.8781]); // Chicago: lon, lat
 /**
  * global variables
  */
-//let dblist = {}; //getDatabaseList();
-//let metadatasets = {}; //= getMetadatsets();
 let last_longitude = 0;
 let last_latitude = 0;
 let last_heading = 0;
 let currentZoom = 9.0;
-//let lastcriteria = "allregions";
 let tplcontainer = {};
 let DistanceUnits = {};
 let distanceunit = "";
@@ -102,8 +133,7 @@ let closeButton = {};
 let popup = {};
 let popupcontent = {};
 let airplaneElement = {};
-//let layerState = {};
-//let mapState = {};
+let inReplayEvent = false;
 
 document.addEventListener('DOMContentLoaded', async function () {
 
@@ -122,6 +152,9 @@ document.addEventListener('DOMContentLoaded', async function () {
     // Register stateReplay event listener BEFORE calling restoreMapState
     window.addEventListener('stateReplay', async function (e) {
         const stateCache = e.detail;
+        
+        inReplayEvent = true;
+
         if (typeof stateCache.zoom === 'number' &&
             Array.isArray(stateCache.viewposition) &&
             stateCache.viewposition.length === 2 &&
@@ -170,6 +203,9 @@ document.addEventListener('DOMContentLoaded', async function () {
                 console.log("Error in stateReplay event handler:", error)
             }
         }
+
+        inReplayEvent = false;
+
     });
 
     document.addEventListener('visibilitychange', async function () {
@@ -197,47 +233,6 @@ document.addEventListener('DOMContentLoaded', async function () {
         }
     });
 
-    /**
-     * Classes used by the on-the-fly weather SVG in metar popups
-     */
-    class WeatherProcessItem {
-        /**
-         * Extracted Metar data in a human readable format.
-         * @param weathertext raw metar string if provided station and time will be ignored and replaced with the content in the raw METAR
-         * @param station staion name for instance creation
-         * @param time time for instance creation
-         */
-        constructor(weathertext, station, time) {
-            //Wind speed, direction and unit
-            this.wind;// = new Wind();
-            //List of weather conditions reported
-            this.weather = new Array();
-            //List of Cloud observations
-            this.clouds = new Array();
-            this.station = station !== null && station !== void 0 ? station : "----";
-            this.time = time !== null && time !== void 0 ? time : new Date();
-            this.flightCategory = "";
-            if (weathertext != null) {
-                parseWeatherText(weathertext, this);
-            }
-        }
-    }
-    class Wind {
-        direction = 0;
-        speed = 0;
-        unit = "";
-        constructor() { }
-    };
-    class Variation {
-        constructor() {
-        }
-    };
-    class Cloud {
-        constructor() {
-        }
-    };
-    /**************** END OF SVG GENERATION CLASSES *****************/
-
     /* Map objects used for various keyname lookups */
     let airportNameKeymap = new Map();
     let tafFieldKeymap = new Map();
@@ -247,6 +242,7 @@ document.addEventListener('DOMContentLoaded', async function () {
     let turbulenceCodeKeymap = new Map();
     let skyConditionKeymap = new Map();
     let trafficMap = new Map();
+    
     /*******keymap loading ******/
     loadTafFieldKeymap();
     loadMetarFieldKeymap();
@@ -254,6 +250,7 @@ document.addEventListener('DOMContentLoaded', async function () {
     loadTurbulenceCodeKeymap();
     loadIcingCodeKeymap();
     loadSkyConditionmKeymap();
+    /****************************/
 
     const popupoverlay = new Overlay({
         element: popup,
@@ -2919,7 +2916,8 @@ document.addEventListener('DOMContentLoaded', async function () {
         }
     }
 
-    await restoreMapState();
-
+    if (!inReplayEvent) {
+        await restoreMapState();
+    }
 });
 
