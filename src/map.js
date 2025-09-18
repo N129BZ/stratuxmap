@@ -149,18 +149,20 @@ document.addEventListener('DOMContentLoaded', async function () {
 
     // Register stateReplay event listener BEFORE calling restoreMapState
     window.addEventListener('stateReplay', async function (e) {
-        const stateCache = e.detail.state;
-        console.log("In window event listener for stateReplay");
-        if (typeof stateCache.zoom === 'number' &&
-            Array.isArray(stateCache.viewposition) &&
-            stateCache.viewposition.length === 2 &&
-            typeof stateCache.viewposition[0] === 'number' &&
-            typeof stateCache.viewposition[1] === 'number' &&
-            typeof stateCache.rotation === 'number') {
+        try {    
+            const stateCache = e.detail.state;
+            console.log("In window event listener for stateReplay");
             
-            console.log("Passed IF statement check for valid replay object", stateCache);
+            if (typeof stateCache.zoom === 'number' &&
+                Array.isArray(stateCache.viewposition) &&
+                stateCache.viewposition.length === 2 &&
+                typeof stateCache.viewposition[0] === 'number' &&
+                typeof stateCache.viewposition[1] === 'number' &&
+                typeof stateCache.rotation === 'number') {
+                
+                console.log("Passed IF statement check for valid replay object", stateCache);
 
-            try {
+                
                 map.getView().setZoom(stateCache.zoom);
                 map.getView().setCenter(stateCache.viewposition);
                 map.getView().setRotation(stateCache.rotation);
@@ -199,9 +201,9 @@ document.addEventListener('DOMContentLoaded', async function () {
 
                 console.log("Finished processing of Replay event");
             }
-            catch(error) {
-                console.log("Error in stateReplay event handler:", error)
-            }
+        }
+        catch(error) {
+            console.log("Error in stateReplay event handler:", error)
         }
     });
 
@@ -222,11 +224,11 @@ document.addEventListener('DOMContentLoaded', async function () {
             }
             else if (vs === 'visible') {
                 console.log("Line 228: visibilitychange event, restoring map state.");
-                restoreMapState();
+                await restoreMapState();
             }
         }
-        catch (err) {
-            console.log("VISIBILITY CHANGE ERROR", err);
+        catch (error) {
+            console.log("VISIBILITY CHANGE ERROR", error);
         }
     });
 
@@ -316,7 +318,7 @@ document.addEventListener('DOMContentLoaded', async function () {
      */
     let tafMarker = new Icon({
         crossOrigin: 'anonymous',
-        src: '/images/taf.png',
+        src: '/images/taf.svg',
         size: [126, 90],
         offset: [0, 0],
         opacity: 1,
@@ -482,7 +484,7 @@ document.addEventListener('DOMContentLoaded', async function () {
      * Add a qualified Traffic item to the traffic Map collection
      * @param {json object} jsondata 
      */
-    function addTrafficItem(traffic) {
+    async function addTrafficItem(traffic) {
         try {
             trafficMap.delete(traffic.Icao_addr);
         }
@@ -491,7 +493,7 @@ document.addEventListener('DOMContentLoaded', async function () {
         }
         if (traffic.AgeLastAlt < 50 && traffic.Speed > 0) {
             trafficMap.set(traffic.Icao_addr, traffic);
-            processTraffic(traffic);
+            await processTraffic(traffic);
         }
     }
 
@@ -1091,7 +1093,7 @@ document.addEventListener('DOMContentLoaded', async function () {
     /**
      * Draw any traffic on the map
      */
-    function processTraffic(trafficObject) {
+    async function processTraffic(trafficObject) {
         /*-----------------------------------------------------------------------------------------    
                                     Traffic JSON sample 
         -------------------------------------------------------------------------------------------
@@ -1135,9 +1137,11 @@ document.addEventListener('DOMContentLoaded', async function () {
                 image: trafficmarker
             }));
 
-            //trafficmarker.style.transform = "rotate(" + item.Track + "deg)";
+            trafficmarker.style.transform = "rotate(" + item.Track + "deg)";
             trafficFeature.setId(key);
-            // TODO: Add trafficFeature to the map
+            trafficVectorLayer.getSource().addFeature(trafficFeature);
+            trafficFeature.changed();
+            trafficVectorLayer.changed();
         }
     }
 
