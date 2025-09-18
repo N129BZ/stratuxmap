@@ -38,6 +38,9 @@ export async function restoreMapState() {
             console.log("No restored state found!");
             return;
         }
+        else {
+            console.log("Restoring map state:", restoredState);
+        }
         const now = Math.floor(Date.now() / 1000);
         const maxAgeMinutes = 10; // set your desired age limit here
         let detail = {};

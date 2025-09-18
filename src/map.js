@@ -55,47 +55,6 @@ export const stateCache = {
 };
 
 /**
- * Classes used by the on-the-fly weather SVG in metar popups
- */
-class WeatherProcessItem {
-    /**
-     * Extracted Metar data in a human readable format.
-     * @param weathertext raw metar string if provided station and time will be ignored and replaced with the content in the raw METAR
-     * @param station staion name for instance creation
-     * @param time time for instance creation
-     */
-    constructor(weathertext, station, time) {
-        //Wind speed, direction and unit
-        this.wind;// = new Wind();
-        //List of weather conditions reported
-        this.weather = new Array();
-        //List of Cloud observations
-        this.clouds = new Array();
-        this.station = station !== null && station !== void 0 ? station : "----";
-        this.time = time !== null && time !== void 0 ? time : new Date();
-        this.flightCategory = "";
-        if (weathertext != null) {
-            parseWeatherText(weathertext, this);
-        }
-    }
-}
-class Wind {
-    direction = 0;
-    speed = 0;
-    unit = "";
-    constructor() { }
-};
-class Variation {
-    constructor() {
-    }
-};
-class Cloud {
-    constructor() {
-    }
-};
-/**************** END OF SVG GENERATION CLASSES *****************/
-
-/**
 * Construct all of the application urls 
 */
 const URL_LOCATION = location.hostname;
@@ -137,6 +96,45 @@ let inReplayEvent = false;
 
 document.addEventListener('DOMContentLoaded', async function () {
 
+    /**************** BEGINNING OF SVG GENERATION CLASSES *****************/
+    class WeatherProcessItem {
+        /**
+         * Extracted Metar data in a human readable format.
+         * @param weathertext raw metar string if provided station and time will be ignored and replaced with the content in the raw METAR
+         * @param station staion name for instance creation
+         * @param time time for instance creation
+         */
+        constructor(weathertext, station, time) {
+            //Wind speed, direction and unit
+            this.wind;// = new Wind();
+            //List of weather conditions reported
+            this.weather = new Array();
+            //List of Cloud observations
+            this.clouds = new Array();
+            this.station = station !== null && station !== void 0 ? station : "----";
+            this.time = time !== null && time !== void 0 ? time : new Date();
+            this.flightCategory = "";
+            if (weathertext != null) {
+                parseWeatherText(weathertext, this);
+            }
+        }
+    }
+    class Wind {
+        direction = 0;
+        speed = 0;
+        unit = "";
+        constructor() { }
+    };
+    class Variation {
+        constructor() {
+        }
+    };
+    class Cloud {
+        constructor() {
+        }
+    };
+    /**************** END OF SVG GENERATION CLASSES *****************/
+
     // DOM is ready for map.html
     tplcontainer = document.getElementById('tplcontainer');
     popup = document.getElementById('popup');
@@ -151,13 +149,16 @@ document.addEventListener('DOMContentLoaded', async function () {
 
     // Register stateReplay event listener BEFORE calling restoreMapState
     window.addEventListener('stateReplay', async function (e) {
-        const stateCache = e.detail;
+        const stateCache = e.detail.state;
+        console.log("In window event listener for stateReplay");
         if (typeof stateCache.zoom === 'number' &&
             Array.isArray(stateCache.viewposition) &&
             stateCache.viewposition.length === 2 &&
             typeof stateCache.viewposition[0] === 'number' &&
             typeof stateCache.viewposition[1] === 'number' &&
             typeof stateCache.rotation === 'number') {
+            
+            console.log("Passed IF statement check for valid replay object", stateCache);
 
             try {
                 map.getView().setZoom(stateCache.zoom);
@@ -195,6 +196,8 @@ document.addEventListener('DOMContentLoaded', async function () {
                             break;
                     }
                 }
+
+                console.log("Finished processing of Replay event");
             }
             catch(error) {
                 console.log("Error in stateReplay event handler:", error)
@@ -218,12 +221,8 @@ document.addEventListener('DOMContentLoaded', async function () {
                 await saveMapState();
             }
             else if (vs === 'visible') {
-                if (!inReplayEvent) {
-                    console.log("Line 228: visibilitychange event, restoring map state.");
-                    await restoreMapState();
-                } else {
-                    console.log("Skipped restoreMapState due to inReplayEvent");
-                }
+                console.log("Line 228: visibilitychange event, restoring map state.");
+                restoreMapState();
             }
         }
         catch (err) {
@@ -410,7 +409,7 @@ document.addEventListener('DOMContentLoaded', async function () {
         map.addOverlay(myairplane);
     }
 
-    loadTileDatabases();
+    await loadTileDatabases();
 
     async function loadTileDatabases() {
         try {
@@ -2914,11 +2913,7 @@ document.addEventListener('DOMContentLoaded', async function () {
         }
     }
 
-    if (!inReplayEvent) {
-        inReplayEvent = true;
-        console.log("Line 2924: DOMContentLoaded, restoring map state.");
-        await restoreMapState();
-        inReplayEvent = false;
-    }
+    console.log("Line 2924: DOMContentLoaded, restoring map state.");
+    await restoreMapState();
 });
 
