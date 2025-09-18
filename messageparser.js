@@ -1,5 +1,5 @@
 
-import { parseMetarData } from './metarParser.js';
+import { parseMetarData } from './src/metarParser.js';
 import { parseTafData, parseTafAmdData } from './tafParser.js';
 import { parseWindData } from './windParser.js';
 import { parsePirepData } from './pirepParser.js';
