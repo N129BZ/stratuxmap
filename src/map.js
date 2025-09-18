@@ -77,6 +77,7 @@ let viewposition = [];
 let offset = [-18, -18];
 
 const chicagoCoords = fromLonLat([-87.6298, 41.8781]); // Chicago: lon, lat
+const isMobile = /Mobi|Android|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
 
 /**
  * global variables
@@ -92,7 +93,6 @@ let closeButton = {};
 let popup = {};
 let popupcontent = {};
 let airplaneElement = {};
-let inReplayEvent = false;
 
 document.addEventListener('DOMContentLoaded', async function () {
 
@@ -514,11 +514,13 @@ document.addEventListener('DOMContentLoaded', async function () {
      */
     map.on('click', (evt) => {
         let features = [];
+        let htol = isMobile ? mapsettings.smallScreenHitTolerance : 1;
         map.forEachFeatureAtPixel(evt.pixel, (feature) => {
             if (feature) {
                 features.push(feature);
             }
-        });
+        }, {hitTolerance: htol});
+
         let handled = false;
         // Prioritize METAR, then TAF, then others
         const metarFeature = features.find(f => f.get('datatype') === 'metar');
@@ -1126,21 +1128,36 @@ document.addEventListener('DOMContentLoaded', async function () {
                 rotation: tradians
             });
 
-            let trafficFeature = new Feature({
-                ident: key,
-                jsondata: trafficObject,
-                datatype: "traffic",
-                geometry: geom
-            });
+            let source = trafficVectorLayer.getSource();
+            let existingFeature = source.getFeatureById(key);
 
-            trafficFeature.setStyle(new Style({
-                image: trafficmarker
-            }));
-
-            trafficmarker.style.transform = "rotate(" + item.Track + "deg)";
-            trafficFeature.setId(key);
-            trafficVectorLayer.getSource().addFeature(trafficFeature);
-            trafficFeature.changed();
+            if (existingFeature) {
+                // Update geometry and properties
+                existingFeature.setGeometry(geom);
+                existingFeature.setProperties({
+                    ident: key,
+                    jsondata: trafficObject,
+                    datatype: "traffic",
+                    // ...any other properties you want to update
+                });
+                existingFeature.setStyle(new Style({
+                    image: trafficmarker
+                }));
+                existingFeature.changed();
+            } else {
+                let trafficFeature = new Feature({
+                    ident: key,
+                    jsondata: trafficObject,
+                    datatype: "traffic",
+                    geometry: geom
+                });
+                trafficFeature.setStyle(new Style({
+                    image: trafficmarker
+                }));
+                trafficFeature.setId(key);
+                source.addFeature(trafficFeature);
+                trafficFeature.changed();
+            }
             trafficVectorLayer.changed();
         }
     }

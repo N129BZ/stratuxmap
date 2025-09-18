@@ -7,7 +7,8 @@ const mapsettings = {
     showattribution: true,
     lockownshiptocenter: true,
     ownshipimage: "airplane.png",
-    trafficimage: "red-yellow-traffic.png",
+    trafficimage: "traffic.svg",
+    smallScreenHitTolerance: 40,
     usemetricunits: false
 };
 
