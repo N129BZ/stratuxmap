@@ -15,9 +15,15 @@ import Icon from 'ol/style/Icon';
 import Overlay from 'ol/Overlay';
 import { defaults as defaultControls, ScaleLine } from 'ol/control';
 import LayerSwitcher from 'ol-layerswitcher';
-import mapsettings from './mapsettings.js';
 import { convertStratuxToFAA } from './stratuxconversion.js';
-import { saveMapState, restoreMapState } from './mapstatemanager.js'; 
+import { saveMapState, restoreMapState } from './mapstatemanager.js';
+
+let mapsettings = {};
+let mapsettingsLoaded = (async function loadSettings(){
+    const response = await fetch('/data/mapsettings.json');
+    mapsettings = await response.json();
+})();
+
 
 export class FIFOCache {
     constructor(maxSize) {
@@ -71,6 +77,9 @@ let deg = 0;
 let alt = 0;
 let lng = 0;
 let lat = 0;
+let last_longitude = 0;
+let last_latitude = 0;
+let last_heading = 0;
 
 let viewextent = [-180, -85, 180, 85];
 let viewposition = [];
@@ -82,9 +91,6 @@ const isMobile = /Mobi|Android|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i
 /**
  * global variables
  */
-let last_longitude = 0;
-let last_latitude = 0;
-let last_heading = 0;
 let currentZoom = 9.0;
 let tplcontainer = {};
 let DistanceUnits = {};
@@ -95,6 +101,8 @@ let popupcontent = {};
 let airplaneElement = {};
 
 document.addEventListener('DOMContentLoaded', async function () {
+    // Wait for mapsettings to be loaded before initializing anything that depends on it
+    await mapsettingsLoaded;
 
     /**************** BEGINNING OF SVG GENERATION CLASSES *****************/
     class WeatherProcessItem {
@@ -276,7 +284,7 @@ document.addEventListener('DOMContentLoaded', async function () {
         wsSituation.onmessage = function (evt) {
             if (myairplane !== null) {
                 let data = JSON.parse(evt.data);
-                setOwnshipOrientation(data);
+                updateOwnshipSituation(data);
             }
         }
 
@@ -1368,8 +1376,11 @@ document.addEventListener('DOMContentLoaded', async function () {
      * If saving position history is enabled,  
      * save it at a specified time interval
      */
-    if (mapsettings.savepositionhistory) {
-        setInterval(savePositionHistory, mapsettings.histintervalmsec);
+    async function setupPositionHistoryTimer() {
+        if (mapsettings.savepositionhistory) {
+            console.log(`Setting position history timer to repeat every ${mapsettings.histintervalmsec} milleseconds`);
+            setInterval(savePositionHistory, mapsettings.histintervalmsec);
+        }
     }
 
     /**
@@ -1416,7 +1427,7 @@ document.addEventListener('DOMContentLoaded', async function () {
     /**
      * Set ownship orientation from Stratux situation, updates airplane image current position
      */
-    function setOwnshipOrientation(jsondata) {
+    function updateOwnshipSituation(jsondata) {
         /*---------------------------------------------------------------
         * Situation json data field example
         *---------------------------------------------------------------
@@ -1450,18 +1461,18 @@ document.addEventListener('DOMContentLoaded', async function () {
     function savePositionHistory() {
         if (last_longitude !== lng || last_latitude !== lat) {
             if (lng + lat + deg + alt > 0) {
-                let postage = {
+                let poshistory = {
                     longitude: lng,
                     latitude: lat,
                     heading: deg,
                     altitude: Math.round(alt)
                 };
-                fetch('/putpositionhistory', {
+                fetch('/savehistory', {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json'
                     },
-                    body: JSON.stringify(postage)
+                    body: JSON.stringify(poshistory)
                 }).catch(err => {
                     console.error('Failed to save position history:', err);
                 });
@@ -2936,5 +2947,7 @@ document.addEventListener('DOMContentLoaded', async function () {
 
     console.log("Line 2924: DOMContentLoaded, restoring map state.");
     await restoreMapState();
+
+    await setupPositionHistoryTimer();
 });
 
