@@ -210,9 +210,7 @@ document.addEventListener('DOMContentLoaded', async function () {
                 console.log("Finished processing of Replay event");
             }
         }
-        catch(error) {
-            console.log("Error in stateReplay event handler:", error)
-        }
+        finally {} // no error, no foul...
     });
 
     document.addEventListener('visibilitychange', async function () {
@@ -1122,10 +1120,9 @@ document.addEventListener('DOMContentLoaded', async function () {
 
         for (const key in trafficObject) {
             let scalesz = getScaleSize();
-            let geom = new Point(fromLonLat([trafficObject.Lng, trafficObject.Lat]));
-
-            // convert Track degrees to radians
-            let tradians = trafficObject.Track * 0.0174533;
+            let newCoord = fromLonLat([trafficObject.Lng, trafficObject.Lat]);
+            let newTrack = trafficObject.Track;
+            let tradians = newTrack * 0.0174533;
 
             let trafficmarker = new Icon({
                 crossOrigin: "anonymous",
@@ -1140,24 +1137,52 @@ document.addEventListener('DOMContentLoaded', async function () {
             let existingFeature = source.getFeatureById(key);
 
             if (existingFeature) {
-                // Update geometry and properties
-                existingFeature.setGeometry(geom);
-                existingFeature.setProperties({
-                    ident: key,
-                    jsondata: trafficObject,
-                    datatype: "traffic",
-                    // ...any other properties you want to update
-                });
-                existingFeature.setStyle(new Style({
-                    image: trafficmarker
-                }));
-                existingFeature.changed();
-            } else {
+                // Animate position and heading
+                let oldCoord = existingFeature.getGeometry().getCoordinates();
+                let oldTrack = existingFeature.get('jsondata')?.Track || newTrack;
+                let oldRadians = oldTrack * 0.0174533;
+                let startTime = performance.now();
+                let duration = 800; // ms, adjust for smoothness
+                function animate(now) {
+                    let elapsed = now - startTime;
+                    let t = Math.min(elapsed / duration, 1);
+                    // Linear interpolation for coordinates
+                    let lon = oldCoord[0] + (newCoord[0] - oldCoord[0]) * t;
+                    let lat = oldCoord[1] + (newCoord[1] - oldCoord[1]) * t;
+                    let interpCoord = [lon, lat];
+                    // Interpolate heading (track)
+                    let interpRadians = oldRadians + (tradians - oldRadians) * t;
+                    let interpMarker = new Icon({
+                        crossOrigin: "anonymous",
+                        src: `/images/${mapsettings.trafficimage}`,
+                        offset: [0, 0],
+                        opacity: 1,
+                        scale: .08,
+                        rotation: interpRadians
+                    });
+                    existingFeature.setGeometry(new Point(interpCoord));
+                    existingFeature.setStyle(new Style({ image: interpMarker }));
+                    if (t < 1) {
+                        requestAnimationFrame(animate);
+                    } 
+                    else {
+                        // Finalize properties
+                        existingFeature.setProperties({
+                            ident: key,
+                            jsondata: trafficObject,
+                            datatype: "traffic",
+                        });
+                        existingFeature.changed();
+                    }
+                }
+                requestAnimationFrame(animate);
+            } 
+            else {
                 let trafficFeature = new Feature({
                     ident: key,
                     jsondata: trafficObject,
                     datatype: "traffic",
-                    geometry: geom
+                    geometry: new Point(newCoord)
                 });
                 trafficFeature.setStyle(new Style({
                     image: trafficmarker
