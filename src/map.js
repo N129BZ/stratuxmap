@@ -1119,10 +1119,8 @@ document.addEventListener('DOMContentLoaded', async function () {
         //console.log(trafficObject);
 
         for (const key in trafficObject) {
-            let scalesz = getScaleSize();
-            let newCoord = fromLonLat([trafficObject.Lng, trafficObject.Lat]);
-            let newTrack = trafficObject.Track;
-            let tradians = newTrack * 0.0174533;
+            let geom = new Point(fromLonLat([trafficObject.Lng, trafficObject.Lat]));
+            let tradians = trafficObject.Track * 0.0174533;
 
             let trafficmarker = new Icon({
                 crossOrigin: "anonymous",
@@ -1137,52 +1135,24 @@ document.addEventListener('DOMContentLoaded', async function () {
             let existingFeature = source.getFeatureById(key);
 
             if (existingFeature) {
-                // Animate position and heading
-                let oldCoord = existingFeature.getGeometry().getCoordinates();
-                let oldTrack = existingFeature.get('jsondata')?.Track || newTrack;
-                let oldRadians = oldTrack * 0.0174533;
-                let startTime = performance.now();
-                let duration = 800; // ms, adjust for smoothness
-                function animate(now) {
-                    let elapsed = now - startTime;
-                    let t = Math.min(elapsed / duration, 1);
-                    // Linear interpolation for coordinates
-                    let lon = oldCoord[0] + (newCoord[0] - oldCoord[0]) * t;
-                    let lat = oldCoord[1] + (newCoord[1] - oldCoord[1]) * t;
-                    let interpCoord = [lon, lat];
-                    // Interpolate heading (track)
-                    let interpRadians = oldRadians + (tradians - oldRadians) * t;
-                    let interpMarker = new Icon({
-                        crossOrigin: "anonymous",
-                        src: `/images/${mapsettings.trafficimage}`,
-                        offset: [0, 0],
-                        opacity: 1,
-                        scale: .08,
-                        rotation: interpRadians
-                    });
-                    existingFeature.setGeometry(new Point(interpCoord));
-                    existingFeature.setStyle(new Style({ image: interpMarker }));
-                    if (t < 1) {
-                        requestAnimationFrame(animate);
-                    } 
-                    else {
-                        // Finalize properties
-                        existingFeature.setProperties({
-                            ident: key,
-                            jsondata: trafficObject,
-                            datatype: "traffic",
-                        });
-                        existingFeature.changed();
-                    }
-                }
-                requestAnimationFrame(animate);
-            } 
+                // Update geometry and properties
+                existingFeature.setGeometry(geom);
+                existingFeature.setProperties({
+                    ident: key,
+                    jsondata: trafficObject,
+                    datatype: "traffic"
+                });
+                existingFeature.setStyle(new Style({
+                    image: trafficmarker
+                }));
+                existingFeature.changed();
+            }
             else {
                 let trafficFeature = new Feature({
                     ident: key,
                     jsondata: trafficObject,
                     datatype: "traffic",
-                    geometry: new Point(newCoord)
+                    geometry: geom
                 });
                 trafficFeature.setStyle(new Style({
                     image: trafficmarker
@@ -1191,7 +1161,6 @@ document.addEventListener('DOMContentLoaded', async function () {
                 source.addFeature(trafficFeature);
                 trafficFeature.changed();
             }
-            trafficVectorLayer.changed();
         }
     }
 

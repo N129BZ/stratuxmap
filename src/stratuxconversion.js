@@ -69,13 +69,30 @@ export async function convertStratuxToFAA(stratuxObject, stationInfo) {
         });
     }
 
-    let visMiles = visMatch ? Number(visMatch[1]) : 10;
-    let cond = "";
 
-    if (visMiles < 1) cond = "LIFR";
-    else if (visMiles < 3) cond = "IFR";
-    else if (visMiles < 5) cond = "MVFR";
-    else cond = "VFR";
+    let visMiles = visMatch ? Number(visMatch[1]) : 10;
+    // Find the lowest ceiling (BKN/OVC only, in feet AGL)
+    let lowestCeiling = 99999;
+    for (const sky of sky_condition) {
+        if ((sky.sky_cover === 'BKN' || sky.sky_cover === 'OVC') && Number(sky.cloud_base_ft_agl) < lowestCeiling) {
+            lowestCeiling = Number(sky.cloud_base_ft_agl);
+        }
+    }
+    // If no BKN/OVC, treat as unlimited ceiling
+    if (lowestCeiling === 99999) lowestCeiling = 99999;
+
+    // Determine flight category per FAA rules (lowest of visibility or ceiling)
+    let cond = "VFR";
+    if (visMiles < 1 || lowestCeiling < 500) {
+        cond = "LIFR";
+    }
+    else if (visMiles < 3 || lowestCeiling < 1000) {
+        cond = "IFR";
+    }
+    else if (visMiles < 5 || lowestCeiling < 3000) {
+        cond = "MVFR";
+    }
+    // else cond = "VFR";
 
     let output = {
         raw_text,
