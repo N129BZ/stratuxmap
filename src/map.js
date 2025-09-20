@@ -1116,9 +1116,8 @@ document.addEventListener('DOMContentLoaded', async function () {
         "Bearing":92.7782277589171,"Distance":9.616803034808295e+06}
         --------------------------------------------------------------------------------------------*/
 
-        //console.log(trafficObject);
-
         for (const key in trafficObject) {
+            let id = trafficObject.Icao_addr & trafficObject.Reg;
             let geom = new Point(fromLonLat([trafficObject.Lng, trafficObject.Lat]));
             let tradians = trafficObject.Track * 0.0174533;
 
@@ -1132,15 +1131,13 @@ document.addEventListener('DOMContentLoaded', async function () {
             });
 
             let source = trafficVectorLayer.getSource();
-            let existingFeature = source.getFeatureById(key);
+            let existingFeature = source.getFeatureById(id);
 
             if (existingFeature) {
                 // Update geometry and properties
                 existingFeature.setGeometry(geom);
                 existingFeature.setProperties({
-                    ident: key,
-                    jsondata: trafficObject,
-                    datatype: "traffic"
+                    jsondata: trafficObject
                 });
                 existingFeature.setStyle(new Style({
                     image: trafficmarker
@@ -1157,7 +1154,7 @@ document.addEventListener('DOMContentLoaded', async function () {
                 trafficFeature.setStyle(new Style({
                     image: trafficmarker
                 }));
-                trafficFeature.setId(key);
+                trafficFeature.setId(id);
                 source.addFeature(trafficFeature);
                 trafficFeature.changed();
             }
