@@ -323,6 +323,26 @@ document.addEventListener('DOMContentLoaded', async function () {
     /**
      * Icon markers for airports, TAFs, heliports, etc.
      */
+    
+    /* proposed SVG image change to allow coloring changes based on flight category
+
+    `<svg xmlns="http://www.w3.org/2000/svg" width="126.713" height="89.273" viewBox="0 0 33.526 23.62">
+    <g transform="translate(-.143 -.036)"><path d="M32.995 11.846A16.095 11.149 0 0 1 16.96 22.995 16.095 11.149 0 0 1 .805 11.928 16.095 11.149 0 0 1 16.72.698a16.095 11.149 0 0 1 16.272 10.983l-16.093.165z" 
+    style="fill:${condcolor};fill-opacity:1;stroke:#000;stroke-width:1.32292;stroke-miterlimit:4;stroke-dasharray:none;stroke-opacity:1"/>
+    <rect width="17.563" height="1.608" x="14.711" y="10.95" ry=".023" style="fill:${condcolor};fill-opacity:1;stroke:none;stroke-width:2.44876;stroke-miterlimit:4;stroke-dasharray:none;stroke-opacity:1"/>
+    <text xml:space="preserve" x="4.995" y="17.051" style="font-style:normal;font-variant:normal;
+    font-weight:700;font-stretch:normal;font-size:14.2894px;line-height:1.25;font-family:sans-serif;
+    -inkscape-font-specification:&quot;sans-serif, Bold&quot;;font-variant-ligatures:normal;
+    font-variant-caps:normal;font-variant-numeric:normal;font-variant-east-asian:normal;letter-spacing:0;
+    word-spacing:0;fill:#ff0;fill-opacity:1;stroke:none;stroke-width:.357233" transform="scale(.9667 1.03444)">
+    <tspan x="4.995" y="17.051" style="font-style:normal;font-variant:normal;font-weight:700;font-stretch:normal;
+    font-size:14.2894px;font-family:sans-serif;-inkscape-font-specification:&quot;sans-serif, Bold&quot;;font-variant-ligatures:normal;
+    font-variant-caps:normal;font-variant-numeric:normal;font-variant-east-asian:normal;fill:${textcolor};
+    fill-opacity:1;stroke-width:.357233">TAF</tspan></text></g></svg>`
+    
+    /*
+
+
     let tafMarker = new Icon({
         crossOrigin: 'anonymous',
         src: '/images/taf.svg',
