@@ -112,6 +112,16 @@ hr {
     inset; 
     border-width: 1px;
 }
+.traffic-popup-container {
+    display: block;
+    width: 100px;
+    border: 3px solid #333;
+    border-radius: 16px;
+    margin: 40px auto;
+    font-family: Arial, sans-serif;
+    background: #fff;
+    box-sizing: border-box;
+}
 .taf-popup-container {
     display: block;
     width: 400px;
@@ -492,7 +502,6 @@ hr {
     font-size: medium;
     background: #fff;
     box-sizing: border-box;
-    font-family: B612;
     font-size:small;
 }
 .windsvg {

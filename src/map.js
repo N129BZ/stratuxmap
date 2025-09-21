@@ -273,9 +273,12 @@ document.addEventListener('DOMContentLoaded', async function () {
         console.log("Starting websocket connections.");
         const wstfc = buildWebSocketUrl("/traffic");
         let wsTraffic = new WebSocket(wstfc);
-        wsTraffic.onmessage = function (evt) {
-            let data = JSON.parse(evt.data);
-            addTrafficItem(data);
+        wsTraffic.onmessage = async function (evt) {
+            let traffic = JSON.parse(evt.data);
+            if (traffic.AgeLastAlt < 50 && traffic.Speed > 0) {
+                trafficMap.set(traffic.Icao_addr, traffic);
+                await processTraffic(traffic);
+            }
         }
 
         const wssit = buildWebSocketUrl("/situation");
@@ -490,22 +493,22 @@ document.addEventListener('DOMContentLoaded', async function () {
     }
     window.closePopup = closePopup;
 
-    /**
-     * Add a qualified Traffic item to the traffic Map collection
-     * @param {json object} jsondata 
-     */
-    async function addTrafficItem(traffic) {
-        try {
-            trafficMap.delete(traffic.Icao_addr);
-        }
-        catch (err) {
-            // do nothing
-        }
-        if (traffic.AgeLastAlt < 50 && traffic.Speed > 0) {
-            trafficMap.set(traffic.Icao_addr, traffic);
-            await processTraffic(traffic);
-        }
-    }
+    // /**
+    //  * Add a qualified Traffic item to the traffic Map collection
+    //  * @param {json object} jsondata 
+    //  */
+    // async function addTrafficItem(traffic) {
+    //     try {
+    //         trafficMap.delete(traffic.Icao_addr);
+    //     }
+    //     catch (err) {
+    //         // do nothing
+    //     }
+    //     if (traffic.AgeLastAlt < 50 && traffic.Speed > 0) {
+    //         trafficMap.set(traffic.Icao_addr, traffic);
+    //         await processTraffic(traffic);
+    //     }
+    // }
 
     /**
      * Event to handle scaling of feature images
@@ -554,19 +557,11 @@ document.addEventListener('DOMContentLoaded', async function () {
                     handled = true;
                 }
                 else {
-                    const airportFeature = features.find(f => f.get('datatype') === 'airport');
-                    if (airportFeature) {
-                        displayAirportPopup(airportFeature);
+                    const trafficFeature = features.find(f => f.get('datatype') === 'traffic');
+                    if (trafficFeature) {
+                        displayTrafficPopup(trafficFeature);
                         popupoverlay.setPosition(evt.coordinate);
                         handled = true;
-                    }
-                    else {
-                        const trafficFeature = features.find(f => f.get('datatype') === 'traffic');
-                        if (trafficFeature) {
-                            displayTrafficPopup(trafficFeature);
-                            popupoverlay.setPosition(evt.coordinate);
-                            handled = true;
-                        }
                     }
                 }
             }
@@ -1074,31 +1069,19 @@ document.addEventListener('DOMContentLoaded', async function () {
     }
 
     /**
-     * Build the html for an airport feature
-     * @param {*} feature: the airport the user clicked on 
-     */
-    function displayAirportPopup(feature) {
-        let ident = feature.get("ident");
-        let name = feature.get("station_name");
-        let html = `<div id="#featurepopup"><pre><code><p>`;
-        html += `<span class="airportpopuplabel">${name} - ${ident}</span><p></p>`;
-        html += `</p></code></pre></div>`;
-        html += `<p><button class="ol-airport-closer" onclick="closePopup()">close</button></p>`;
-        popupcontent.innerHTML = html;
-    }
-
-    /**
      * Build the html for a traffic feature
      * @param {*} feature: the traffic the user clicked on 
      */
     function displayTrafficPopup(feature) {
-        let jsondata = feature.get("jsondata");
-        //metarVectorLayer, trafficVectorLayer, pirepVectorLayer, trafficVectorLayer, osmTileLayer, map);
-        let name = jsondata.Tail; //getFormattedAirportName(ident)
-        let html = `<div id="#featurepopup"><pre><code><p>`;
-        html += `<span>${jsondata.Reg}:alt=${jsondata.Alt},course=${jsondata.Track}@${jsondata.Speed}kt</span><p></p>`;
-        html += `</p></code></pre></div>`;
-        html += `<p><button class="ol-airport-closer" onclick="closePopup()">close</button></p>`;
+        let traffic = feature.get("traffic");
+        let name = traffic.Tail;
+        let html = `<div id="featurepopup">
+                    <pre>
+                    ${traffic.Reg}
+                    Altitude: ${traffic.Alt}
+                    Course: ${traffic.Track}°@${traffic.Speed}kt
+                    </pre></div><br><br>
+                    <button class="ol-airport-closer" style="font-family: B612; font-size: medium;" onclick="closePopup()">close</button>`;
         popupcontent.innerHTML = html;
     }
 
@@ -1119,49 +1102,47 @@ document.addEventListener('DOMContentLoaded', async function () {
         "Last_source":1,"ExtrapolatedPosition":false,"BearingDist_valid":true,
         "Bearing":92.7782277589171,"Distance":9.616803034808295e+06}
         --------------------------------------------------------------------------------------------*/
+        let id = trafficObject.Icao_addr;
+        let geometry = new Point(fromLonLat([trafficObject.Lng, trafficObject.Lat]));
+        let trackRadians = trafficObject.Track * 0.0174533;
 
-        for (const key in trafficObject) {
-            let id = trafficObject.Icao_addr & trafficObject.Reg;
-            let geom = new Point(fromLonLat([trafficObject.Lng, trafficObject.Lat]));
-            let tradians = trafficObject.Track * 0.0174533;
+        let trafficmarker = new Icon({
+            crossOrigin: "anonymous",
+            src: `/images/${mapsettings.trafficimage}`,
+            offset: [0, 0],
+            opacity: 1,
+            scale: .08,
+            rotation: trackRadians
+        });
 
-            let trafficmarker = new Icon({
-                crossOrigin: "anonymous",
-                src: `/images/${mapsettings.trafficimage}`,
-                offset: [0, 0],
-                opacity: 1,
-                scale: .08,
-                rotation: tradians
+        let source = trafficVectorLayer.getSource();
+        let existingFeature = source.getFeatureById(id);
+
+        if (existingFeature) {
+            // Update geometry and properties
+            existingFeature.setGeometry(geometry);
+            existingFeature.setProperties({
+                traffic: trafficObject
             });
-
-            let source = trafficVectorLayer.getSource();
-            let existingFeature = source.getFeatureById(id);
-
-            if (existingFeature) {
-                // Update geometry and properties
-                existingFeature.setGeometry(geom);
-                existingFeature.setProperties({
-                    jsondata: trafficObject
-                });
-                existingFeature.setStyle(new Style({
-                    image: trafficmarker
-                }));
-                existingFeature.changed();
-            }
-            else {
-                let trafficFeature = new Feature({
-                    ident: key,
-                    jsondata: trafficObject,
-                    datatype: "traffic",
-                    geometry: geom
-                });
-                trafficFeature.setStyle(new Style({
-                    image: trafficmarker
-                }));
-                trafficFeature.setId(id);
-                source.addFeature(trafficFeature);
-                trafficFeature.changed();
-            }
+            existingFeature.setStyle(new Style({
+                image: trafficmarker
+            }));
+            existingFeature.changed();
+        }
+        else {
+            let trafficFeature = new Feature({
+                ident: trafficObject.Reg,
+                traffic: trafficObject,
+                datatype: "traffic",
+                geometry: geometry
+            });
+            trafficFeature.setStyle(new Style({
+                image: trafficmarker
+            }));
+            trafficFeature.setId(id);
+            source.addFeature(trafficFeature);
+            trafficFeature.changed();
+            trafficVectorLayer.changed();
         }
     }
 
