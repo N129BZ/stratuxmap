@@ -99,6 +99,8 @@ let closeButton = {};
 let popup = {};
 let popupcontent = {};
 let airplaneElement = {};
+let touchStartX = 0;
+let touchEndX = 0;
 
 document.addEventListener('DOMContentLoaded', async function () {
     // Wait for mapsettings to be loaded before initializing anything that depends on it
@@ -237,6 +239,28 @@ document.addEventListener('DOMContentLoaded', async function () {
             console.log("VISIBILITY CHANGE ERROR", error);
         }
     });
+
+    // Touch event handlers for swipe navigation
+    document.addEventListener('touchstart', function(e) {
+        touchStartX = e.changedTouches[0].screenX;
+    }, false);
+
+    document.addEventListener('touchend', function(e) {
+        touchEndX = e.changedTouches[0].screenX;
+        handleGesture();
+    }, false);
+
+    function handleGesture() {
+        if (touchEndX < touchStartX - mapsettings.swipeThreshold) {
+            // Left swipe: go forward
+            window.history.forward();
+        }
+        if (touchEndX > touchStartX + mapsettings.swipeThreshold) {
+            // Right swipe: go back
+            window.history.back();
+        }
+    }
+    // End of touch event handlers
 
     /* Map objects used for various keyname lookups */
     let airportNameKeymap = new Map();
@@ -1180,7 +1204,7 @@ document.addEventListener('DOMContentLoaded', async function () {
             let airportInfo = null;
             try {
                 popupSvg = rawWeatherTextToSVG(metar, 150, 150, mapsettings.usemetricunits);
-                mapDotSvg = getWindBarbSvg(95, 95, metar);
+                mapDotSvg = getWindBarbSvg(125, 125, metar);
             }
             catch { }
 

@@ -3,7 +3,7 @@ npm run build
 
 distpath="/home/bro/sources/stratuxmap/dist"
 stxexpresspath="/home/bro/sources/stratuxexpress/dist"
-stxpath="/home/bro/sources/stratux-es6/stratux/web"
+stxpath="/home/bro/sources/stratux/web"
 optpath="/opt/stratux/www"
 
 if [ "$EUID" -ne 0 ]; then
