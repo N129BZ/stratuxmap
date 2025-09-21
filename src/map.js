@@ -1256,21 +1256,22 @@ document.addEventListener('DOMContentLoaded', async function () {
         }
         try {
             // generate a "pseudo-heading" to use if wind dir is absent
+            let id = pirep.aircraft_ref ? pirep.aircraft_ref : pirep.station_id;
+            let geometry = new Point(fromLonLat([pirep.longitude, pirep.latitude]));
             let heading = Math.random() * Math.PI * 2;
+         
             if (pirep.wind_dir_degrees) {
                 heading = (pirep.wind_dir_degrees * 0.0174533);
             }
             let pirepFeature = new Feature({
-                ident: pirep.aircraft_ref,
+                ident: id,
                 data: pirep,
                 datatype: "pirep",
-                geometry: new Point(fromLonLat([pirep.longitude, pirep.latitude])),
+                geometry: geometry,
             });
             pirepFeature.setStyle(new Style({
                 image: pirepMarker
-            }));
-
-            let id = pirep.aircraft_ref ? pirep.aircraft_ref : pirep.station_id;
+            })); 
             pirepFeature.setId(id);
             const oldFeature = pirepVectorLayer.getSource().getFeatureById(id);
             if (oldFeature) {
