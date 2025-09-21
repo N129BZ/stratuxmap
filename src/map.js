@@ -2846,7 +2846,7 @@ document.addEventListener('DOMContentLoaded', async function () {
             case "IFR":
                 return { bgcolor: "#ff0000", fgcolor: "#ffffff" };
             case "LIFR":
-                return { bgcolor: "#ff00ff", fgcolor: "#000000" };
+                return { bgcolor: "#ff00ff", fgcolor: "#ffffff" };
             case "MVFR":
                 return { bgcolor: "#0000cd", fgcolor: "#ffffff" };
             case "VFR":
