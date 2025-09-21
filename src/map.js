@@ -1259,7 +1259,8 @@ document.addEventListener('DOMContentLoaded', async function () {
                     src: `data:image/svg+xml;utf8,${encodeURIComponent(svgimg)}`,
                     offset: [0, 0],
                     opacity: 1,
-                    scale: .5   
+                    size: [126, 90],
+                    scale: .2   
                 })
             }));
             tafFeature.setId(taf.station_id);
