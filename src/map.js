@@ -371,7 +371,9 @@ document.addEventListener('DOMContentLoaded', async function () {
     map.addOverlay(popupoverlay);
 
     let osmTileLayer = new TileLayer({
-        source: new OSM(),
+        source: new OSM({
+            onTileLoadError: function(event) {} // Suppress annoying console 404 errors
+        }),
         title: "OSM",
         visible: true,
         type: "base",
@@ -451,11 +453,12 @@ document.addEventListener('DOMContentLoaded', async function () {
                     let dburl = URL_GET_TILE.replace("{dbname}", dbname);
                     var layer = new TileLayer({
                         source: new XYZ({
+                            onTileLoadError: function(event) {}, // Suppress annoying console 404 errors
                             url: dburl,
                             maxzoom: metadata && metadata.maxzoom ? metadata.maxzoom : undefined,
                             minzoom: metadata && metadata.minzoom ? metadata.minzoom : undefined,
                             attributions: metadata && metadata.attribution ? metadata.attribution : undefined,
-                            attributionsCollapsible: false
+                            attributionsCollapsible: false,
                         }),
                         title: title,
                         type: layertype,
@@ -492,23 +495,6 @@ document.addEventListener('DOMContentLoaded', async function () {
         return false;
     }
     window.closePopup = closePopup;
-
-    // /**
-    //  * Add a qualified Traffic item to the traffic Map collection
-    //  * @param {json object} jsondata 
-    //  */
-    // async function addTrafficItem(traffic) {
-    //     try {
-    //         trafficMap.delete(traffic.Icao_addr);
-    //     }
-    //     catch (err) {
-    //         // do nothing
-    //     }
-    //     if (traffic.AgeLastAlt < 50 && traffic.Speed > 0) {
-    //         trafficMap.set(traffic.Icao_addr, traffic);
-    //         await processTraffic(traffic);
-    //     }
-    // }
 
     /**
      * Event to handle scaling of feature images
