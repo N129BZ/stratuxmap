@@ -152,7 +152,14 @@ document.addEventListener('DOMContentLoaded', async function () {
 
     closeButton.addEventListener("click", async (evt) => {
         await saveMapState();
-        window.history.back();
+        // Check if there's history to go back to
+        if (window.history.length > 1) {
+            window.history.back();
+        } else {
+            // Fallback: redirect to a default page or close window
+            window.location.href = '/'; // or wherever you want to redirect
+            // Alternative: window.close(); (only works if window was opened by script)
+        }
     });
 
     // Register stateReplay event listener BEFORE calling restoreMapState
@@ -323,21 +330,6 @@ document.addEventListener('DOMContentLoaded', async function () {
         }
     })();
 
-    /**
-     * Icon markers for airports, TAFs, heliports, etc.
-     */
-     
-
-
-    // let tafMarker = new Icon({
-    //     crossOrigin: 'anonymous',
-    //     src: '/images/taf.svg',
-    //     size: [126, 90],
-    //     offset: [0, 0],
-    //     opacity: 1,
-    //     scale: .2
-    // });
-    /*--------------------------------------*/
     let pirepMarker = new Icon({
         crossOrigin: 'anonymous',
         src: '/images/pirep.png',
@@ -1062,7 +1054,7 @@ document.addEventListener('DOMContentLoaded', async function () {
         let traffic = feature.get("traffic");
         let name = traffic.Tail;
         let html = `<div id="featurepopup">
-                    <pre>
+                    <pre class="trafficpopupcontainer">
                     ${traffic.Reg}
                     Altitude: ${traffic.Alt}
                     Course: ${traffic.Track}°@${traffic.Speed}kt
@@ -1267,8 +1259,15 @@ document.addEventListener('DOMContentLoaded', async function () {
                 geometry: new Point(fromLonLat([pirep.longitude, pirep.latitude])),
             });
             pirepFeature.setStyle(new Style({
-                image: pirepMarker
-            }));
+                image: new Icon({
+                    crossOrigin: 'anonymous',
+                    src: '/images/pirep.png',
+                    size: [85, 85],
+                    offset: [0, 0],
+                    opacity: 1,
+                    scale: .50
+                })
+               });
 
             let id = pirep.aircraft_ref ? pirep.aircraft_ref : pirep.station_id;
             pirepFeature.setId(id);
