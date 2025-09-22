@@ -17,6 +17,7 @@ import { defaults as defaultControls, ScaleLine } from 'ol/control';
 import LayerSwitcher from 'ol-layerswitcher';
 import { convertStratuxToFAA } from './stratuxconversion.js';
 import { saveMapState, restoreMapState } from './mapstatemanager.js';
+import { getAirportsInRadius } from './airportfunctions.js';    
 
 let mapsettings = {};
 let mapsettingsLoaded = (async function loadSettings(){
@@ -152,13 +153,11 @@ document.addEventListener('DOMContentLoaded', async function () {
 
     closeButton.addEventListener("click", async (evt) => {
         await saveMapState();
-        // Check if there's history to go back to
         if (window.history.length > 1) {
             window.history.back();
-        } else {
-            // Fallback: redirect to a default page or close window
-            window.location.href = '/'; // or wherever you want to redirect
-            // Alternative: window.close(); (only works if window was opened by script)
+        } 
+        else {
+            window.location.href = URL_SERVER; 
         }
     });
 
@@ -329,15 +328,6 @@ document.addEventListener('DOMContentLoaded', async function () {
             }
         }
     })();
-
-    let pirepMarker = new Icon({
-        crossOrigin: 'anonymous',
-        src: '/images/pirep.png',
-        size: [85, 85],
-        offset: [0, 0],
-        opacity: 1,
-        scale: .50
-    });
 
     /**
      * The scale of miles shown on lower left corner of map
@@ -547,6 +537,29 @@ document.addEventListener('DOMContentLoaded', async function () {
         if (!handled) {
             closePopup();
         }
+    });
+
+    /**
+     * Double-click/Double-tap event handler
+     */
+    map.on('dblclick', async function(evt) {
+        const coordinate = evt.coordinate;
+        const lonLat = toLonLat(coordinate);
+        
+        console.log('Double-clicked at longitude:', lonLat[0], 'latitude:', lonLat[1]);
+        
+        let airportlist = await getAirportsInRadius(lonLat[0], lonLat[1], 25);
+        console.log("Airports within 25nm:", airportlist);
+
+        // Example: Center map on double-clicked location
+        map.getView().setCenter(coordinate);
+        
+        // Example: Zoom in on double-click
+        const currentZoom = map.getView().getZoom();
+        map.getView().setZoom(currentZoom + 1);
+        
+        // Prevent the default double-click zoom behavior if you want custom behavior
+        evt.preventDefault();
     });
 
     /**
@@ -1267,7 +1280,7 @@ document.addEventListener('DOMContentLoaded', async function () {
                     opacity: 1,
                     scale: .50
                 })
-               });
+            }));
 
             let id = pirep.aircraft_ref ? pirep.aircraft_ref : pirep.station_id;
             pirepFeature.setId(id);
