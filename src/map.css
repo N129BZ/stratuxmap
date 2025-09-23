@@ -80,6 +80,19 @@ html, body {
     background-color: lightgray;
     color:darkslateblue;
 }
+
+/* Airport popup header styling */
+.airportheader {
+    display: block;
+    font-size: 18px;
+    font-weight: bold;
+    font-family: B612;
+    padding: 12px;
+    border-radius: 6px;
+    text-align: center;
+    line-height: 1.3;
+    margin-bottom: 8px;
+}
 .ol-airport-closer {
     text-decoration:none;
     position: absolute;
@@ -524,4 +537,56 @@ hr {
     color: #fff;
     font-family: B612;
     font-size: large;
+}
+
+/* Airport Radius Selector Styles */
+.airport-radius-selector {
+    position: absolute;
+    top: 20px;
+    left: 20px;
+    background-color: white;
+    border: 2px solid #333;
+    border-radius: 8px;
+    box-shadow: 0 4px 8px rgba(0,0,0,0.3);
+    z-index: 1500;
+    min-width: 200px;
+    font-family: B612;
+}
+
+.radius-header {
+    background-color: #00008b;
+    color: white;
+    padding: 10px;
+    font-weight: bold;
+    text-align: center;
+    border-radius: 6px 6px 0 0;
+    font-size: 14px;
+}
+
+.radius-dropdown {
+    width: 100%;
+    padding: 12px 15px;
+    border: none;
+    background-color: white;
+    font-family: B612;
+    font-size: 13px;
+    cursor: pointer;
+    border-radius: 0 0 6px 6px;
+    outline: none;
+}
+
+.radius-dropdown:focus {
+    background-color: #f8f9fa;
+    box-shadow: inset 0 2px 4px rgba(0,0,0,0.1);
+}
+
+.radius-dropdown option {
+    padding: 8px;
+    font-family: B612;
+    font-size: 13px;
+}
+
+.radius-dropdown option[value="clear"] {
+    color: #d9534f;
+    font-weight: bold;
 }

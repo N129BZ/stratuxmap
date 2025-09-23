@@ -58,6 +58,7 @@ export const stateCache = {
     viewposition: [],
     rotation: 0.0,
     layervisibility: [],
+    selectedRadius: 0,
     messages: new FIFOCache(150)
 };
 
@@ -174,12 +175,19 @@ document.addEventListener('DOMContentLoaded', async function () {
                 stateCache.viewposition.length === 2 &&
                 typeof stateCache.viewposition[0] === 'number' &&
                 typeof stateCache.viewposition[1] === 'number' &&
-                typeof stateCache.rotation === 'number') {
+                typeof stateCache.rotation === 'number' &&
+                typeof stateCache.selectedRadius === 'number') {
                 
                 map.getView().setZoom(stateCache.zoom);
                 map.getView().setCenter(stateCache.viewposition);
                 map.getView().setRotation(stateCache.rotation);
-
+                
+                // Set the selected radius in the Airport Layer dropdown
+                selectedRadius = stateCache.selectedRadius;
+                const radiusDropdown = document.getElementById('radius-dropdown');
+                if (radiusDropdown) {
+                    radiusDropdown.value = selectedRadius.toString();
+                }
                 // set the layer visibilities
                 if (Array.isArray(stateCache.layervisibility)) {
                     for (const layerState of stateCache.layervisibility) {
@@ -226,6 +234,7 @@ document.addEventListener('DOMContentLoaded', async function () {
                 stateCache.zoom = map.getView().getZoom();
                 stateCache.viewposition = map.getView().getCenter();
                 stateCache.rotation = map.getView().getRotation();
+                stateCache.selectedRadius = selectedRadius;
                 stateCache.layervisibility = map.getLayers().getArray().map(layer => ({
                     title: layer.get('title'),
                     visible: typeof layer.getVisible === 'function' ? layer.getVisible() : undefined
@@ -485,6 +494,216 @@ document.addEventListener('DOMContentLoaded', async function () {
     }
     window.closePopup = closePopup;
 
+    // Airport Radius Selector functionality
+    const radiusSelector = document.getElementById('airport-radius-selector');
+    let currentDoubleClickLocation = null;
+    let selectedRadius = 50; // Default radius in miles
+
+    // Monitor layer visibility changes to show/hide radius selector
+    function checkAirportLayerVisibility() {
+        const layers = map.getLayers().getArray();
+        const airportLayerVisible = layers.some(layer => 
+            layer.get('title') && 
+            layer.get('title').toLowerCase().includes('airport') && 
+            layer.getVisible()
+        );
+        
+        console.log('Checking airport layer visibility:', airportLayerVisible);
+        console.log('Available layers:', layers.map(l => l.get('title')));
+        
+        if (airportLayerVisible) {
+            radiusSelector.style.display = 'block';
+            console.log('Airport radius selector shown');
+        } else {
+            radiusSelector.style.display = 'none';
+            console.log('Airport radius selector hidden');
+            // Clear airports when layer is hidden
+            clearAirportFeatures();
+        }
+    }
+
+    // Function to clear airport features
+    function clearAirportFeatures() {
+        const layers = map.getLayers().getArray();
+        const airportLayer = layers.find(layer => layer.get('title') === 'Airports');
+        if (airportLayer) {
+            airportLayer.getSource().clear();
+        }
+    }
+
+    // Function to find and display airports within radius
+    async function showAirportsInRadius(centerLat, centerLon, radiusMiles) {
+        try {
+            console.log(`Searching for airports within ${radiusMiles} miles of lat: ${centerLat}, lon: ${centerLon}`);
+            
+            // Use the existing getAirportsInRadius function
+            const airports = await getAirportsInRadius(centerLon, centerLat, radiusMiles);
+            
+            console.log(`Found ${airports ? airports.length : 0} airports`);
+            
+            if (airports && airports.length > 0) {
+                displayAirportFeatures(airports);
+            } else {
+                console.log('No airports found in the specified radius');
+            }
+            
+        } catch (error) {
+            console.error('Error fetching airports:', error);
+        }
+    }
+
+    // Helper function to calculate bounding box
+    function getBoundingBox(centerLat, centerLon, radiusMiles) {
+        const earthRadiusMiles = 3959;
+        const radiusRadians = radiusMiles / earthRadiusMiles;
+        const latRad = centerLat * (Math.PI / 180);
+        
+        const minLat = centerLat - (radiusRadians * 180 / Math.PI);
+        const maxLat = centerLat + (radiusRadians * 180 / Math.PI);
+        
+        const deltaLon = Math.asin(Math.sin(radiusRadians) / Math.cos(latRad)) * 180 / Math.PI;
+        const minLon = centerLon - deltaLon;
+        const maxLon = centerLon + deltaLon;
+        
+        return { minLat, maxLat, minLon, maxLon };
+    }
+
+    // Function to display airport features on map
+    function displayAirportFeatures(airports) {
+        // Use the existing airport layer
+        const layers = map.getLayers().getArray();
+        let targetAirportLayer = layers.find(layer => layer.get('title') === 'Airports');
+        
+        if (!targetAirportLayer) {
+            console.warn('Airport layer not found!');
+            return;
+        }
+
+        // Clear existing features in the airport layer
+        targetAirportLayer.getSource().clear();
+
+        // Add airport features
+        const features = airports.map(airport => {
+            // Handle different possible property names
+            const longitude = airport.longitude || airport.lon;
+            const latitude = airport.latitude || airport.lat;
+            const name = airport.name || airport.station_name || airport.ident;
+            const ident = airport.ident || airport.id;
+            
+            if (!longitude || !latitude) {
+                console.warn('Airport missing coordinates:', airport);
+                return null;
+            }
+            
+            const feature = new Feature({
+                ident: ident,
+                datatype: "airport",
+                name: name,  // Use 'name' instead of 'station_name' for popup compatibility
+                type: airport.type || 'airport',  // Add type field
+                elevation_ft: airport.elevation_ft,  // Add elevation field
+                geometry: new Point(fromLonLat([longitude, latitude])),
+                fullData: airport  // Store complete airport object for popup
+            });
+            
+            // Check if this is a heliport or closed airport
+            const isHeliport = airport.type && airport.type.toLowerCase().includes('heliport');
+            const isClosed = airport.closed === 'yes' || airport.closed === true || 
+                           (airport.type && airport.type.toLowerCase().includes('closed'));
+            
+            let airportSvg;
+            
+            if (isClosed) {
+                // Closed airport: red circle with yellow X
+                airportSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 12 12">
+                    <circle cx="6" cy="6" r="5" fill="red" stroke="black" stroke-width="1"/>
+                    <text x="6" y="8" text-anchor="middle" font-family="Arial, sans-serif" font-size="8" font-weight="bold" fill="yellow">✕</text>
+                </svg>`;
+            } else if (isHeliport) {
+                // Heliport: white circle with black "H"
+                airportSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 12 12">
+                    <circle cx="6" cy="6" r="5" fill="white" stroke="black" stroke-width="1"/>
+                    <text x="6" y="8" text-anchor="middle" font-family="Arial, sans-serif" font-size="7" font-weight="bold" fill="black">H</text>
+                </svg>`;
+            } else {
+                // Regular airports: color based on runway surface type and tower frequency
+                const hasTower = airport.frequencies && airport.frequencies.some(freq => 
+                    freq.description && freq.description.includes('TWR')
+                );
+                const hasTurfRunway = airport.runways && airport.runways.some(runway => {
+                    if (!runway.surface) return false;
+                    const surface = runway.surface.replace(/[\[\]]/g, '').toUpperCase();
+                    return surface === 'TURF' || surface === 'GRASS';
+                });
+                
+                let fillColor;
+                if (hasTurfRunway) {
+                    fillColor = 'green';  // Turf/grass runways = green
+                } else if (hasTower) {
+                    fillColor = 'blue';   // Tower controlled = blue
+                } else {
+                    fillColor = 'magenta'; // Uncontrolled = magenta
+                }
+                
+                // Create a colored SVG airport icon
+                airportSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 12 12">
+                    <circle cx="6" cy="6" r="5" fill="${fillColor}" stroke="black" stroke-width="1"/>
+                </svg>`;
+            }
+            
+            // Style the airport marker with appropriate scale
+            const scaleSize = getAirportScaleSize();
+            feature.setStyle(new Style({
+                image: new Icon({
+                    src: `data:image/svg+xml;utf8,${encodeURIComponent(airportSvg)}`,
+                    scale: scaleSize,
+                    anchor: [0.5, 0.5]
+                })
+            }));
+            
+            return feature;
+        }).filter(feature => feature !== null); // Remove null features
+
+        targetAirportLayer.getSource().addFeatures(features);
+    }
+
+    // Add radius dropdown event listener
+    const radiusDropdown = document.getElementById('radius-dropdown');
+    radiusDropdown.addEventListener('change', function() {
+        const radius = this.value;
+        
+        if (radius === 'clear') {
+            clearAirportFeatures();
+            selectedRadius = 0; // Set to 0 to indicate no search
+            stateCache.selectedRadius = selectedRadius;
+            this.value = ''; // Reset dropdown to default
+            return;
+        }
+        
+        if (radius === '') {
+            clearAirportFeatures();
+            selectedRadius = 0;
+            stateCache.selectedRadius = selectedRadius;
+            return;
+        }
+        
+        // Store the selected radius
+        selectedRadius = parseInt(radius);
+        stateCache.selectedRadius = selectedRadius;
+        console.log('Selected radius:', selectedRadius, 'miles');
+    });
+
+    // Monitor layer changes
+    map.getLayers().on('add', checkAirportLayerVisibility);
+    map.getLayers().on('remove', checkAirportLayerVisibility);
+    map.getLayers().forEach(layer => {
+        if (layer.on) {
+            layer.on('change:visible', checkAirportLayerVisibility);
+        }
+    });
+
+    // Initial check
+    checkAirportLayerVisibility();
+
     /**
      * Event to handle scaling of feature images
      */
@@ -560,82 +779,21 @@ document.addEventListener('DOMContentLoaded', async function () {
     map.on('dblclick', async function(evt) {
         const coordinate = evt.coordinate;
         const lonLat = toLonLat(coordinate);
-        const radius = 50;
         
-        let airportlist = await getAirportsInRadius(lonLat[0], lonLat[1], radius);
+        // Store the clicked location for radius selector
+        currentDoubleClickLocation = {
+            lat: lonLat[1],
+            lon: lonLat[0]
+        };
         
-        let scaleSize = getScaleSize();
-
-        // Clear existing airport features
-        airportLayer.getSource().clear();
+        // Clear previous airport features
+        clearAirportFeatures();
         
-        // Add airport features to the layer
-        if (airportlist && airportlist.length > 0) {
-            const source = airportLayer.getSource();
-            const features = [];
-            
-            airportlist.forEach((airport, index) => {
-                
-                if (airport.lat && airport.lon) {
-                    const airportCoord = fromLonLat([airport.lon, airport.lat]);
-                    const airportFeature = new Feature({
-                        geometry: new Point(airportCoord),
-                        name: airport.name,
-                        ident: airport.ident,
-                        type: airport.type,
-                        elevation_ft: airport.elevation_ft,
-                        datatype: 'airport',
-                        fullData: airport  // Store complete airport object for popup
-                    });
-
-                    // Color airports based on runway surface type and tower frequency
-                    const hasTower = airport.frequencies && airport.frequencies.some(freq => freq.description && freq.description.includes('TWR'));
-                    const hasTurfRunway = airport.runways && airport.runways.some(runway => {
-                        if (!runway.surface) return false;
-                        const surface = runway.surface.replace(/[\[\]]/g, '').toUpperCase();
-                        return surface === 'TURF' || surface === 'GRASS';
-                    });
-                    
-                    let fillColor;
-                    if (hasTurfRunway) {
-                        fillColor = 'green';  // Turf/grass runways = green
-                    } else if (hasTower) {
-                        fillColor = 'blue';   // Tower controlled = blue
-                    } else {
-                        fillColor = 'magenta'; // Uncontrolled = magenta
-                    }
-                    
-                    airportFeature.setStyle(new Style({
-                        image: new Icon({
-                            src: `data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12"><circle cx="6" cy="6" r="5" fill="${fillColor}" stroke="black" stroke-width="1"/></svg>`,
-                            scale: scaleSize,
-                            anchor: [0.5, 0.5]
-                        })
-                    }));
-
-                    features.push(airportFeature);
-                }
-                else {
-                    console.log(`Airport ${airport.ident || 'unknown'} missing coordinates: lat=${airport.lat}, lon=${airport.lon}`);
-                }
-            });
-            
-            // Add all features at once
-            source.addFeatures(features);
+        // Only search for airports if a radius is selected (not 0/clear)
+        if (selectedRadius > 0) {
+            console.log('Searching for airports within', selectedRadius, 'miles of', lonLat);
+            await showAirportsInRadius(lonLat[1], lonLat[0], selectedRadius);
         }
-        else {
-            console.log('No airport list or empty list');
-        }
-
-        // Example: Center map on double-clicked location
-        map.getView().setCenter(coordinate);
-        
-        // Example: Zoom in on double-click
-        const currentZoom = map.getView().getZoom();
-        map.getView().setZoom(currentZoom + 1);
-        
-        // Prevent the default double-click zoom behavior if you want custom behavior
-        evt.preventDefault();
     });
 
     /**
@@ -922,8 +1080,42 @@ document.addEventListener('DOMContentLoaded', async function () {
         // Get full airport data with frequencies and runways
         const fullAirportData = airport.fullData || airport;
         
+        // Determine header color based on airport type and characteristics (same as icon logic)
+        const isHeliport = type && type.toLowerCase().includes('heliport');
+        const isClosed = fullAirportData.closed === 'yes' || fullAirportData.closed === true || 
+                        (type && type.toLowerCase().includes('closed'));
+        let headerBackgroundColor, headerTextColor;
+        
+        if (isClosed) {
+            headerBackgroundColor = 'red';
+            headerTextColor = 'yellow';
+        } else if (isHeliport) {
+            headerBackgroundColor = 'white';
+            headerTextColor = 'black';
+        } else {
+            const hasTower = fullAirportData.frequencies && fullAirportData.frequencies.some(freq => 
+                freq.description && freq.description.includes('TWR')
+            );
+            const hasTurfRunway = fullAirportData.runways && fullAirportData.runways.some(runway => {
+                if (!runway.surface) return false;
+                const surface = runway.surface.replace(/[\[\]]/g, '').toUpperCase();
+                return surface === 'TURF' || surface === 'GRASS';
+            });
+            
+            if (hasTurfRunway) {
+                headerBackgroundColor = 'green';
+                headerTextColor = 'white';
+            } else if (hasTower) {
+                headerBackgroundColor = 'blue';
+                headerTextColor = 'white';
+            } else {
+                headerBackgroundColor = 'magenta';
+                headerTextColor = 'white';
+            }
+        }
+        
         let html = `<div class="featurepopup" id="featurepopup">`;
-        html += `<span class="airportheader" style="background-color:#4a90e2; color:white;">`;
+        html += `<span class="airportheader" style="background-color:${headerBackgroundColor}; color:${headerTextColor};">`;
         html += `${name}<br>${ident} - ${type.replace('_', ' ').toUpperCase()}</span><br>`;
         html += `<div class="airport-popup-body">`;
         
@@ -941,7 +1133,7 @@ document.addEventListener('DOMContentLoaded', async function () {
             html += `<strong>Frequencies</strong><br>`;
             html += `<table style="width: 100%; border-collapse: collapse; margin-top: 5px;">`;
             fullAirportData.frequencies.forEach(freq => {
-                html += `<tr>`;
+                html += `<tr style="border-bottom: 1px solid #ddd;">`;
                 html += `<td style="text-align: left; padding: 2px 10px 2px 0; vertical-align: top;">${freq.description}</td>`;
                 html += `<td style="text-align: left; padding: 2px 0; vertical-align: top;"><b>${freq.frequency}</b></td>`;
                 html += `</tr>`;
@@ -1241,14 +1433,45 @@ document.addEventListener('DOMContentLoaded', async function () {
      */
     function displayTrafficPopup(feature) {
         let traffic = feature.get("traffic");
-        let name = traffic.Tail;
-        let html = `<div id="featurepopup">
-                    <pre class="trafficpopupcontainer">
-                    ${traffic.Reg}
-                    Altitude: ${traffic.Alt}
-                    Course: ${traffic.Track}°@${traffic.Speed}kt
-                    </pre></div><br><br>
-                    <button class="ol-airport-closer" style="font-family: B612; font-size: medium;" onclick="closePopup()">close</button>`;
+        let identifier = traffic.Tail || traffic.Reg || 'Unknown';
+        let registration = traffic.Reg || 'N/A';
+        
+        // If Tail and Reg are the same, just show one value
+        let headerText = (traffic.Tail && traffic.Reg && traffic.Tail === traffic.Reg) 
+            ? identifier 
+            : `${identifier}<br>${registration}`;
+        
+        let html = `<div class="featurepopup" id="featurepopup">`;
+        html += `<span class="trafficheader" style="background-color:#87ceeb; color:black; display: block; font-size: 18px; font-weight: bold; font-family: B612; padding: 12px; border-radius: 6px; text-align: center; line-height: 1.3; margin-bottom: 8px; border: 1px solid black;">`;
+        html += `${headerText}</span><br>`;
+        html += `<div class="traffic-popup-body" style="text-align: left; font-size: 16px;">`;
+        html += `<table style="width: 100%; border-collapse: collapse; margin-top: 5px;">`;
+        html += `<tr style="border-bottom: 1px solid #ddd;">`;
+        html += `<td style="text-align: left; padding: 8px 10px 8px 0; vertical-align: top;">Bearing:</td>`;
+        html += `<td style="text-align: left; padding: 8px 0; vertical-align: top;"><b>${traffic.Bearing ? traffic.Bearing.toFixed(1) + '°' : 'N/A'}</b></td>`;
+        html += `</tr>`;
+        html += `<tr style="border-bottom: 1px solid #ddd;">`;
+        html += `<td style="text-align: left; padding: 8px 10px 8px 0; vertical-align: top;">Distance:</td>`;
+        html += `<td style="text-align: left; padding: 8px 0; vertical-align: top;"><b>${traffic.Distance ? (traffic.Distance / 1609.344).toFixed(2) + ' mi' : 'N/A'}</b></td>`;
+        html += `</tr>`;
+        html += `<tr style="border-bottom: 1px solid #ddd;">`;
+        html += `<td style="text-align: left; padding: 8px 10px 8px 0; vertical-align: top;">Altitude:</td>`;
+        html += `<td style="text-align: left; padding: 8px 0; vertical-align: top;"><b>${traffic.Alt || 'N/A'}</b></td>`;
+        html += `</tr>`;
+        html += `<tr style="border-bottom: 1px solid #ddd;">`;
+        html += `<td style="text-align: left; padding: 8px 10px 8px 0; vertical-align: top;">Course:</td>`;
+        html += `<td style="text-align: left; padding: 8px 0; vertical-align: top;"><b>${traffic.Track || 'N/A'}° @ ${traffic.Speed || 'N/A'}kt</b></td>`;
+        html += `</tr>`;
+        // html += `<tr style="border-bottom: 1px solid #ddd;">`;
+        // html += `<td style="text-align: left; padding: 8px 10px 8px 0; vertical-align: top;">Signal Level:</td>`;
+        // html += `<td style="text-align: left; padding: 8px 0; vertical-align: top;"><b>${traffic.SignalLevel ? traffic.SignalLevel.toFixed(1) + ' dBm' : 'N/A'}</b></td>`;
+        // html += `</tr>`;
+        html += `</table>`;
+        html += `</div>`;
+        html += `<hr>`;
+        html += `<button class="custom-popup-closer" onclick="closePopup()" style="background:#87ceeb; color:black;">Close</button>`;
+        html += `</div>`;
+        
         popupcontent.innerHTML = html;
     }
 
@@ -1524,6 +1747,32 @@ document.addEventListener('DOMContentLoaded', async function () {
                 break;
             case currentZoom >= 11:
                 scale = 1.6;
+                break;
+        }
+        return scale;
+    }
+
+    // Airport-specific scaling function that maintains readability at all zoom levels
+    function getAirportScaleSize() {
+        let scale = 1;
+        switch (true) {
+            case currentZoom >= 0 && currentZoom < 2:
+                scale = 0.8;  // Larger at very far zoom
+                break;
+            case currentZoom >= 2 && currentZoom < 4:
+                scale = 1.0;  // Standard size at far zoom
+                break;
+            case currentZoom >= 4 && currentZoom < 6:
+                scale = 1.2;  // Slightly larger at medium zoom
+                break;
+            case currentZoom >= 6 && currentZoom < 8:
+                scale = 1.4;  // Larger at closer zoom
+                break;
+            case currentZoom >= 8 && currentZoom < 10:
+                scale = 1.6;  // Even larger when zoomed in
+                break;
+            case currentZoom >= 10:
+                scale = 1.8;  // Largest when very zoomed in
                 break;
         }
         return scale;

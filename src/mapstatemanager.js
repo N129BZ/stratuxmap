@@ -54,6 +54,7 @@ export async function restoreMapState() {
                 viewposition: restoredState.viewposition,
                 rotation: restoredState.rotation,
                 layervisibility: restoredState.layervisibility,
+                selectedRadius: restoredState.selectedRadius,
                 messages: []
             };
         }
