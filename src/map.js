@@ -538,6 +538,14 @@ document.addEventListener('DOMContentLoaded', async function () {
                         popupoverlay.setPosition(evt.coordinate);
                         handled = true;
                     }
+                    else {
+                        const airportFeature = features.find(f => f.get('datatype') === 'airport');
+                        if (airportFeature) {
+                            displayAirportPopup(airportFeature);
+                            popupoverlay.setPosition(evt.coordinate);
+                            handled = true;
+                        }
+                    }
                 }
             }
         }
@@ -575,13 +583,27 @@ document.addEventListener('DOMContentLoaded', async function () {
                         name: airport.name,
                         ident: airport.ident,
                         type: airport.type,
-                        elevation: airport.elevation_ft,
-                        datatype: 'airport'
+                        elevation_ft: airport.elevation_ft,
+                        datatype: 'airport',
+                        fullData: airport  // Store complete airport object for popup
                     });
 
-                    // Color airports based on whether they have a tower frequency
+                    // Color airports based on runway surface type and tower frequency
                     const hasTower = airport.frequencies && airport.frequencies.some(freq => freq.description && freq.description.includes('TWR'));
-                    const fillColor = hasTower ? 'blue' : 'magenta';
+                    const hasTurfRunway = airport.runways && airport.runways.some(runway => {
+                        if (!runway.surface) return false;
+                        const surface = runway.surface.replace(/[\[\]]/g, '').toUpperCase();
+                        return surface === 'TURF' || surface === 'GRASS';
+                    });
+                    
+                    let fillColor;
+                    if (hasTurfRunway) {
+                        fillColor = 'green';  // Turf/grass runways = green
+                    } else if (hasTower) {
+                        fillColor = 'blue';   // Tower controlled = blue
+                    } else {
+                        fillColor = 'magenta'; // Uncontrolled = magenta
+                    }
                     
                     airportFeature.setStyle(new Style({
                         image: new Icon({
@@ -850,6 +872,106 @@ document.addEventListener('DOMContentLoaded', async function () {
         html += `<textarea id="rawdata" class="rawdata">${rawpirep}</textarea><br>`;
         let innerhtml = outerhtml.replace("###", html);
         popupcontent.innerHTML = innerhtml;
+    }
+
+    /**
+     * Decode runway surface codes to full descriptions
+     * @param {string} surfaceCode - The surface code (e.g., "[CON]", "[ASP]", "grass")
+     * @returns {string} - Full surface description
+     */
+    function decodeRunwaySurface(surfaceCode) {
+        if (!surfaceCode) return '';
+        
+        // Remove brackets if present and convert to uppercase
+        const code = surfaceCode.replace(/[\[\]]/g, '').toUpperCase();
+        
+        const surfaceMap = {
+            'CON': 'CONCRETE',
+            'ASP': 'ASPHALT', 
+            'CONC': 'CONCRETE',
+            'ASPH': 'ASPHALT',
+            'GRASS': 'GRASS',
+            'TURF': 'TURF',
+            'DIRT': 'DIRT',
+            'GRAVEL': 'GRAVEL',
+            'WATER': 'WATER',
+            'SNOW': 'SNOW',
+            'ICE': 'ICE',
+            'CORAL': 'CORAL',
+            'SAND': 'SAND',
+            'CLAY': 'CLAY',
+            'MACADAM': 'MACADAM',
+            'BRICK': 'BRICK',
+            'STEEL': 'STEEL MATTING',
+            'PSP': 'PIERCED STEEL PLANKING',
+            'ALU': 'ALUMINUM',
+            'METAL': 'METAL'
+        };
+        
+        return surfaceMap[code] || code; // Return mapped value or original code if not found
+    }
+
+    function displayAirportPopup(feature) {
+        // Get airport data from the feature
+        const airport = feature.getProperties();
+        const ident = airport.ident;
+        const name = airport.name;
+        const type = airport.type;
+        const elevation = airport.elevation_ft;
+        
+        // Get full airport data with frequencies and runways
+        const fullAirportData = airport.fullData || airport;
+        
+        let html = `<div class="featurepopup" id="featurepopup">`;
+        html += `<span class="airportheader" style="background-color:#4a90e2; color:white;">`;
+        html += `${name}<br>${ident} - ${type.replace('_', ' ').toUpperCase()}</span><br>`;
+        html += `<div class="airport-popup-body">`;
+        
+        // Basic airport information
+        html += `<div class="airport-basic-info">`;
+        html += `<strong>Airport Information</strong><br>`;
+        html += `Identifier: <b>${ident}</b><br>`;
+        html += `Type: <b>${type.replace('_', ' ').toUpperCase()}</b><br>`;
+        html += elevation ? `Elevation: <b>${elevation} ft MSL</b><br>` : "";
+        html += `</div><br>`;
+        
+        // Frequencies section
+        if (fullAirportData.frequencies && fullAirportData.frequencies.length > 0) {
+            html += `<div class="airport-frequencies">`;
+            html += `<strong>Frequencies</strong><br>`;
+            html += `<table style="width: 100%; border-collapse: collapse; margin-top: 5px;">`;
+            fullAirportData.frequencies.forEach(freq => {
+                html += `<tr>`;
+                html += `<td style="text-align: left; padding: 2px 10px 2px 0; vertical-align: top;">${freq.description}</td>`;
+                html += `<td style="text-align: left; padding: 2px 0; vertical-align: top;"><b>${freq.frequency}</b></td>`;
+                html += `</tr>`;
+            });
+            html += `</table>`;
+            html += `</div><br>`;
+        }
+        
+        // Runways section
+        if (fullAirportData.runways && fullAirportData.runways.length > 0) {
+            html += `<div class="airport-runways">`;
+            html += `<strong>Runways</strong><br>`;
+            fullAirportData.runways.forEach(runway => {
+                html += `Runway ${runway.le_ident}/${runway.he_ident}: `;
+                html += `<b>${runway.length_ft ? runway.length_ft + ' ft' : ''}</b>`;
+                if (runway.surface) {
+                    const decodedSurface = decodeRunwaySurface(runway.surface);
+                    html += ` (${decodedSurface})`;
+                }
+                html += `<br>`;
+            });
+            html += `</div><br>`;
+        }
+        
+        html += `</div>`; // end of airport-popup-body
+        html += `<hr>`;
+        html += `<button class="custom-popup-closer" onclick="closePopup()" style="background:#4a90e2; color:white;">Close</button>`;
+        html += `</div>`;
+        
+        popupcontent.innerHTML = html;
     }
 
     /**
