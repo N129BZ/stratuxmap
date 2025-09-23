@@ -167,15 +167,14 @@ document.addEventListener('DOMContentLoaded', async function () {
             const stateCache = e.detail.state;
             console.log("In window event listener for stateReplay");
             
+            if (!stateCache) return;
+
             if (typeof stateCache.zoom === 'number' &&
                 Array.isArray(stateCache.viewposition) &&
                 stateCache.viewposition.length === 2 &&
                 typeof stateCache.viewposition[0] === 'number' &&
                 typeof stateCache.viewposition[1] === 'number' &&
                 typeof stateCache.rotation === 'number') {
-                
-                console.log("Passed IF statement check for valid replay object", stateCache);
-
                 
                 map.getView().setZoom(stateCache.zoom);
                 map.getView().setCenter(stateCache.viewposition);
@@ -396,6 +395,14 @@ document.addEventListener('DOMContentLoaded', async function () {
     });
     map.addLayer(trafficVectorLayer);
 
+    let airportLayer = new VectorLayer({
+        title: 'Airports',
+        source: new VectorSource(),
+        zIndex: 100,
+        visible: false
+    });
+    map.addLayer(airportLayer);
+
     console.log("Creating ownship position layer");
     const myairplane = new Overlay({
         element: airplaneElement
@@ -545,11 +552,58 @@ document.addEventListener('DOMContentLoaded', async function () {
     map.on('dblclick', async function(evt) {
         const coordinate = evt.coordinate;
         const lonLat = toLonLat(coordinate);
+        const radius = 50;
         
-        console.log('Double-clicked at longitude:', lonLat[0], 'latitude:', lonLat[1]);
+        let airportlist = await getAirportsInRadius(lonLat[0], lonLat[1], radius);
         
-        let airportlist = await getAirportsInRadius(lonLat[0], lonLat[1], 25);
-        console.log("Airports within 25nm:", airportlist);
+        let scaleSize = getScaleSize();
+
+        // Clear existing airport features
+        airportLayer.getSource().clear();
+        
+        // Add airport features to the layer
+        if (airportlist && airportlist.length > 0) {
+            const source = airportLayer.getSource();
+            const features = [];
+            
+            airportlist.forEach((airport, index) => {
+                
+                if (airport.lat && airport.lon) {
+                    const airportCoord = fromLonLat([airport.lon, airport.lat]);
+                    const airportFeature = new Feature({
+                        geometry: new Point(airportCoord),
+                        name: airport.name,
+                        ident: airport.ident,
+                        type: airport.type,
+                        elevation: airport.elevation_ft,
+                        datatype: 'airport'
+                    });
+
+                    // Color airports based on whether they have a tower frequency
+                    const hasTower = airport.frequencies && airport.frequencies.some(freq => freq.description && freq.description.includes('TWR'));
+                    const fillColor = hasTower ? 'blue' : 'magenta';
+                    
+                    airportFeature.setStyle(new Style({
+                        image: new Icon({
+                            src: `data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12"><circle cx="6" cy="6" r="5" fill="${fillColor}" stroke="black" stroke-width="1"/></svg>`,
+                            scale: scaleSize,
+                            anchor: [0.5, 0.5]
+                        })
+                    }));
+
+                    features.push(airportFeature);
+                }
+                else {
+                    console.log(`Airport ${airport.ident || 'unknown'} missing coordinates: lat=${airport.lat}, lon=${airport.lon}`);
+                }
+            });
+            
+            // Add all features at once
+            source.addFeatures(features);
+        }
+        else {
+            console.log('No airport list or empty list');
+        }
 
         // Example: Center map on double-clicked location
         map.getView().setCenter(coordinate);
@@ -1284,20 +1338,8 @@ document.addEventListener('DOMContentLoaded', async function () {
                     scale: .50
                 })
             }));
-
-            let id = pirep.aircraft_ref ? pirep.aircraft_ref : pirep.station_id;
-            pirepFeature.setId(id);
-            const oldFeature = pirepVectorLayer.getSource().getFeatureById(id);
-            if (oldFeature) {
-                pirepVectorLayer.getSource().removeFeature(oldFeature);
-            }
-            pirepVectorLayer.getSource().addFeature(pirepFeature);
-            pirepFeature.changed();
-            pirepVectorLayer.changed();
         }
-        catch (error) {
-            console.log(error.message);
-        }
+        finally {}
     }
 
     /**
@@ -2828,7 +2870,7 @@ document.addEventListener('DOMContentLoaded', async function () {
             case "IFR":
                 return { bgcolor: "#ff0000", fgcolor: "#ffffff" };
             case "LIFR":
-                return { bgcolor: "#ff00ff", fgcolor: "#ffffff" };
+                return { bgcolor: "#ff00ff", fgcolor: "#000000" };
             case "MVFR":
                 return { bgcolor: "#0000cd", fgcolor: "#ffffff" };
             case "VFR":
