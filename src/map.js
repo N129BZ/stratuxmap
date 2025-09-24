@@ -8,10 +8,12 @@ import OSM from 'ol/source/OSM';
 import { fromLonLat, toLonLat, transformExtent } from 'ol/proj';
 import Feature from 'ol/Feature';
 import Point from 'ol/geom/Point';
+import LineString from 'ol/geom/LineString';
 import VectorLayer from 'ol/layer/Vector';
 import VectorSource from 'ol/source/Vector';
 import Style from 'ol/style/Style';
 import Icon from 'ol/style/Icon';
+import Stroke from 'ol/style/Stroke';
 import Overlay from 'ol/Overlay';
 import { defaults as defaultControls, ScaleLine } from 'ol/control';
 import LayerSwitcher from 'ol-layerswitcher';
@@ -262,6 +264,7 @@ document.addEventListener('DOMContentLoaded', async function () {
     let turbulenceCodeKeymap = new Map();
     let skyConditionKeymap = new Map();
     let trafficMap = new Map();
+    let trafficTrackHistory = new Map(); // Store position history for each aircraft
     
     /*******keymap loading ******/
     loadTafFieldKeymap();
@@ -606,23 +609,30 @@ document.addEventListener('DOMContentLoaded', async function () {
             });
             
             // Check if this is a heliport or closed airport
-            const isHeliport = airport.type && airport.type.toLowerCase().includes('heliport');
+            const isHeliport = (airport.type && airport.type.toLowerCase().includes('heliport')) ||
+                              (airport.name && airport.name.toLowerCase().includes('heliport'));
             const isClosed = airport.closed === 'yes' || airport.closed === true || 
                            (airport.type && airport.type.toLowerCase().includes('closed'));
             
             let airportSvg;
             
-            if (isClosed) {
-                // Closed airport: red circle with yellow X
+            if (isHeliport && isClosed) {
+                // Closed heliport: red circle with white H
                 airportSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 12 12">
                     <circle cx="6" cy="6" r="5" fill="red" stroke="black" stroke-width="1"/>
-                    <text x="6" y="8" text-anchor="middle" font-family="Arial, sans-serif" font-size="8" font-weight="bold" fill="yellow">✕</text>
+                    <text x="6" y="6" text-anchor="middle" dominant-baseline="central" font-family="Arial, sans-serif" font-size="7" font-weight="bold" fill="white">H</text>
+                </svg>`;
+            } else if (isClosed) {
+                // Closed airport: red circle with white X
+                airportSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 12 12">
+                    <circle cx="6" cy="6" r="5" fill="red" stroke="black" stroke-width="1"/>
+                    <text x="6" y="6" text-anchor="middle" dominant-baseline="central" font-family="Arial, sans-serif" font-size="8" font-weight="bold" fill="white">✕</text>
                 </svg>`;
             } else if (isHeliport) {
                 // Heliport: white circle with black "H"
                 airportSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 12 12">
                     <circle cx="6" cy="6" r="5" fill="white" stroke="black" stroke-width="1"/>
-                    <text x="6" y="8" text-anchor="middle" font-family="Arial, sans-serif" font-size="7" font-weight="bold" fill="black">H</text>
+                    <text x="6" y="6" text-anchor="middle" dominant-baseline="central" font-family="Arial, sans-serif" font-size="7" font-weight="bold" fill="black">H</text>
                 </svg>`;
             } else {
                 // Regular airports: color based on runway surface type and tower frequency
@@ -632,7 +642,7 @@ document.addEventListener('DOMContentLoaded', async function () {
                 const hasTurfRunway = airport.runways && airport.runways.some(runway => {
                     if (!runway.surface) return false;
                     const surface = runway.surface.replace(/[\[\]]/g, '').toUpperCase();
-                    return surface === 'TURF' || surface === 'GRASS';
+                    return surface.includes('TURF') || surface.includes('GRASS');
                 });
                 
                 let fillColor;
@@ -1088,7 +1098,7 @@ document.addEventListener('DOMContentLoaded', async function () {
         
         if (isClosed) {
             headerBackgroundColor = 'red';
-            headerTextColor = 'yellow';
+            headerTextColor = 'white';
         } else if (isHeliport) {
             headerBackgroundColor = 'white';
             headerTextColor = 'black';
@@ -1122,9 +1132,22 @@ document.addEventListener('DOMContentLoaded', async function () {
         // Basic airport information
         html += `<div class="airport-basic-info">`;
         html += `<strong>Airport Information</strong><br>`;
-        html += `Identifier: <b>${ident}</b><br>`;
-        html += `Type: <b>${type.replace('_', ' ').toUpperCase()}</b><br>`;
-        html += elevation ? `Elevation: <b>${elevation} ft MSL</b><br>` : "";
+        html += `<table style="width: 100%; border-collapse: collapse; margin-top: 5px;">`;
+        html += `<tr style="border-bottom: 1px solid #ddd;">`;
+        html += `<td style="text-align: left; padding: 2px 10px 2px 0; vertical-align: top;">Identifier:</td>`;
+        html += `<td style="text-align: left; padding: 2px 0; vertical-align: top;"><b>${ident}</b></td>`;
+        html += `</tr>`;
+        html += `<tr style="border-bottom: 1px solid #ddd;">`;
+        html += `<td style="text-align: left; padding: 2px 10px 2px 0; vertical-align: top;">Type:</td>`;
+        html += `<td style="text-align: left; padding: 2px 0; vertical-align: top;"><b>${type.replace('_', ' ').toUpperCase()}</b></td>`;
+        html += `</tr>`;
+        if (elevation) {
+            html += `<tr style="border-bottom: 1px solid #ddd;">`;
+            html += `<td style="text-align: left; padding: 2px 10px 2px 0; vertical-align: top;">Elevation:</td>`;
+            html += `<td style="text-align: left; padding: 2px 0; vertical-align: top;"><b>${elevation} ft MSL</b></td>`;
+            html += `</tr>`;
+        }
+        html += `</table>`;
         html += `</div><br>`;
         
         // Frequencies section
@@ -1493,8 +1516,75 @@ document.addEventListener('DOMContentLoaded', async function () {
         "Bearing":92.7782277589171,"Distance":9.616803034808295e+06}
         --------------------------------------------------------------------------------------------*/
         let id = trafficObject.Icao_addr;
+        
+        // Only process if we have valid position data
+        if (!trafficObject.Lat || !trafficObject.Lng || trafficObject.Lat === 0 || trafficObject.Lng === 0) {
+            return;
+        }
+        
         let geometry = new Point(fromLonLat([trafficObject.Lng, trafficObject.Lat]));
         let trackRadians = trafficObject.Track * 0.0174533;
+        let currentPosition = [trafficObject.Lng, trafficObject.Lat];
+        let currentTime = new Date().getTime();
+
+        // Maintain position history for track lines
+        if (!trafficTrackHistory.has(id)) {
+            trafficTrackHistory.set(id, []);
+        }
+        let history = trafficTrackHistory.get(id);
+        
+        // Add current position to history
+        history.push({
+            position: currentPosition,
+            timestamp: currentTime
+        });
+        
+        // Keep only last 15 positions (configurable)
+        const maxTrackPoints = 15;
+        if (history.length > maxTrackPoints) {
+            history.shift();
+        }
+        
+        // Clean up old positions (older than 5 minutes)
+        const maxAge = 5 * 60 * 1000; // 5 minutes
+        const cutoffTime = currentTime - maxAge;
+        const filteredHistory = history.filter(point => point.timestamp > cutoffTime);
+        trafficTrackHistory.set(id, filteredHistory);
+        
+        // Create or update track line if we have enough points
+        if (filteredHistory.length > 1) {
+            const trackLineId = `track_${id}`;
+            const source = trafficVectorLayer.getSource();
+            const existingTrackFeature = source.getFeatureById(trackLineId);
+            
+            // Create line coordinates from position history
+            const lineCoords = filteredHistory.map(point => fromLonLat(point.position));
+            const lineGeometry = new LineString(lineCoords);
+            
+            if (existingTrackFeature) {
+                existingTrackFeature.setGeometry(lineGeometry);
+                existingTrackFeature.changed();
+            } else {
+                const trackFeature = new Feature({
+                    geometry: lineGeometry,
+                    datatype: "track",
+                    aircraft_id: id
+                });
+                
+                // Style the track line
+                trackFeature.setStyle(new Style({
+                    stroke: new Stroke({
+                        color: 'rgba(0, 0, 0, 0.7)', // Black with transparency
+                        width: 2,
+                        lineDash: [5, 5] // Dashed line
+                    })
+                }));
+                
+                trackFeature.setId(trackLineId);
+                source.addFeature(trackFeature);
+                trackFeature.changed();
+            }
+        }
 
         let trafficmarker = new Icon({
             crossOrigin: "anonymous",
@@ -1535,6 +1625,55 @@ document.addEventListener('DOMContentLoaded', async function () {
             trafficVectorLayer.changed();
         }
     }
+
+    /**
+     * Clean up old traffic tracks for aircraft that are no longer being received
+     */
+    function cleanupOldTrafficTracks() {
+        const currentTime = new Date().getTime();
+        const maxAge = 10 * 60 * 1000; // 10 minutes
+        const cutoffTime = currentTime - maxAge;
+        
+        // Get current traffic IDs
+        const currentTrafficIds = new Set();
+        const source = trafficVectorLayer.getSource();
+        source.getFeatures().forEach(feature => {
+            if (feature.get('datatype') === 'traffic') {
+                currentTrafficIds.add(feature.getId());
+            }
+        });
+        
+        // Clean up track history and remove track lines for inactive aircraft
+        const tracksToRemove = [];
+        
+        trafficTrackHistory.forEach((history, aircraftId) => {
+            const lastSeen = history.length > 0 ? history[history.length - 1].timestamp : 0;
+            
+            if (!currentTrafficIds.has(aircraftId) && lastSeen < cutoffTime) {
+                // Remove from history
+                trafficTrackHistory.delete(aircraftId);
+                
+                // Mark track line for removal
+                const trackLineId = `track_${aircraftId}`;
+                const trackFeature = source.getFeatureById(trackLineId);
+                if (trackFeature) {
+                    tracksToRemove.push(trackFeature);
+                }
+            }
+        });
+        
+        // Remove old track lines
+        tracksToRemove.forEach(feature => {
+            source.removeFeature(feature);
+        });
+        
+        if (tracksToRemove.length > 0) {
+            trafficVectorLayer.changed();
+        }
+    }
+
+    // Run cleanup every 2 minutes
+    setInterval(cleanupOldTrafficTracks, 2 * 60 * 1000);
 
     /**
      * Place metar features on the map. color-coded to the conditions
