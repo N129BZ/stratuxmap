@@ -613,7 +613,8 @@ document.addEventListener('DOMContentLoaded', async function () {
                               (airport.name && airport.name.toLowerCase().includes('heliport'));
             const isClosed = airport.closed === 'yes' || airport.closed === true || 
                            (airport.type && airport.type.toLowerCase().includes('closed'));
-            
+            const isSeaplane = (airport.type && airport.type.toLowerCase().includes('seaplane')) ||
+                              (airport.name && airport.name.toLowerCase().includes('seaplane'));
             let airportSvg;
             
             if (isHeliport && isClosed) {
@@ -634,6 +635,12 @@ document.addEventListener('DOMContentLoaded', async function () {
                     <circle cx="6" cy="6" r="5" fill="white" stroke="black" stroke-width="1"/>
                     <text x="6" y="6" text-anchor="middle" dominant-baseline="central" font-family="Arial, sans-serif" font-size="7" font-weight="bold" fill="black">H</text>
                 </svg>`;
+            } else if (isSeaplane) {
+                // Seaplane base: light blue circle with black "S"
+                airportSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 12 12">
+                    <circle cx="6" cy="6" r="5" fill="lightblue" stroke="black" stroke-width="1"/>
+                    <text x="6" y="6" text-anchor="middle" dominant-baseline="central" font-family="Arial, sans-serif" font-size="7" font-weight="bold" fill="black">S</text>
+                </svg>`; 
             } else {
                 // Regular airports: color based on runway surface type and tower frequency
                 const hasTower = airport.frequencies && airport.frequencies.some(freq => 
@@ -1086,15 +1093,24 @@ document.addEventListener('DOMContentLoaded', async function () {
         const name = airport.name;
         const type = airport.type;
         const elevation = airport.elevation_ft;
-        
+        let headerBackgroundColor, headerTextColor;
+
         // Get full airport data with frequencies and runways
         const fullAirportData = airport.fullData || airport;
         
         // Determine header color based on airport type and characteristics (same as icon logic)
         const isHeliport = type && type.toLowerCase().includes('heliport');
+        const isSeaplane = type && type.toLowerCase().includes('seaplane');
         const isClosed = fullAirportData.closed === 'yes' || fullAirportData.closed === true || 
                         (type && type.toLowerCase().includes('closed'));
-        let headerBackgroundColor, headerTextColor;
+        const hasTower = fullAirportData.frequencies && fullAirportData.frequencies.some(freq => 
+                freq.description && freq.description.includes('TWR')
+        );
+        const hasTurfRunway = fullAirportData.runways && fullAirportData.runways.some(runway => {
+            if (!runway.surface) return false;
+            const surface = runway.surface.replace(/[\[\]]/g, '').toUpperCase();
+            return surface === 'TURF' || surface === 'GRASS';
+        });
         
         if (isClosed) {
             headerBackgroundColor = 'red';
@@ -1102,30 +1118,22 @@ document.addEventListener('DOMContentLoaded', async function () {
         } else if (isHeliport) {
             headerBackgroundColor = 'white';
             headerTextColor = 'black';
+        } else if (isSeaplane) {
+            headerBackgroundColor = 'lightblue';
+            headerTextColor = 'black';
+        } else if (hasTurfRunway) {
+            headerBackgroundColor = 'green';
+            headerTextColor = 'white';
+        } else if (hasTower) {
+            headerBackgroundColor = 'blue';
+            headerTextColor = 'white';
         } else {
-            const hasTower = fullAirportData.frequencies && fullAirportData.frequencies.some(freq => 
-                freq.description && freq.description.includes('TWR')
-            );
-            const hasTurfRunway = fullAirportData.runways && fullAirportData.runways.some(runway => {
-                if (!runway.surface) return false;
-                const surface = runway.surface.replace(/[\[\]]/g, '').toUpperCase();
-                return surface === 'TURF' || surface === 'GRASS';
-            });
-            
-            if (hasTurfRunway) {
-                headerBackgroundColor = 'green';
-                headerTextColor = 'white';
-            } else if (hasTower) {
-                headerBackgroundColor = 'blue';
-                headerTextColor = 'white';
-            } else {
-                headerBackgroundColor = 'magenta';
-                headerTextColor = 'white';
-            }
+            headerBackgroundColor = 'magenta';
+            headerTextColor = 'white';
         }
         
         let html = `<div class="featurepopup" id="featurepopup">`;
-        html += `<span class="airportheader" style="background-color:${headerBackgroundColor}; color:${headerTextColor};">`;
+        html += `<span class="airportheader" style="background-color:${headerBackgroundColor}; color:${headerTextColor}; border: 1px solid black;">`;
         html += `${name}<br>${ident} - ${type.replace('_', ' ').toUpperCase()}</span><br>`;
         html += `<div class="airport-popup-body">`;
         
@@ -1183,7 +1191,7 @@ document.addEventListener('DOMContentLoaded', async function () {
         
         html += `</div>`; // end of airport-popup-body
         html += `<hr>`;
-        html += `<button class="custom-popup-closer" onclick="closePopup()" style="background:#4a90e2; color:white;">Close</button>`;
+        html += `<button class="custom-popup-closer" onclick="closePopup()" style="background:${headerBackgroundColor}; color:${headerTextColor};">Close</button>`;
         html += `</div>`;
         
         popupcontent.innerHTML = html;
