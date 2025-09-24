@@ -1,3 +1,11 @@
+////////////////////////////////////////////////////////////////////////////////////////////////
+//  NOTE: Data for airports can be downloaded from:
+//  https://ourairports.com/data/ (airports.csv, runways.csv, frequencies.csv, navaids.csv)
+//  These tables are then imported into airports.db and set up with primary keys and indexes.
+//  For best performance the freqeuencies and runways tables should be indexed on the airport 
+//  id field, and setup with the foreign keys to the airports id.
+////////////////////////////////////////////////////////////////////////////////////////////////
+
 import './map.css';
 import 'ol/ol.css';
 import 'ol-layerswitcher/dist/ol-layerswitcher.css';
@@ -19,7 +27,9 @@ import { defaults as defaultControls, ScaleLine } from 'ol/control';
 import LayerSwitcher from 'ol-layerswitcher';
 import { convertStratuxToFAA } from './stratuxconversion.js';
 import { saveMapState, restoreMapState } from './mapstatemanager.js';
-import { getAirportsInRadius } from './airportfunctions.js';    
+import { getAirportsInRadius } from './airportfunctions.js';
+import { fetchNavaidData, getBoundingBox, generateNavaidSymbol, normalizeNavaidData } from './navaids.js';
+import TrafficRadar from './trafficradar.js';    
 
 let mapsettings = {};
 let mapsettingsLoaded = (async function loadSettings(){
@@ -99,6 +109,7 @@ let currentZoom = 9.0;
 let tplcontainer = {};
 let DistanceUnits = {};
 let distanceunit = "";
+let trafficRadar = null;
 let closeButton = {};
 let popup = {};
 let popupcontent = {};
@@ -415,6 +426,14 @@ document.addEventListener('DOMContentLoaded', async function () {
     });
     map.addLayer(airportLayer);
 
+    let radarLayer = new VectorLayer({
+        title: 'Traffic Radar',
+        source: new VectorSource(),
+        zIndex: 101,
+        visible: false
+    });
+    map.addLayer(radarLayer);
+
     console.log("Creating ownship position layer");
     const myairplane = new Overlay({
         element: airplaneElement
@@ -487,6 +506,127 @@ document.addEventListener('DOMContentLoaded', async function () {
     });
     map.addControl(layerSwitcher);
 
+    // Initialize Traffic Radar - create radar container if it doesn't exist
+    function initializeTrafficRadar() {
+        let radarContainer = document.getElementById('radar-container');
+        if (!radarContainer) {
+            // Create main radar container
+            radarContainer = document.createElement('div');
+            radarContainer.id = 'radar-container';
+            radarContainer.style.position = 'absolute';
+            radarContainer.style.top = '50%';
+            radarContainer.style.left = '50%';
+            radarContainer.style.transform = 'translate(-50%, -50%)';
+            radarContainer.style.width = '544px';
+            radarContainer.style.height = '646px';
+            radarContainer.style.backgroundColor = 'rgba(0, 0, 0, 0.9)';
+            radarContainer.style.border = '2px solid #333';
+            radarContainer.style.borderRadius = '10px';
+            radarContainer.style.display = 'none'; // Hidden by default
+            radarContainer.style.zIndex = '1000';
+            radarContainer.style.padding = '10px';
+            
+            // Create radar title
+            const radarTitle = document.createElement('div');
+            radarTitle.textContent = 'Traffic Radar';
+            radarTitle.style.color = 'white';
+            radarTitle.style.textAlign = 'center';
+            radarTitle.style.fontSize = '14px';
+            radarTitle.style.fontWeight = 'bold';
+            radarTitle.style.marginBottom = '10px';
+            radarContainer.appendChild(radarTitle);
+            
+            // Create circular radar display
+            const radarDisplay = document.createElement('div');
+            radarDisplay.id = 'radar-display';
+            radarDisplay.style.width = '510px';
+            radarDisplay.style.height = '510px';
+            radarDisplay.style.borderRadius = '50%';
+            radarDisplay.style.backgroundColor = 'rgba(0, 50, 0, 0.8)';
+            radarDisplay.style.border = '2px solid #00ff00';
+            radarDisplay.style.position = 'relative';
+            radarDisplay.style.margin = '0 auto';
+            radarContainer.appendChild(radarDisplay);
+            
+            // Create radar controls
+            const radarControls = document.createElement('div');
+            radarControls.style.marginTop = '10px';
+            radarControls.style.textAlign = 'center';
+            
+            // Range selector
+            const rangeLabel = document.createElement('span');
+            rangeLabel.textContent = 'Range: ';
+            rangeLabel.style.color = 'white';
+            rangeLabel.style.fontSize = '12px';
+            radarControls.appendChild(rangeLabel);
+            
+            const rangeSelect = document.createElement('select');
+            rangeSelect.id = 'radar-range-select';
+            rangeSelect.style.marginRight = '10px';
+            rangeSelect.innerHTML = `
+                <option value="5">5 NM</option>
+                <option value="10" selected>10 NM</option>
+                <option value="20">20 NM</option>
+                <option value="50">50 NM</option>
+                <option value="100">100 NM</option>
+            `;
+            radarControls.appendChild(rangeSelect);
+            
+            // Sound toggle button
+            const soundBtn = document.createElement('button');
+            soundBtn.id = 'radar-sound-btn';
+            soundBtn.textContent = '🔇';
+            soundBtn.style.marginLeft = '10px';
+            soundBtn.style.padding = '4px 8px';
+            soundBtn.style.fontSize = '12px';
+            radarControls.appendChild(soundBtn);
+            
+            radarContainer.appendChild(radarControls);
+            document.body.appendChild(radarContainer);
+        }
+        
+        // Initialize the traffic radar
+        try {
+            trafficRadar = new TrafficRadar('radar-display');
+            console.log('Traffic radar initialized successfully:', trafficRadar);
+        } catch (error) {
+            console.error('Failed to initialize traffic radar:', error);
+            return;
+        }
+        
+        // Set up event listeners for controls
+        setupRadarControls();
+    }
+    
+    // Setup radar control event listeners
+    function setupRadarControls() {
+        const rangeSelect = document.getElementById('radar-range-select');
+        const soundBtn = document.getElementById('radar-sound-btn');
+        
+        if (rangeSelect) {
+            rangeSelect.addEventListener('change', (e) => {
+                const newRange = parseInt(e.target.value);
+                if (trafficRadar) {
+                    trafficRadar.updateDisplayRadius(newRange);
+                }
+                console.log('Radar range updated to:', newRange, 'NM');
+            });
+        }
+        
+        if (soundBtn) {
+            soundBtn.addEventListener('click', () => {
+                if (trafficRadar) {
+                    trafficRadar.toggleSound();
+                    const status = trafficRadar.getStatus();
+                    soundBtn.textContent = status.soundType === 3 ? '🔇' : '🔊';
+                }
+            });
+        }
+    }
+    
+    // Initialize traffic radar
+    initializeTrafficRadar();
+
     /**
      * popup close event handler
      * @returns false!!
@@ -504,15 +644,9 @@ document.addEventListener('DOMContentLoaded', async function () {
 
     // Monitor layer visibility changes to show/hide radius selector
     function checkAirportLayerVisibility() {
-        const layers = map.getLayers().getArray();
-        const airportLayerVisible = layers.some(layer => 
-            layer.get('title') && 
-            layer.get('title').toLowerCase().includes('airport') && 
-            layer.getVisible()
-        );
+        const airportLayerVisible = airportLayer.getVisible(); 
         
         console.log('Checking airport layer visibility:', airportLayerVisible);
-        console.log('Available layers:', layers.map(l => l.get('title')));
         
         if (airportLayerVisible) {
             radiusSelector.style.display = 'block';
@@ -525,13 +659,32 @@ document.addEventListener('DOMContentLoaded', async function () {
         }
     }
 
+    // Monitor traffic layer visibility changes
+    function checkTrafficLayerVisibility() {
+        const trafficLayerVisible = trafficVectorLayer.getVisible();
+        console.log('Checking traffic layer visibility:', trafficLayerVisible);
+        // Traffic layer no longer controls radar display
+    }
+
+    // Monitor radar layer visibility changes to show/hide radar
+    function checkRadarLayerVisibility() {
+        const radarLayerVisible = radarLayer.getVisible();
+        const radarContainer = document.getElementById('radar-container');
+        
+        console.log('Checking radar layer visibility:', radarLayerVisible);
+        
+        if (radarLayerVisible && radarContainer) {
+            radarContainer.style.display = 'block';
+            console.log('Traffic radar display shown');
+        } else if (radarContainer) {
+            radarContainer.style.display = 'none';
+            console.log('Traffic radar display hidden');
+        }
+    }
+
     // Function to clear airport features
     function clearAirportFeatures() {
-        const layers = map.getLayers().getArray();
-        const airportLayer = layers.find(layer => layer.get('title') === 'Airports');
-        if (airportLayer) {
-            airportLayer.getSource().clear();
-        }
+        airportLayer.getSource().clear();
     }
 
     // Function to find and display airports within radius
@@ -574,17 +727,8 @@ document.addEventListener('DOMContentLoaded', async function () {
     // Function to display airport features on map
     function displayAirportFeatures(airports) {
         // Use the existing airport layer
-        const layers = map.getLayers().getArray();
-        let targetAirportLayer = layers.find(layer => layer.get('title') === 'Airports');
+        airportLayer.getSource().clear();
         
-        if (!targetAirportLayer) {
-            console.warn('Airport layer not found!');
-            return;
-        }
-
-        // Clear existing features in the airport layer
-        targetAirportLayer.getSource().clear();
-
         // Add airport features
         const features = airports.map(airport => {
             // Handle different possible property names
@@ -592,6 +736,8 @@ document.addEventListener('DOMContentLoaded', async function () {
             const latitude = airport.latitude || airport.lat;
             const name = airport.name || airport.station_name || airport.ident;
             const ident = airport.ident || airport.id;
+            let fillColor;
+            let airportSvg;
             
             if (!longitude || !latitude) {
                 console.warn('Airport missing coordinates:', airport);
@@ -615,7 +761,15 @@ document.addEventListener('DOMContentLoaded', async function () {
                            (airport.type && airport.type.toLowerCase().includes('closed'));
             const isSeaplane = (airport.type && airport.type.toLowerCase().includes('seaplane')) ||
                               (airport.name && airport.name.toLowerCase().includes('seaplane'));
-            let airportSvg;
+            const hasTower = airport.frequencies && airport.frequencies.some(freq => 
+                freq.description && freq.description.includes('TWR')
+            );
+            const hasTurfRunway = airport.runways && airport.runways.some(runway => {
+                if (!runway.surface) return false;
+                const surface = runway.surface.replace(/[\[\]]/g, '').toUpperCase();
+                return surface.includes('TURF') || surface.includes('GRASS');
+            });
+            
             
             if (isHeliport && isClosed) {
                 // Closed heliport: red circle with white H
@@ -642,17 +796,6 @@ document.addEventListener('DOMContentLoaded', async function () {
                     <text x="6" y="6" text-anchor="middle" dominant-baseline="central" font-family="Arial, sans-serif" font-size="7" font-weight="bold" fill="black">S</text>
                 </svg>`; 
             } else {
-                // Regular airports: color based on runway surface type and tower frequency
-                const hasTower = airport.frequencies && airport.frequencies.some(freq => 
-                    freq.description && freq.description.includes('TWR')
-                );
-                const hasTurfRunway = airport.runways && airport.runways.some(runway => {
-                    if (!runway.surface) return false;
-                    const surface = runway.surface.replace(/[\[\]]/g, '').toUpperCase();
-                    return surface.includes('TURF') || surface.includes('GRASS');
-                });
-                
-                let fillColor;
                 if (hasTurfRunway) {
                     fillColor = 'green';  // Turf/grass runways = green
                 } else if (hasTower) {
@@ -680,8 +823,136 @@ document.addEventListener('DOMContentLoaded', async function () {
             return feature;
         }).filter(feature => feature !== null); // Remove null features
 
-        targetAirportLayer.getSource().addFeatures(features);
+        airportLayer.getSource().addFeatures(features);
     }
+
+    // // Function to clear navaid features
+    // function clearNavaidFeatures() {
+    //     navaidLayer.getSource().clear();
+    // }
+
+    // // Function to display navaid features on map
+    // function displayNavaidFeatures(navaids) {
+    //     // Clear existing features
+    //     navaidLayer.getSource().clear();
+        
+    //     if (!navaids || navaids.length === 0) {
+    //         console.log('No navaids to display');
+    //         return;
+    //     }
+
+    //     const features = navaids.map(rawNavaid => {
+    //         try {
+    //             // Normalize the navaid data to match our expected format
+    //             const navaid = {
+    //                 type: rawNavaid.type,
+    //                 ident: rawNavaid.ident,
+    //                 name: rawNavaid.name,
+    //                 latitude: rawNavaid.latitude_deg,
+    //                 longitude: rawNavaid.longitude_deg,
+    //                 frequency: rawNavaid.frequency_khz,
+    //                 elevation: rawNavaid.elevation_ft,
+    //                 usageType: rawNavaid.usageType,
+    //                 power: rawNavaid.power,
+    //                 associated_airport: rawNavaid.associated_airport
+    //             };
+
+    //             console.log('Raw navaid data:', rawNavaid);
+    //             console.log('Normalized navaid:', navaid);
+
+    //             if (!navaid.latitude || !navaid.longitude) {
+    //                 console.warn('Navaid missing coordinates:', navaid);
+    //                 return null;
+    //             }
+
+    //             // Convert coordinates to map projection
+    //             const coordinates = fromLonLat([navaid.longitude, navaid.latitude]);
+                
+    //             // Create feature
+    //             const feature = new Feature({
+    //                 ident: navaid.ident,
+    //                 datatype: "navaid",
+    //                 name: navaid.name,
+    //                 type: navaid.type,
+    //                 frequency: navaid.frequency,
+    //                 elevation: navaid.elevation,
+    //                 usageType: navaid.usageType,
+    //                 power: navaid.power,
+    //                 associated_airport: navaid.associated_airport,
+    //                 geometry: new Point(coordinates),
+    //                 fullData: navaid
+    //             });
+
+    //             // Generate SVG symbol using the navaid symbology system
+    //             console.log('Generating symbol for navaid:', navaid.ident, navaid.type);
+    //             const svgSymbol = generateNavaidSymbol(navaid, 0, 0, 30);
+                
+    //             // Create the complete SVG with proper dimensions and adequate space for text
+    //             const completeSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="60" height="50" viewBox="-30 -25 60 50">
+    //                 ${svgSymbol}
+    //             </svg>`;
+
+    //             // Style the navaid marker
+    //             feature.setStyle(new Style({
+    //                 image: new Icon({
+    //                     src: `data:image/svg+xml;utf8,${encodeURIComponent(completeSvg)}`,
+    //                     scale: 1.0,
+    //                     anchor: [0.5, 0.5]
+    //                 })
+    //             }));
+
+    //             return feature;
+    //         } catch (error) {
+    //             console.error('Error creating navaid feature for:', rawNavaid, error);
+    //             return null;
+    //         }
+    //     }).filter(feature => feature !== null);
+
+    //     navaidLayer.getSource().addFeatures(features);
+    // }
+
+    // // Function to check navaid layer visibility and load data when needed
+    // function checkNavaidLayerVisibility() {
+    //     const navaidLayerVisible = navaidLayer.getVisible(); 
+        
+    //     if (navaidLayerVisible) {
+    //         // Use selectedRadius to constrain navaid data like airports
+    //         if (selectedRadius > 0) {
+    //             // Get map center
+    //             const center = map.getView().getCenter();
+    //             const lonLat = toLonLat(center);
+    //             const centerLon = lonLat[0];
+    //             const centerLat = lonLat[1];
+                
+    //             console.log(`Fetching navaids within ${selectedRadius} miles of lat: ${centerLat}, lon: ${centerLon}`);
+                
+    //             // Calculate bounding box using selectedRadius
+    //             const boundingBox = getBoundingBox(centerLat, centerLon, selectedRadius);
+                
+    //             // Fetch navaids with bounding box constraint
+    //             fetchNavaidData(boundingBox).then(navaids => {
+    //                 if (navaids && navaids.length > 0) {
+    //                     displayNavaidFeatures(navaids);
+    //                 } else {
+    //                     console.log('No navaid data received for selected area');
+    //                 }
+    //             });
+    //         } else {
+    //             // Fetch all navaids when selectedRadius is 0
+    //             console.log('Fetching all navaids (no radius constraint)');
+    //             fetchNavaidData().then(navaids => {
+    //                 if (navaids && navaids.length > 0) {
+    //                     displayNavaidFeatures(navaids);
+    //                 } else {
+    //                     console.log('No navaid data received');
+    //                 }
+    //             });
+    //         }
+    //     } else {
+    //         // Clear navaids when layer is hidden
+    //         clearNavaidFeatures();
+    //     }
+    // }
 
     // Add radius dropdown event listener
     const radiusDropdown = document.getElementById('radius-dropdown');
@@ -709,18 +980,15 @@ document.addEventListener('DOMContentLoaded', async function () {
         console.log('Selected radius:', selectedRadius, 'miles');
     });
 
-    // Monitor layer changes
-    map.getLayers().on('add', checkAirportLayerVisibility);
-    map.getLayers().on('remove', checkAirportLayerVisibility);
-    map.getLayers().forEach(layer => {
-        if (layer.on) {
-            layer.on('change:visible', checkAirportLayerVisibility);
-        }
-    });
-
-    // Initial check
+    airportLayer.on('change:visible', checkAirportLayerVisibility);
+    trafficVectorLayer.on('change:visible', checkTrafficLayerVisibility);
+    radarLayer.on('change:visible', checkRadarLayerVisibility);
+    
+    // Initial checks
     checkAirportLayerVisibility();
-
+    checkTrafficLayerVisibility();
+    checkRadarLayerVisibility();
+    
     /**
      * Event to handle scaling of feature images
      */
@@ -1503,11 +1771,11 @@ document.addEventListener('DOMContentLoaded', async function () {
         html += `<button class="custom-popup-closer" onclick="closePopup()" style="background:#87ceeb; color:black;">Close</button>`;
         html += `</div>`;
         
-        popupcontent.innerHTML = html;
+        popupcontent.innerHTML = html;2
     }
 
     /**
-     * Draw any traffic on the map
+     * Draw any traffic on the map and process through traffic radar
      */
     async function processTraffic(trafficObject) {
         /*-----------------------------------------------------------------------------------------    
@@ -1525,7 +1793,12 @@ document.addEventListener('DOMContentLoaded', async function () {
         --------------------------------------------------------------------------------------------*/
         let id = trafficObject.Icao_addr;
         
-        // Only process if we have valid position data
+        // Feed traffic data to the traffic radar for collision detection and warnings
+        if (trafficRadar && radarLayer.getVisible()) {
+            trafficRadar.processTraffic(trafficObject);
+        }
+        
+        // Only process for map display if we have valid position data
         if (!trafficObject.Lat || !trafficObject.Lng || trafficObject.Lat === 0 || trafficObject.Lng === 0) {
             return;
         }
@@ -1986,6 +2259,8 @@ document.addEventListener('DOMContentLoaded', async function () {
         else return `${num.toFixed(1)} F°`;
     });
 
+    updateOwnshipSituation({});
+
     /**
      * Set ownship orientation from Stratux situation, updates airplane image current position
      */
@@ -2005,7 +2280,16 @@ document.addEventListener('DOMContentLoaded', async function () {
             "AHRSGLoadMax": 1.0025976589458154,"AHRSLastAttitudeTime": "0001-01-03T18:43:51.53Z","AHRSStatus": 7
         }
         */
-        viewposition = fromLonLat([jsondata.GPSLongitude, jsondata.GPSLatitude]);
+        if (jsondata && jsondata.GPSLongitude === 0 && jsondata.GPSLatitude === 0) {
+            viewposition = [-94.578331, 39.099724];
+            jsondata.GPSLongitude = -94.578331;
+            jsondata.GPSLatitude = 39.099724;
+            jsondata.GPSAltitudeMSL = 1245;
+            jsondata.AHRSMagHeading = 1800;
+        }
+        else {
+            viewposition = fromLonLat([jsondata.GPSLongitude, jsondata.GPSLatitude]);
+        }
         if (jsondata.GPSLongitude !== 0 && jsondata.GPSLatitude !== 0) {
             myairplane.setOffset(offset);
             myairplane.setPosition(viewposition);
@@ -2014,6 +2298,14 @@ document.addEventListener('DOMContentLoaded', async function () {
             alt = jsondata.GPSAltitudeMSL;
             deg = parseInt(jsondata.AHRSMagHeading / 10);
             airplaneElement.style.transform = "rotate(" + deg + "deg)";
+            
+            // Feed ownship situation data to traffic radar for collision detection
+            if (trafficRadar) {
+                console.log('Updating traffic radar with ownship position:', jsondata.GPSLatitude, jsondata.GPSLongitude, jsondata.GPSAltitudeMSL);
+                trafficRadar.onSituationMessage(jsondata);
+            } else {
+                console.log('Traffic radar not initialized yet');
+            }
         }
     }
 
