@@ -719,77 +719,6 @@ document.addEventListener('DOMContentLoaded', async function () {
     let currentDoubleClickLocation = null;
     let selectedRadius = 50; // Default radius in miles
 
-    // Monitor layer visibility changes to show/hide radius selector
-    // function checkAirportLayerVisibility() {
-    //     const airportLayerVisible = airportLayer.getVisible(); 
-        
-    //     console.log('Checking airport layer visibility:', airportLayerVisible);
-        
-    //     if (airportLayerVisible) {
-    //         radiusSelector.style.display = 'block';
-    //         console.log('Airport radius selector shown');
-    //     } else {
-    //         radiusSelector.style.display = 'none';
-    //         console.log('Airport radius selector hidden');
-    //         // Clear airports when layer is hidden
-    //         clearAirportFeatures();
-    //     }
-    // }
-
-    // Monitor traffic layer visibility changes
-    // function checkTrafficLayerVisibility() {
-    //     const trafficLayerVisible = trafficVectorLayer.getVisible();
-    //     console.log('Checking traffic layer visibility:', trafficLayerVisible);
-    //     // Traffic layer no longer controls radar display
-    // }
-
-    // Monitor radar layer visibility changes to show/hide radar
-    // function checkRadarLayerVisibility() {
-    //     const radarLayerVisible = radarLayer.getVisible();
-    //     const radarContainer = document.getElementById('radar-container');
-        
-    //     console.log('Checking radar layer visibility:', radarLayerVisible);
-        
-    //     if (radarLayerVisible && radarContainer) {
-    //         radarContainer.style.display = 'block';
-    //         console.log('Traffic radar display shown');
-            
-    //         // Ensure UI controls are visible when radar is shown
-    //         setTimeout(() => {
-    //             console.log('Ensuring UI controls are visible over radar...');
-                
-    //             // Force layer switcher visibility
-    //             const layerSwitchers = document.querySelectorAll('.ol-layerswitcher, .ol-control.ol-layerswitcher, button[title="Layers"]');
-    //             layerSwitchers.forEach(switcher => {
-    //                 switcher.style.zIndex = '3000';
-    //                 switcher.style.display = 'block';
-    //                 switcher.style.visibility = 'visible';
-    //                 console.log('Made layer switcher visible:', switcher);
-    //             });
-                
-    //             // Force menu button visibility
-    //             const menuButton = document.getElementById('closeBtn');
-    //             if (menuButton) {
-    //                 menuButton.style.zIndex = '3000';
-    //                 menuButton.style.display = 'block';
-    //                 menuButton.style.visibility = 'visible';
-    //             }
-                
-    //             // Force all map controls visibility
-    //             const allControls = document.querySelectorAll('.ol-control');
-    //             allControls.forEach(control => {
-    //                 control.style.zIndex = '3000';
-    //                 control.style.display = 'block';
-    //                 control.style.visibility = 'visible';
-    //             });
-    //         }, 100);
-            
-    //     } else if (radarContainer) {
-    //         radarContainer.style.display = 'none';
-    //         console.log('Traffic radar display hidden');
-    //     }
-    // }
-
     // Function to clear airport features
     function clearAirportFeatures() {
         airportLayer.getSource().clear();
@@ -876,7 +805,7 @@ document.addEventListener('DOMContentLoaded', async function () {
             const hasTurfRunway = airport.runways && airport.runways.some(runway => {
                 if (!runway.surface) return false;
                 const surface = runway.surface.replace(/[\[\]]/g, '').toUpperCase();
-                return surface.includes('TURF') || surface.includes('GRASS');
+                return surface.includes('TURF') || surface.includes('DIRT') || surface.includes('GRASS');
             });
             
             
