@@ -10,6 +10,7 @@
   "trafficimage": "traffic.svg",
   "smallScreenHitTolerance": 40,
   "swipeThreshold": 100,
-  "showHeliports": false,
+  "getHeliports": false,
+  "getClosedAirports": false,
   "usemetricunits": false
 }

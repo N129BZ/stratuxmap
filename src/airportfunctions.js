@@ -20,12 +20,13 @@ export async function getAirportsInRadius(lon, lat, radiusMiles) {
         //console.log(`Getting airports for lat: ${lat}, lon: ${lon}, radius: ${radiusMiles} miles`);
         
         const { minLat, maxLat, minLon, maxLon } = getBoundingBox(lat, lon, radiusMiles);
-        let airportsonly = (mapsettings.showHeliports === false);
+        let getheliports = (mapsettings.showHeliports === true);
+        let getclosed = (mapsettings.showClosedAirports === true);
         //console.log(`Bounding box: minLat=${minLat}, maxLat=${maxLat}, minLon=${minLon}, maxLon=${maxLon}`);
 
-        const response = await fetch(`/airportlist?airportsonly=${airportsonly}&minLat=${minLat}&maxLat=${maxLat}&minLon=${minLon}&maxLon=${maxLon}`);
+        const response = await fetch(`/airportlist?getclosed=${getclosed}&getheliports=${getheliports}&minLat=${minLat}&maxLat=${maxLat}&minLon=${minLon}&maxLon=${maxLon}`);
         if (!response.ok) {
-            console.log(`Response not OK: ${response.status} ${response.statusText}`);
+            console.log(`Bad Response: ${response.status} ${response.statusText}`);
             return [];
         }
         const airports = await response.json();
