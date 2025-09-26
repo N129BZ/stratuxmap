@@ -1,3 +1,4 @@
+import { mapsettings } from "./map";
 
 export async function attachAirportInfo(station) {
     try {
@@ -16,21 +17,13 @@ export async function attachAirportInfo(station) {
 
 export async function getAirportsInRadius(lon, lat, radiusMiles) {
     try {
-        console.log(`Getting airports for lat: ${lat}, lon: ${lon}, radius: ${radiusMiles} miles`);
+        //console.log(`Getting airports for lat: ${lat}, lon: ${lon}, radius: ${radiusMiles} miles`);
         
         const { minLat, maxLat, minLon, maxLon } = getBoundingBox(lat, lon, radiusMiles);
+        let airportsonly = (mapsettings.showHeliports === false);
+        //console.log(`Bounding box: minLat=${minLat}, maxLat=${maxLat}, minLon=${minLon}, maxLon=${maxLon}`);
 
-        console.log(`Bounding box: minLat=${minLat}, maxLat=${maxLat}, minLon=${minLon}, maxLon=${maxLon}`);
-
-        // log a sample sql statement for debugging
-        let sql = `SELECT ident, name, type, longitude_deg, latitude_deg, elevation_ft 
-		           FROM airports 
-		           WHERE latitude_deg >= ${minLat} AND latitude_deg <= ${maxLat} 
-		           AND longitude_deg >= ${minLon} AND longitude_deg <= ${maxLon};`;
-        
-        console.log("AirportList SQL:", sql);
-
-        const response = await fetch(`/airportlist?minLat=${minLat}&maxLat=${maxLat}&minLon=${minLon}&maxLon=${maxLon}`);
+        const response = await fetch(`/airportlist?airportsonly=${airportsonly}&minLat=${minLat}&maxLat=${maxLat}&minLon=${minLon}&maxLon=${maxLon}`);
         if (!response.ok) {
             console.log(`Response not OK: ${response.status} ${response.statusText}`);
             return [];

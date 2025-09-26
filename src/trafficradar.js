@@ -3,6 +3,8 @@
  * Manages aircraft traffic radar display and collision detection
  */
 
+import { stateCache } from './map.js';
+
 // Configuration constants
 const SOUND_TYPE = {
     BEEP_AND_SPEECH: 0,
@@ -14,7 +16,7 @@ const SOUND_TYPE = {
 class TrafficRadar {
     constructor(containerId) {
         // Configuration options
-        this.soundType = SOUND_TYPE.SOUND_OFF; // Default to sound off
+        this.soundType = SOUND_TYPE.BEEP_AND_SPEECH; // Default to beep and speech
         this.showTraces = true; // Show traces of planes
         this.radarCutoff = 29; // Time in seconds how long a plane is displayed after last packet
         
@@ -26,6 +28,11 @@ class TrafficRadar {
         this.gpsTime = null;
         this.baroAltitude = -100000; // Invalid altitude marker
         this.oldBaroAltitude = 0;
+        
+        // Position filtering to prevent flickering when stationary
+        this.previousLat = 0;
+        this.previousLong = 0;
+        this.positionThresholdFeet = 100; // Don't update display if movement is less than 100 feet
         
         // Display settings
         this.displayRadius = 10; // Radius in NM
@@ -106,7 +113,11 @@ class TrafficRadar {
     
     // Speech synthesis
     speakTraffic(altitudeDiff, direction) {
-        if (this.soundType === SOUND_TYPE.BEEP_AND_SPEECH || this.soundType === SOUND_TYPE.SPEECH_ONLY) {
+        // Only speak if sound type includes speech AND speech synthesis is available
+        if ((this.soundType === SOUND_TYPE.BEEP_AND_SPEECH || this.soundType === SOUND_TYPE.SPEECH_ONLY) && this.synth) {
+            // Cancel any ongoing speech to prevent overlap
+            this.synth.cancel();
+            
             const feet = altitudeDiff * 100;
             const sign = altitudeDiff < 0 ? 'minus' : 'plus';
             let txt = 'Traffic ';
@@ -116,8 +127,35 @@ class TrafficRadar {
             const utterance = new SpeechSynthesisUtterance(txt);
             utterance.lang = 'en-US';
             utterance.rate = 1.1;
-            this.synth.speak(utterance);
+            
+            try {
+                this.synth.speak(utterance);
+                console.log('Speaking traffic alert:', txt);
+            } catch (error) {
+                console.error('Error with speech synthesis:', error);
+            }
+        } else {
+            console.log('Speech suppressed (soundType:', this.soundType, 'synth available:', !!this.synth, ')');
         }
+    }
+    
+    // Calculate distance between two GPS coordinates in feet
+    calculateDistanceFeet(lat1, lon1, lat2, lon2) {
+        const earthRadiusMeters = 6371000; // Earth's radius in meters
+        const lat1Rad = lat1 * Math.PI / 180;
+        const lat2Rad = lat2 * Math.PI / 180;
+        const deltaLatRad = (lat2 - lat1) * Math.PI / 180;
+        const deltaLonRad = (lon2 - lon1) * Math.PI / 180;
+        
+        const a = Math.sin(deltaLatRad/2) * Math.sin(deltaLatRad/2) +
+                  Math.cos(lat1Rad) * Math.cos(lat2Rad) *
+                  Math.sin(deltaLonRad/2) * Math.sin(deltaLonRad/2);
+        const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+        
+        const distanceMeters = earthRadiusMeters * c;
+        const distanceFeet = distanceMeters * 3.28084; // Convert meters to feet
+        
+        return distanceFeet;
     }
     
     // Process ownship situation data
@@ -125,35 +163,64 @@ class TrafficRadar {
         try {
             this.situation = typeof data === 'string' ? JSON.parse(data) : data;
             
-            console.log('Traffic radar received situation data:', data);
+            //console.log('Traffic radar received situation data:', data);
             
             this.gpsTime = Date.parse(this.situation.GPSTime);
-            this.lat = this.situation.GPSLatitude;
-            this.long = this.situation.GPSLongitude;
-            this.gpsCourse = this.situation.GPSTrueCourse;
+            const newLat = this.situation.GPSLatitude;
+            const newLong = this.situation.GPSLongitude;
+            const newGpsCourse = this.situation.GPSTrueCourse;
             
-            console.log('Updated ownship position in radar:', this.lat, this.long, 'Course:', this.gpsCourse);
+            // Calculate distance from previous position
+            let shouldUpdate = false;
+            
+            // Always update on first position or if position data is significantly different
+            if (this.previousLat === 0 && this.previousLong === 0) {
+                // First position update
+                shouldUpdate = true;
+                console.log('Radar: Initial ownship position set');
+            } else {
+                const distanceFeet = this.calculateDistanceFeet(this.previousLat, this.previousLong, newLat, newLong);
+                const courseDiff = Math.abs(newGpsCourse - this.gpsCourse);
+                
+                // Update if position changed more than threshold OR course changed significantly (>5 degrees)
+                if (distanceFeet > this.positionThresholdFeet || courseDiff > 5) {
+                    shouldUpdate = true;
+                    console.log(`Radar: Position update - moved ${distanceFeet.toFixed(1)} feet, course changed ${courseDiff.toFixed(1)}°`);
+                } 
+                //else {
+                //    console.log(`Radar: Position filtered - only moved ${distanceFeet.toFixed(1)} feet (< ${this.positionThresholdFeet} ft threshold)`);
+                //}
+            }
+            
+            // Update position data
+            this.lat = newLat;
+            this.long = newLong;
+            this.gpsCourse = newGpsCourse;
             
             const pressTime = Date.parse(this.situation.BaroLastMeasurementTime);
             const gpsTime = Date.parse(this.situation.GPSLastGPSTimeStratuxTime);
             
             if (gpsTime - pressTime < 1000) {
                 this.baroAltitude = Math.round(this.situation.BaroPressureAltitude);
-                console.log('Using barometric altitude:', this.baroAltitude);
+                //console.log('Using barometric altitude:', this.baroAltitude);
             } else {
                 const gpsHorizontalAccuracy = this.situation.GPSHorizontalAccuracy;
                 if (gpsHorizontalAccuracy > 19999) {
                     this.baroAltitude = -100000; // Invalid
-                    console.log('GPS accuracy too low, altitude invalid');
+                    //console.log('GPS accuracy too low, altitude invalid');
                 } else {
                     this.baroAltitude = this.situation.GPSAltitudeMSL;
-                    console.log('Using GPS altitude:', this.baroAltitude);
+                    //console.log('Using GPS altitude:', this.baroAltitude);
                 }
             }
             
-            if (this.radar) {
+            // Only trigger radar update if position change is significant
+            if (shouldUpdate && this.radar) {
+                this.previousLat = newLat;
+                this.previousLong = newLong;
                 this.radar.update();
             }
+            
         } catch (error) {
             console.error('Error processing situation message:', error);
         }
@@ -171,13 +238,13 @@ class TrafficRadar {
     
     // Main traffic processing function
     processTraffic(trafficObject) {
-        console.log('Traffic radar processing:', trafficObject);
+        //console.log('Traffic radar processing:', trafficObject);
         
         // Convert from the map.js traffic format to our internal format
         const traffic = this.convertTrafficFormat(trafficObject);
         
-        console.log('Converted traffic:', traffic);
-        console.log('Current position:', this.lat, this.long, 'Altitude:', this.baroAltitude);
+        //console.log('Converted traffic:', traffic);
+        //console.log('Current position:', this.lat, this.long, 'Altitude:', this.baroAltitude);
         
         let validIdx = -1;
         let invalidIdx = -1;
@@ -220,7 +287,7 @@ class TrafficRadar {
         
         // Handle new aircraft - Process all aircraft, regardless of altitude filtering for now
         if (validIdx < 0 && trafficObject.Position_valid) {
-            console.log('Adding new valid position aircraft:', traffic.icao_int);
+            //console.log('Adding new valid position aircraft:', traffic.icao_int);
             const newTraffic = {};
             this.setAircraft(trafficObject, newTraffic);
             this.checkCollisionVectorValid(newTraffic);
@@ -228,7 +295,7 @@ class TrafficRadar {
         }
         
         if (invalidIdx < 0 && !trafficObject.Position_valid) {
-            console.log('Adding new invalid position aircraft:', traffic.icao_int);
+            //console.log('Adding new invalid position aircraft:', traffic.icao_int);
             const newTraffic = {};
             this.setAircraft(trafficObject, newTraffic);
             this.checkCollisionVector(newTraffic);
@@ -329,6 +396,26 @@ class TrafficRadar {
             if (traffic.circ.tailText && traffic.circ.tailText.parentNode) {
                 traffic.circ.tailText.parentNode.removeChild(traffic.circ.tailText);
             }
+        }
+        
+        console.log('Displaying circular target at distance:', distX, 'for aircraft:', traffic.tail);
+        
+        // Create circle
+        const circle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+        circle.setAttribute('cx', this.radar.centerX);
+        circle.setAttribute('cy', this.radar.centerY);
+        circle.setAttribute('r', distX);
+        circle.setAttribute('fill', 'none');
+        circle.setAttribute('stroke', '#00ff00');
+        circle.setAttribute('stroke-width', '2');
+        circle.setAttribute('stroke-dasharray', '5,5');
+        circle.setAttribute('class', 'radar-circle');
+        this.radar.allScreen.appendChild(circle);
+        
+        // Set position angle for text
+        if (!traffic.posangle) {
+            traffic.posangle = this.posAngle;
+            this.posAngle += 3 * Math.PI / 16;
             traffic.circ = null;
         }
         
@@ -396,11 +483,11 @@ class TrafficRadar {
     // Display aircraft symbol for valid position aircraft
     displayAircraftSymbol(traffic, distX, distY, altDiff) {
         if (!this.radar || !this.radar.rScreen) {
-            console.log('No radar or rScreen available');
+            //console.log('No radar or rScreen available');
             return;
         }
         
-        console.log('Displaying aircraft symbol at:', distX, distY, 'for aircraft:', traffic.tail);
+        //console.log('Displaying aircraft symbol at:', distX, distY, 'for aircraft:', traffic.tail);
         
         const heading = traffic.heading !== '---' ? traffic.heading : 0;
         
@@ -463,13 +550,13 @@ class TrafficRadar {
         traffic.planetail.textContent = traffic.tail;
         this.radar.rScreen.appendChild(traffic.planetail);
         
-        console.log('Aircraft symbol displayed successfully');
+        //console.log('Aircraft symbol displayed successfully');
     }
     
     // Display circular target for invalid position aircraft
     displayCircularTarget(traffic, distX, altDiff, altDiffValid) {
         if (!this.radar || !this.radar.allScreen) {
-            console.log('No radar or allScreen available for circular target');
+            //console.log('No radar or allScreen available for circular target');
             return;
         }
         
@@ -535,7 +622,7 @@ class TrafficRadar {
         // Store references for cleanup
         traffic.circ = { circle, altText, tailText };
         
-        console.log('Circular target displayed successfully');
+        //console.log('Circular target displayed successfully');
     }
     
     // Handle alarms for circular targets
@@ -548,7 +635,14 @@ class TrafficRadar {
         
         if (traffic.alarms < this.maxAlarms && 
             (this.soundType === SOUND_TYPE.BEEP_AND_SPEECH || this.soundType === SOUND_TYPE.BEEP_ONLY)) {
-            this.soundAlert.play();
+            console.log('Playing sound alert for invalid position traffic (soundType:', this.soundType, ')');
+            try {
+                this.soundAlert.play();
+            } catch (error) {
+                console.error('Error playing sound alert:', error);
+            }
+        } else if (traffic.alarms < this.maxAlarms) {
+            console.log('Sound suppressed for invalid position traffic (soundType:', this.soundType, ')');
         }
         
         traffic.alarms++;
@@ -576,12 +670,20 @@ class TrafficRadar {
             let oclock = Math.round(alpha / 30);
             if (oclock <= 0) oclock += 12;
             
+            // Only speak if sound is enabled and within alarm limits
             this.speakTraffic(altDiff, oclock);
         }
         
         if (traffic.alarms < this.maxAlarms && 
             (this.soundType === SOUND_TYPE.BEEP_AND_SPEECH || this.soundType === SOUND_TYPE.BEEP_ONLY)) {
-            this.soundAlert.play();
+            console.log('Playing sound alert for valid position traffic (soundType:', this.soundType, ')');
+            try {
+                this.soundAlert.play();
+            } catch (error) {
+                console.error('Error playing sound alert:', error);
+            }
+        } else if (traffic.alarms < this.maxAlarms) {
+            console.log('Sound suppressed for valid position traffic (soundType:', this.soundType, ')');
         }
         
         traffic.alarms++;
@@ -676,6 +778,7 @@ class TrafficRadar {
     }
     
     toggleSound() {
+        const oldSoundType = this.soundType;
         switch (this.soundType) {
             case SOUND_TYPE.BEEP_AND_SPEECH:
                 this.soundType = SOUND_TYPE.BEEP_ONLY;
@@ -690,11 +793,80 @@ class TrafficRadar {
                 this.soundType = SOUND_TYPE.BEEP_AND_SPEECH;
         }
         
+        // Cancel any ongoing speech when switching to sound modes that don't include speech
+        if (this.synth && (this.soundType === SOUND_TYPE.BEEP_ONLY || this.soundType === SOUND_TYPE.SOUND_OFF)) {
+            this.synth.cancel();
+            console.log('Cancelled ongoing speech synthesis');
+        }
+        
+        console.log('Sound toggled from', oldSoundType, 'to', this.soundType, '(SOUND_OFF=3)');
+        
         if (this.radar) {
             this.radar.updateSoundStatus();
         }
     }
     
+    // Update sound selection (0=Beep+Speech, 1=Beep Only, 2=Speech Only)
+    updateSoundSelection(soundType) {
+        const validTypes = [SOUND_TYPE.BEEP_AND_SPEECH, SOUND_TYPE.BEEP_ONLY, SOUND_TYPE.SPEECH_ONLY];
+        
+        if (validTypes.includes(parseInt(soundType))) {
+            const oldSoundType = this.soundType;
+            this.soundType = parseInt(soundType);
+            
+            // Cancel any ongoing speech when switching to beep-only mode
+            if (this.synth && this.soundType === SOUND_TYPE.BEEP_ONLY) {
+                this.synth.cancel();
+                console.log('Cancelled ongoing speech synthesis');
+            }
+            
+            console.log('Sound selection updated from', oldSoundType, 'to', this.soundType);
+            
+            if (this.radar) {
+                this.radar.updateSoundStatus();
+            }
+        } else {
+            console.error('Invalid sound type:', soundType);
+        }
+    }
+    
+    // Toggle sound on/off (switches between current type and SOUND_OFF)
+    toggleSoundOnOff() {
+        const oldSoundType = this.soundType;
+        
+        if (this.soundType === SOUND_TYPE.SOUND_OFF) {
+            // Turn sound on - restore the last selected sound type from stateCache
+            if (typeof stateCache.selectedSoundType === 'number' && 
+                stateCache.selectedSoundType !== SOUND_TYPE.SOUND_OFF) {
+                this.soundType = stateCache.selectedSoundType;
+            } else {
+                // Fallback to default if no valid cached type
+                this.soundType = this.synth ? SOUND_TYPE.BEEP_AND_SPEECH : SOUND_TYPE.BEEP_ONLY;
+            }
+        } else {
+            // Turn sound off (stateCache.selectedSoundType will keep the last active type)
+            this.soundType = SOUND_TYPE.SOUND_OFF;
+            // Cancel any ongoing speech when turning off
+            if (this.synth) {
+                this.synth.cancel();
+                console.log('Cancelled ongoing speech synthesis');
+            }
+        }
+        
+        console.log('Sound on/off toggled from', oldSoundType, 'to', this.soundType);
+        
+        if (this.radar) {
+            this.radar.updateSoundStatus();
+        }
+        
+        return this.soundType !== SOUND_TYPE.SOUND_OFF;
+    }
+    
+    // Check if sound is currently on (not SOUND_OFF)
+    isSoundOn() {
+        return this.soundType !== SOUND_TYPE.SOUND_OFF;
+    }
+
     // Get current status
     getStatus() {
         return {
@@ -702,6 +874,7 @@ class TrafficRadar {
             displayRadius: this.displayRadius,
             altDiffThreshold: this.altDiffThreshold,
             soundType: this.soundType,
+            soundOn: this.soundType !== SOUND_TYPE.SOUND_OFF,
             validTrafficCount: this.dataList.length,
             invalidTrafficCount: this.dataListInvalid.length,
             baroAltitude: this.baroAltitude,
@@ -975,12 +1148,38 @@ class RadarRenderer {
     }
     
     createCenterAircraft() {
-        // Create center aircraft symbol (triangle pointing up)
-        const aircraft = document.createElementNS('http://www.w3.org/2000/svg', 'polygon');
-        aircraft.setAttribute('points', `${this.centerX},${this.centerY-8} ${this.centerX-6},${this.centerY+4} ${this.centerX+6},${this.centerY+4}`);
-        aircraft.setAttribute('fill', '#ffff00');
-        aircraft.setAttribute('stroke', '#ffaa00');
-        aircraft.setAttribute('stroke-width', '1');
+        // Create center aircraft symbol using the same airplane.png image as the map
+        const aircraft = document.createElementNS('http://www.w3.org/2000/svg', 'image');
+        aircraft.setAttribute('x', this.centerX - 15); // Center the 30x30 image
+        aircraft.setAttribute('y', this.centerY - 15);
+        aircraft.setAttribute('width', '30');
+        aircraft.setAttribute('height', '30');
+        aircraft.setAttribute('href', '/images/airplane.png');
+        
+        // Rotate the aircraft image based on GPS course (heading)
+        if (this.gpsCourse && this.gpsCourse > 0) {
+            aircraft.setAttribute('transform', `rotate(${this.gpsCourse} ${this.centerX} ${this.centerY})`);
+        }
+        
+        // Add a subtle yellow glow/border to match radar theme
+        aircraft.setAttribute('filter', 'drop-shadow(0 0 2px #ffff00)');
+        
+        // Add error handling for image load failure - fallback to triangle
+        aircraft.addEventListener('error', () => {
+            console.warn('Failed to load airplane.png, using fallback triangle');
+            // Remove the image and create a larger fallback triangle to match image size
+            aircraft.remove();
+            const fallback = document.createElementNS('http://www.w3.org/2000/svg', 'polygon');
+            fallback.setAttribute('points', `${this.centerX},${this.centerY-12} ${this.centerX-9},${this.centerY+6} ${this.centerX+9},${this.centerY+6}`);
+            fallback.setAttribute('fill', '#ffff00');
+            fallback.setAttribute('stroke', '#ffaa00');
+            fallback.setAttribute('stroke-width', '1');
+            if (this.gpsCourse && this.gpsCourse > 0) {
+                fallback.setAttribute('transform', `rotate(${this.gpsCourse} ${this.centerX} ${this.centerY})`);
+            }
+            this.svg.appendChild(fallback);
+        });
+        
         this.svg.appendChild(aircraft);
         
         // Add "OWN" label
@@ -998,11 +1197,11 @@ class RadarRenderer {
     update() {
         // Recreate range rings with current radius
         this.createSVGDisplay();
-        console.log('Radar display updated');
+        //console.log('Radar display updated');
     }
     
     updateSoundStatus() {
-        console.log('Sound status updated');
+        //console.log('Sound status updated');
     }
 }
 

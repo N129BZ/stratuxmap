@@ -106,6 +106,7 @@ html, body {
 .layer-switcher {
     font-family: B612;
     font-size: medium;
+    z-index: 5000;
 }
 .footer {
     position: fixed; 
@@ -551,6 +552,7 @@ hr {
     z-index: 1500;
     min-width: 200px;
     font-family: B612;
+    display: none;
 }
 
 .radius-header {
@@ -594,13 +596,131 @@ hr {
 /* Traffic Radar Styles */
 #radar-container {
     font-family: B612, monospace;
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    width: 650px;
+    height: 700px;
+    background-color: rgba(0, 0, 0, 0.9);
+    border: 2px solid #333;
+    border-radius: 10px;
+    display: none;
+    z-index: 1000;
+    padding: 20px;
+    box-sizing: border-box;
+    flex-direction: column;
 }
 
+#radar-title::before {
+    content: "Radar";
+}
+#radar-title {
+    color: white;
+    text-align: center;
+    font-size: 18px;
+    font-family: B612;
+    font-weight: bold;
+    margin-bottom: 16px;
+    z-index: 3000;
+}
+#radar-display {
+    width: 510px;
+    height: 510px;
+    border-radius: 50%;
+    background-color: rgba(0, 50, 0, 0.8);
+    border: 2px solid #00ff00;
+    margin: 0 auto;
+    position: relative;
+    top: 58px;
+    flex-shrink: 0;
+}
+#radar-range-controls {
+    margin-top: 15px;
+    margin-bottom: 10px;
+    text-align: center;
+    position: relative;
+    bottom: 512px;
+    right:44px;
+    z-index: 3000;
+}
+#radar-sound-controls {
+    margin-top: auto;
+    margin-bottom: 10px;
+    text-align: center;
+    z-index: 3000;
+}
+#range-label::before {
+    content: "Range";
+}
+#range-label {
+    color: white;
+    font-size: 16px;
+    font-family: B612;
+    font-weight: bold;
+    position: relative;
+    left: 57px;
+    top: -23px;
+}
 #radar-display svg {
     border-radius: 50%;
     background: radial-gradient(circle, rgba(0,40,0,0.9) 0%, rgba(0,20,0,0.9) 100%);
 }
+#radar-range-select {
+    margin-right: 15px;
+    margin-left: 8px;
+    font-family: B612;
+    font-size: 16px;
+    font-weight: bold;
+    position: relative;
+    left: -5px;
+    top: 0px;
+    background-color: #333;
+    color: white;
+    border: 1px solid #797676;
+    border-radius: 4px;
+}
+#sound-on-off {
+    position: absolute;
+    right: 84px;
+    bottom: 26px;
+    cursor: pointer;
+    width: 40px;
+    height: 40px;
+    vertical-align: middle;
+}
+#sound-selection-label::before {
+    content: "Sound Type"
+}
+#sound-selection-label {
+    position: relative;
+    top: 0px;
+    left: 12px;
+    color: white;
+    font-family: B612;
+    font-size: 16px;
+    font-weight: bold;
+    transition: opacity 0.2s ease-in-out;
+}
 
+#sound-type-select {
+    margin-left: 8px;
+    margin-right: 15px;
+    font-family: B612;
+    font-size: 16px;
+    font-weight: bold;
+    background-color: #333;
+    color: white;
+    border: 1px solid #797676;
+    border-radius: 4px;
+    transition: opacity 0.2s ease-in-out;
+}
+
+#radar-sound-hover {
+    background-color: #444;
+    border-color: #666;
+    transform: scale(1.05);
+}
 .radar-aircraft {
     fill: #ffff00;
     stroke: #ffaa00;
@@ -610,7 +730,7 @@ hr {
 .radar-text {
     fill: #00ff00;
     font-family: B612, monospace;
-    font-size: 10px;
+    font-size: 14px;
     text-anchor: middle;
 }
 
@@ -628,20 +748,26 @@ hr {
     opacity: 0.8;
 }
 
-#radar-range-select, #radar-sound-btn {
-    background-color: rgba(0, 0, 0, 0.8);
-    color: white;
-    border: 1px solid #333;
-    padding: 4px 8px;
-    font-family: B612;
-    font-size: 11px;
-}
-
-#radar-range-select:hover, #radar-sound-btn:hover {
+#radar-range-select:hover {
     background-color: rgba(0, 0, 0, 0.9);
 }
 
-#radar-sound-btn {
-    cursor: pointer;
-    border-radius: 3px;
+#sound-type-select:hover {
+    background-color: rgba(0, 0, 0, 0.9);
 }
+
+#sound-on-off:hover {
+    transform: scale(1.1);
+    cursor: pointer;
+}
+
+/* #radar-sound-btn {
+    cursor: pointer !important;
+    user-select: none !important;
+    -webkit-user-select: none !important;
+    -moz-user-select: none !important;
+    -ms-user-select: none !important;
+    touch-action: manipulation !important;
+    position: relative !important;
+    z-index: 10 !important;
+} */

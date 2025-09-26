@@ -26,7 +26,34 @@
   </div>
   <img class="airplane" id="airplane" src="/images/airplane.png" alt="">
   <button id="closeBtn" class="closeBtn">Back to MENU</button>
-  
+  <!-- Radar Scope -->
+   <div id="radar-container">
+      <div id="radar-title">
+        <div id="radar-display"></div>
+      </div>
+      <div id="radar-range-controls">
+        <span id="range-label">
+          <select id="radar-range-select">
+            <option value="5">5 NM</option>
+            <option value="10" selected>10 NM</option>
+            <option value="20">20 NM</option>
+            <option value="50">50 NM</option>
+            <option value="100">100 NM</option>
+          </select>
+        </span>
+      </div>
+      <div id="radar-sound-controls">
+        <span id="sound-selection-label">
+          <select id="sound-type-select">
+            <option value="0">Beep + Speech</option>
+            <option value="1">Beep Only</option>
+            <option value="2">Speech Only</option>
+            <!-- <option value="3">Sound Off</option> -->
+          </select>
+        </span>
+        <img id="sound-on-off" src="/images/soundON.svg">
+      </div>
+   </div>
   <!-- Airport Radius Selection Dropdown -->
   <div id="airport-radius-selector" class="airport-radius-selector" style="display: none;">
     <div class="radius-header">Airport Search Radius</div>

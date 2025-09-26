@@ -1,7 +1,7 @@
 {
   "startupzoom": 5,
   "uselocaltime": true,
-  "savepositionhistory": true,
+  "savepositionhistory": false,
   "histintervalmsec": 10000,
   "stratuxmaxmetarcount": 300,
   "showattribution": true,
@@ -10,5 +10,6 @@
   "trafficimage": "traffic.svg",
   "smallScreenHitTolerance": 40,
   "swipeThreshold": 100,
+  "showHeliports": false,
   "usemetricunits": false
 }
