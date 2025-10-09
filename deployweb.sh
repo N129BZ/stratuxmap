@@ -1,5 +1,5 @@
 #!/bin/bash
-# Copy contents of stratux/map into /opt/stratux/www
+# Copy contents of stratux/map into /opt/stratux/map
 
 SRC_DIR="$(dirname "$0")/stratux/map"
 DEST_DIR="/opt/stratux/map/"
