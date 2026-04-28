@@ -25,11 +25,11 @@ import Stroke from 'ol/style/Stroke';
 import Overlay from 'ol/Overlay';
 import { defaults as defaultControls, ScaleLine } from 'ol/control';
 import LayerSwitcher from 'ol-layerswitcher';
-import { convertStratuxToFAA } from './stratuxconversion.js';
+import { preprocessMessage } from './preprocessmessage.js';
 import { saveMapState, restoreMapState } from './mapstatemanager.js';
 import { getAirportsInRadius } from './airportfunctions.js';
-//import { fetchNavaidData, getBoundingBox, generateNavaidSymbol, normalizeNavaidData } from './navaids.js';
-import TrafficRadar from './trafficradar.js';    
+import { XMLParser } from 'fast-xml-parser';
+
 
 export let mapsettings = {};
 let mapsettingsLoaded = (async function loadSettings(){
@@ -88,6 +88,9 @@ if (parseInt(URL_PORT) > 0) {
 const URL_HOST_PROTOCOL = 'http://';
 const URL_SERVER = `${URL_HOST_PROTOCOL}${URL_HOST_BASE}`;
 const URL_GET_TILE = `${URL_SERVER}/tiles/{dbname}/{z}/{x}/{-y}`;
+const URL_GET_METARS = `${URL_SERVER}/metars`;
+const URL_GET_TAFS = `${URL_SERVER}/tafs`;
+const URL_GET_PIREPS = `${URL_SERVER}/pireps`;
 
 let deg = 0;
 let alt = 0;
@@ -111,16 +114,32 @@ let currentZoom = 9.0;
 let tplcontainer = {};
 let DistanceUnits = {};
 let distanceunit = "";
-let trafficRadar = {};
-let closeButton = {};
 let popup = {};
 let popupcontent = {};
-let airplaneElement = {};
-let radarContainer = {};
-let soundBtn = {};
-let rangeSelect = {};
-let soundSelect = {};
 let airportRadiusSelector = {};
+
+/**
+ * These objects are used by the XMLParser to convert XML to JSON.
+ * The alwaysArray object makes the parser translate sky_condition 
+ * XML attributes as an array of values... which is good.
+ */
+const alwaysArray = [
+    "response.data.METAR.sky_condition",
+    "response.data.PIREP.sky_condition"
+];
+const xmlParseOptions = {
+    ignoreAttributes : false,
+    attributeNamePrefix : "",
+    allowBooleanAttributes: true,
+    ignoreDeclaration: true,
+    isArray: (name, jpath, isLeafNode, isAttribute) => { 
+        if( alwaysArray.indexOf(jpath) !== -1) return true;
+    }
+};
+/**
+ * now the actual parser object is instantiated with the above options
+ */
+const xmlparser = new XMLParser(xmlParseOptions);
 
 document.addEventListener('DOMContentLoaded', async function () {
     // Wait for mapsettings to be loaded before initializing anything that depends on it
@@ -169,34 +188,10 @@ document.addEventListener('DOMContentLoaded', async function () {
     tplcontainer = document.getElementById('tplcontainer');
     popup = document.getElementById('popup');
     popupcontent = document.getElementById('popup-content');
-    airplaneElement = document.getElementById('airplane');
-    closeButton = document.getElementById('closeBtn');
-    radarContainer = document.getElementById('radar-container');
-    soundBtn = document.getElementById("sound-on-off");
-    rangeSelect = document.getElementById('radar-range-select');
-    soundSelect = document.getElementById('sound-type-select');
     airportRadiusSelector = document.getElementById('airport-radius-selector');
 
-    closeButton.addEventListener("click", async (evt) => {
-        // Update stateCache with current radar values before saving
-        if (rangeSelect) {
-            stateCache.selectedRadarRange = parseInt(rangeSelect.value);
-        }
-        if (trafficRadar) {
-            const status = trafficRadar.getStatus();
-            stateCache.selectedSoundType = status.soundType;
-            stateCache.radarSoundOn = status.soundOn;
-        }
-        
-        await saveMapState();
-        if (window.history.length > 1) {
-            window.history.back();
-        } 
-        else {
-            window.location.href = URL_SERVER; 
-        }
-    });
-
+    document.getElementById('radius-header').textContent = `Airport Search Radius\nDouble-click on any location`;
+    
     // Register stateReplay event listener BEFORE calling restoreMapState
     window.addEventListener('stateReplay', async function (e) {
         try {    
@@ -224,55 +219,6 @@ document.addEventListener('DOMContentLoaded', async function () {
                     radiusDropdown.value = selectedRadius.toString();
                 }
                 
-                // Restore radar range and sound state
-                if (typeof stateCache.selectedRadarRange === 'number') {
-                    const rangeSelect = document.getElementById('radar-range-select');
-                    if (rangeSelect) {
-                        rangeSelect.value = stateCache.selectedRadarRange.toString();
-                        // Update the radar range in trafficRadar if it exists
-                        if (trafficRadar) {
-                            trafficRadar.updateDisplayRadius(stateCache.selectedRadarRange);
-                        }
-                    }
-                }
-                
-                // Restore sound type selection
-                if (typeof stateCache.selectedSoundType === 'number') {
-                    const soundSelect = document.getElementById('sound-type-select');
-                    if (soundSelect) {
-                        soundSelect.value = stateCache.selectedSoundType.toString();
-                        if (trafficRadar) {
-                            trafficRadar.updateSoundSelection(stateCache.selectedSoundType);
-                        }
-                    }
-                }
-                
-                // Restore sound on/off state
-                if (typeof stateCache.radarSoundOn === 'boolean' && trafficRadar) {
-                    const currentStatus = trafficRadar.getStatus();
-                    const currentSoundOn = currentStatus.soundOn;
-                    
-                    // Toggle sound if current state doesn't match saved state
-                    if (currentSoundOn !== stateCache.radarSoundOn) {
-                        trafficRadar.toggleSoundOnOff();
-                    }
-                    
-                    // Update button display and sound type visibility
-                    if (soundBtn) {
-                        const newStatus = trafficRadar.getStatus();
-                        soundBtn.src = newStatus.soundOn ? '/images/soundON.svg' : '/images/soundOFF.svg';
-                        
-                        // Update sound type selection visibility
-                        const soundSelectionLabel = document.getElementById('sound-selection-label');
-                        if (soundSelectionLabel) {
-                            soundSelectionLabel.style.display = newStatus.soundOn ? 'inline' : 'none';
-                        }
-                        if (soundSelect) {
-                            soundSelect.style.display = newStatus.soundOn ? 'inline' : 'none';
-                        }
-                    }
-                }
-                
                 // set the layer visibilities
                 if (Array.isArray(stateCache.layervisibility)) {
                     for (const layerState of stateCache.layervisibility) {
@@ -284,31 +230,10 @@ document.addEventListener('DOMContentLoaded', async function () {
                     }
                 }
 
-                const messages = Array.isArray(stateCache.messages)
-                    ? stateCache.messages.map(m => m.message || m)
-                    : [];
-
-                // loop through the messages and process by type
-                for (const message of messages) {
-                    switch (message.type) {
-                        case "METAR":
-                        case "SPECI":
-                            await processMetar(message);
-                            break;
-                        case "TAF":
-                        case "TAF.AMD":
-                            await processTaf(message);
-                            break;
-                        case "PIREP":
-                            await processPirep(message);
-                            break;
-                    }
-                }
-
                 console.log("Finished processing of Replay event");
             }
         }
-        finally {} // no error, no foul...
+        finally {} 
     });
 
     document.addEventListener('visibilitychange', async function () {
@@ -320,17 +245,6 @@ document.addEventListener('DOMContentLoaded', async function () {
                 stateCache.viewposition = map.getView().getCenter();
                 stateCache.rotation = map.getView().getRotation();
                 stateCache.selectedRadius = selectedRadius;
-                
-                // Save radar range and sound state
-                const rangeSelect = document.getElementById('radar-range-select');
-                if (rangeSelect) {
-                    stateCache.selectedRadarRange = parseInt(rangeSelect.value);
-                }
-                if (trafficRadar) {
-                    const status = trafficRadar.getStatus();
-                    stateCache.radarSoundOn = status.soundOn;
-                    stateCache.selectedSoundType = status.soundType;
-                }
                 
                 stateCache.layervisibility = map.getLayers().getArray().map(layer => ({
                     title: layer.get('title'),
@@ -358,8 +272,6 @@ document.addEventListener('DOMContentLoaded', async function () {
     let icingCodeKeymap = new Map();
     let turbulenceCodeKeymap = new Map();
     let skyConditionKeymap = new Map();
-    let trafficMap = new Map();
-    let trafficTrackHistory = new Map(); // Store position history for each aircraft
     
     /*******keymap loading ******/
     loadTafFieldKeymap();
@@ -381,60 +293,6 @@ document.addEventListener('DOMContentLoaded', async function () {
         return `${protocol}${location.host}${path}`;
     }
 
-    (function setupStratuxWebsockets() {
-        console.log("Starting websocket connections.");
-        const wstfc = buildWebSocketUrl("/traffic");
-        let wsTraffic = new WebSocket(wstfc);
-        wsTraffic.onmessage = async function (evt) {
-            let traffic = JSON.parse(evt.data);
-            if (traffic.AgeLastAlt < 50 && traffic.Speed > 0) {
-                trafficMap.set(traffic.Icao_addr, traffic);
-                await processTraffic(traffic);
-            }
-        }
-
-        const wssit = buildWebSocketUrl("/situation");
-        let wsSituation = new WebSocket(wssit);
-        wsSituation.onmessage = function (evt) {
-            if (myairplane !== null) {
-                let data = JSON.parse(evt.data);
-                updateOwnshipSituation(data);
-            }
-        }
-
-        const wswx = buildWebSocketUrl("/weather");
-        let wsWeather = new WebSocket(wswx);
-        wsWeather.onmessage = async function (evt) {
-            try {
-                let message = JSON.parse(evt.data);
-
-                let stratuxWeather = await convertStratuxToFAA(message);
-
-                if (stratuxWeather === null) return;
-                
-                // TODO: Winds?
-                if (message.Type === "WINDS") return;
-
-                switch (message.Type) {
-                    case "METAR":
-                    case "SPECI":
-                        await processMetar(stratuxWeather);
-                        break;
-                    case "TAF":
-                    case "TAF.AMD":
-                        await processTaf(stratuxWeather);
-                        break;
-                    case "PIREP":
-                        await processPirep(stratuxWeather);
-                        break;
-                }
-            }
-            catch (error) {
-                console.log("WEBSOCKET ERROR:", error);
-            }
-        }
-    })();
-
     /**
      * The scale of miles shown on lower left corner of map
      */
@@ -452,7 +310,8 @@ document.addEventListener('DOMContentLoaded', async function () {
             zoom: mapsettings.startupzoom,
             enableRotation: false,
             minZoom: 1,
-            maxZoom: 22
+            maxZoom: 22,
+            visible: true
         }),
         controls: defaultControls().extend([scaleLine])
     });
@@ -462,9 +321,8 @@ document.addEventListener('DOMContentLoaded', async function () {
         source: new OSM({
             onTileLoadError: function(event) {} // Suppress annoying console 404 errors
         }),
-        title: "OSM",
         visible: true,
-        type: "base",
+        type: "none",
         zIndex: 0
     });
     map.addLayer(osmTileLayer);
@@ -494,20 +352,6 @@ document.addEventListener('DOMContentLoaded', async function () {
     });
     map.addLayer(tafVectorLayer);
 
-    let trafficVectorLayer = new VectorLayer({
-        source: new VectorSource(),
-        title: "Traffic",
-        visible: false,
-        zIndex: 99
-    });
-    map.addLayer(trafficVectorLayer);
-    trafficVectorLayer.on('change:visible', () => {
-        // clear any "old" traffic
-        if (trafficVectorLayer.getVisible()) {
-            trafficVectorLayer.getSource().clear();
-        }
-    });
-
     let airportLayer = new VectorLayer({
         title: 'Airports',
         source: new VectorSource(),
@@ -523,36 +367,50 @@ document.addEventListener('DOMContentLoaded', async function () {
             airportRadiusSelector.style.display = 'none';
         }
     })
-
-    let radarLayer = new VectorLayer({
-        title: 'Radar',
-        source: new VectorSource(),
-        zIndex: 101,
-        visible: false
-    });
-    map.addLayer(radarLayer);
-    radarLayer.on('change:visible', () => {
-        if (radarLayer.getVisible()) {
-            radarContainer.style.display = 'flex';
-        }
-        else {
-            radarContainer.style.display = 'none';
-        }
-    })
-
-    console.log("Creating ownship position layer");
-    const myairplane = new Overlay({
-        element: airplaneElement
-    });
-    if (offset) {
-        myairplane.setOffset(offset);
-    }
-    if (viewposition) {
-        myairplane.setPosition(viewposition);
-        map.addOverlay(myairplane);
-    }
-
+    
     await loadTileDatabases();
+    
+    async function getWeatherData() {
+        const mresponse = await fetch('/metars');
+        const message = await mresponse.json();
+        const metarresp = xmlparser.parse(message.raw_xml);
+        const metars = metarresp.response.data.METAR;
+        for (const metar of metars) {
+            if (metar.raw_text) {
+                const metarItem = new WeatherProcessItem();
+                parseWeatherText(metar.raw_text, metarItem);
+                processMetar(metarItem);
+                console.log("Rrocessed METAR:", metarItem);
+            }
+        };    
+        
+        const tresponse = await fetch(`/tafs`);
+        const tmessage = await tresponse.json();
+        const tafresp = xmlparser.parse(tmessage.raw_xml);
+        const tafs = tafresp.response.data.TAF;
+        
+        for (const taf of tafs) {   
+            if (taf.raw_text) {
+                const tafItem = new WeatherProcessItem();
+                parseWeatherText(taf.raw_text, tafItem);
+                processTaf(tafItem);
+                console.log("Preprocessed TAF:", tafItem);
+            }
+        };
+        
+        const presponse = await fetch(`/pireps`);
+        const pmessage = await presponse.json();
+        const pirepresp = xmlparser.parse(pmessage.raw_xml);
+        const pireps = pirepresp.response.data.AircraftReport; 
+        for (const pirep of pireps) {
+            if (pirep.raw_text) {
+                const pirepItem = new WeatherProcessItem();
+                parseWeatherText(pirep.raw_text, pirepItem);
+                processPirep(pirepItem);
+                console.log("Preprocessed PIREP:", pirepItem);
+            }
+        }  
+    }
 
     async function loadTileDatabases() {
         try {
@@ -573,8 +431,8 @@ document.addEventListener('DOMContentLoaded', async function () {
 
                     let title = metadata.description ? metadata.description.replace(" Chart", "") : dbname;
                     if (title === "osm.mbtiles") title = "OSM Offline";
-                    let layertype = metadata.type === "baselayer" ? "base" : metadata.type;
-                    
+                    //let layertype = metadata.type === "baselayer" ? "base" : metadata.type;
+                    let layertype = ""; //metadata.type === "baselayer" ? "base" : metadata.type;
 
                     let dburl = URL_GET_TILE.replace("{dbname}", dbname);
                     var layer = new TileLayer({
@@ -611,98 +469,6 @@ document.addEventListener('DOMContentLoaded', async function () {
         groupSelectStyle: 'children',
     });
     map.addControl(layerSwitcher);
-
-
-    // Initialize Traffic Radar - create radar container if it doesn't exist
-    function initializeTrafficRadar() {
-        console.log('Initializing traffic radar...');
-        trafficRadar = new TrafficRadar('radar-display');
-        setupRadarControls();
-    }
-    
-    function setupRadarControls() {
-        // Initialize button state to match radar state and update stateCache
-        const status = trafficRadar.getStatus();
-        updateSoundButtonState();
-        console.log('Initial sound state:', status.soundOn ? 'ON' : 'OFF', 'Type:', status.soundType);
-        
-        // Initialize radar range in stateCache
-        stateCache.selectedRadarRange = parseInt(rangeSelect.value) || 10; // Default to 10 NM
-        
-        // Initialize sound type in stateCache
-        stateCache.selectedSoundType = parseInt(soundSelect.value) || 0; // Default to Beep+Speech
-        
-        rangeSelect.addEventListener('change', (e) => {
-            const newRange = parseInt(e.target.value);
-            if (trafficRadar) {
-                trafficRadar.updateDisplayRadius(newRange);
-            }
-            // Save radar range to state cache
-            stateCache.selectedRadarRange = newRange;
-            console.log('Radar range updated to:', newRange, 'NM');
-        });
-        
-        soundSelect.addEventListener('change', (e) => {
-            const newSoundType = parseInt(e.target.value);
-            if (trafficRadar) {
-                trafficRadar.updateSoundSelection(newSoundType);
-                updateSoundButtonState();
-            }
-            // Save sound type to state cache
-            stateCache.selectedSoundType = newSoundType;
-            console.log('Sound type updated to:', newSoundType);
-        });
-
-        // Create a more robust event handler function for the sound on/off toggle
-        const handleSoundToggle = (e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            
-            console.log('Sound on/off button clicked/touched');
-            
-            const soundOn = trafficRadar.toggleSoundOnOff();
-            updateSoundButtonState();
-            
-            // Update the sound type dropdown if sound was turned on
-            if (soundOn) {
-                const status = trafficRadar.getStatus();
-                soundSelect.value = status.soundType.toString();
-                stateCache.selectedSoundType = status.soundType;
-            }
-            
-            // Save sound state to state cache
-            const status = trafficRadar.getStatus();
-            stateCache.radarSoundOn = status.soundOn;
-            console.log('Sound toggled to:', status.soundOn ? 'ON' : 'OFF', '(Type:', status.soundType, ')');
-            
-            // Visual feedback
-            soundBtn.style.transform = 'scale(0.95)';
-            setTimeout(() => {
-                soundBtn.style.transform = 'scale(1)';
-            }, 150);
-        };
-        
-        // Helper function to update sound button appearance and sound type visibility
-        function updateSoundButtonState() {
-            const status = trafficRadar.getStatus();
-            soundBtn.src = status.soundOn ? '/images/soundON.svg' : '/images/soundOFF.svg';
-            
-            // Show/hide sound type selection based on sound on/off state
-            const soundSelectionLabel = document.getElementById('sound-selection-label');
-            if (soundSelectionLabel) {
-                soundSelectionLabel.style.display = status.soundOn ? 'inline' : 'none';
-            }
-            if (soundSelect) {
-                soundSelect.style.display = status.soundOn ? 'inline' : 'none';
-            }
-        }
-            
-        soundBtn.addEventListener('click', handleSoundToggle);
-        soundBtn.addEventListener('touchend', handleSoundToggle);
-    }
-    
-    // Initialize traffic radar
-    initializeTrafficRadar();
 
     /**
      * popup close event handler
@@ -761,6 +527,76 @@ document.addEventListener('DOMContentLoaded', async function () {
         return { minLat, maxLat, minLon, maxLon };
     }
 
+    /**
+     * Load airports into their feature collection 
+     * @param {jsonobj} airport JSON object 
+     */
+    function processAirports(jsonobj) {
+        let usastates = new Map();
+        let isoregions = new Map();
+        try {
+            for (let i=0; i< jsonobj.airports.length; i++) {
+                let airport = jsonobj.airports[i];
+                let lon = airport.lon;
+                let lat = airport.lat;
+                let isoregion = airport.isoregion;
+                let country = airport.country;
+                if (isoregion.search("US-") > -1) { 
+                    usastates.set(country, country);
+                } 
+                else {
+                    isoregions.set(country, country);
+                }
+                let airportFeature = new Feature({
+                    ident: airport.ident,
+                    type: airport.type,
+                    datatype: "airport",
+                    isoregion: isoregion,
+                    country: country,
+                    geometry: new ol.geom.Point(fromLonLat([lon, lat]))
+                });
+                airportFeature.setId(airport.ident);
+                if (airport.type === "heliport") {
+                    airportFeature.setStyle(heliportStyle);
+                }
+                else {
+                    airportFeature.setStyle(airportStyle);
+                }
+                airportFeatures.push(airportFeature);
+                airportNameKeymap.set(airport.ident, airport.name);
+                airportFeature.changed();
+            }
+
+            /**
+             * This is for the region select dropdown list
+             * Map sort all region airports in alpha order by US state 
+             * we want US states to be at the top of the list followed
+             * by the rest of the isoregions 
+             */
+            usastates[Symbol.iterator] = function* () {
+                yield* [...this.entries()].sort((a, b) => a[1] - b[1]);
+            }
+            usastates.forEach((country, isoregion) => {
+                let option = document.createElement("option");
+                option.value = isoregion;
+                option.text = country;
+                regionselect.appendChild(option);
+            });
+            
+            regionmap[Symbol.iterator] = function* () {
+                yield* [...this.entries()].sort((a, b) => a[1] - b[1]);
+            }
+            isoregions.forEach((country, isoregion) => { 
+                let option = document.createElement("option");
+                option.value = isoregion;
+                option.text = country;
+                regionselect.appendChild(option);
+            });
+        }
+        catch(err){
+            console.error(err);
+        }
+    }
     // Function to display airport features on map
     function displayAirportFeatures(airports) {
         // Use the existing airport layer
@@ -865,137 +701,9 @@ document.addEventListener('DOMContentLoaded', async function () {
         airportLayer.getSource().addFeatures(features);
     }
 
-    // // Function to clear navaid features
-    // function clearNavaidFeatures() {
-    //     navaidLayer.getSource().clear();
-    // }
-
-    // // Function to display navaid features on map
-    // function displayNavaidFeatures(navaids) {
-    //     // Clear existing features
-    //     navaidLayer.getSource().clear();
-        
-    //     if (!navaids || navaids.length === 0) {
-    //         console.log('No navaids to display');
-    //         return;
-    //     }
-
-    //     const features = navaids.map(rawNavaid => {
-    //         try {
-    //             // Normalize the navaid data to match our expected format
-    //             const navaid = {
-    //                 type: rawNavaid.type,
-    //                 ident: rawNavaid.ident,
-    //                 name: rawNavaid.name,
-    //                 latitude: rawNavaid.latitude_deg,
-    //                 longitude: rawNavaid.longitude_deg,
-    //                 frequency: rawNavaid.frequency_khz,
-    //                 elevation: rawNavaid.elevation_ft,
-    //                 usageType: rawNavaid.usageType,
-    //                 power: rawNavaid.power,
-    //                 associated_airport: rawNavaid.associated_airport
-    //             };
-
-    //             console.log('Raw navaid data:', rawNavaid);
-    //             console.log('Normalized navaid:', navaid);
-
-    //             if (!navaid.latitude || !navaid.longitude) {
-    //                 console.warn('Navaid missing coordinates:', navaid);
-    //                 return null;
-    //             }
-
-    //             // Convert coordinates to map projection
-    //             const coordinates = fromLonLat([navaid.longitude, navaid.latitude]);
-                
-    //             // Create feature
-    //             const feature = new Feature({
-    //                 ident: navaid.ident,
-    //                 datatype: "navaid",
-    //                 name: navaid.name,
-    //                 type: navaid.type,
-    //                 frequency: navaid.frequency,
-    //                 elevation: navaid.elevation,
-    //                 usageType: navaid.usageType,
-    //                 power: navaid.power,
-    //                 associated_airport: navaid.associated_airport,
-    //                 geometry: new Point(coordinates),
-    //                 fullData: navaid
-    //             });
-
-    //             // Generate SVG symbol using the navaid symbology system
-    //             console.log('Generating symbol for navaid:', navaid.ident, navaid.type);
-    //             const svgSymbol = generateNavaidSymbol(navaid, 0, 0, 30);
-                
-    //             // Create the complete SVG with proper dimensions and adequate space for text
-    //             const completeSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="60" height="50" viewBox="-30 -25 60 50">
-    //                 ${svgSymbol}
-    //             </svg>`;
-
-    //             // Style the navaid marker
-    //             feature.setStyle(new Style({
-    //                 image: new Icon({
-    //                     src: `data:image/svg+xml;utf8,${encodeURIComponent(completeSvg)}`,
-    //                     scale: 1.0,
-    //                     anchor: [0.5, 0.5]
-    //                 })
-    //             }));
-
-    //             return feature;
-    //         } catch (error) {
-    //             console.error('Error creating navaid feature for:', rawNavaid, error);
-    //             return null;
-    //         }
-    //     }).filter(feature => feature !== null);
-
-    //     navaidLayer.getSource().addFeatures(features);
-    // }
-
-    // // Function to check navaid layer visibility and load data when needed
-    // function checkNavaidLayerVisibility() {
-    //     const navaidLayerVisible = navaidLayer.getVisible(); 
-        
-    //     if (navaidLayerVisible) {
-    //         // Use selectedRadius to constrain navaid data like airports
-    //         if (selectedRadius > 0) {
-    //             // Get map center
-    //             const center = map.getView().getCenter();
-    //             const lonLat = toLonLat(center);
-    //             const centerLon = lonLat[0];
-    //             const centerLat = lonLat[1];
-                
-    //             console.log(`Fetching navaids within ${selectedRadius} miles of lat: ${centerLat}, lon: ${centerLon}`);
-                
-    //             // Calculate bounding box using selectedRadius
-    //             const boundingBox = getBoundingBox(centerLat, centerLon, selectedRadius);
-                
-    //             // Fetch navaids with bounding box constraint
-    //             fetchNavaidData(boundingBox).then(navaids => {
-    //                 if (navaids && navaids.length > 0) {
-    //                     displayNavaidFeatures(navaids);
-    //                 } else {
-    //                     console.log('No navaid data received for selected area');
-    //                 }
-    //             });
-    //         } else {
-    //             // Fetch all navaids when selectedRadius is 0
-    //             console.log('Fetching all navaids (no radius constraint)');
-    //             fetchNavaidData().then(navaids => {
-    //                 if (navaids && navaids.length > 0) {
-    //                     displayNavaidFeatures(navaids);
-    //                 } else {
-    //                     console.log('No navaid data received');
-    //                 }
-    //             });
-    //         }
-    //     } else {
-    //         // Clear navaids when layer is hidden
-    //         clearNavaidFeatures();
-    //     }
-    // }
-
     // Add radius dropdown event listener
     const radiusDropdown = document.getElementById('radius-dropdown');
-    radiusDropdown.addEventListener('change', function() {
+    radiusDropdown.addEventListener('change', async function() {
         const radius = this.value;
         
         if (radius === 'clear') {
@@ -1016,17 +724,20 @@ document.addEventListener('DOMContentLoaded', async function () {
         // Store the selected radius
         selectedRadius = parseInt(radius);
         stateCache.selectedRadius = selectedRadius;
+        
+        // Only search for airports if a radius is selected (not 0/clear)
+        if (selectedRadius > 0 && currentDoubleClickLocation) {
+            let lonlat = [currentDoubleClickLocation.lon, currentDoubleClickLocation.lat];
+            console.log('Searching for airports within', selectedRadius, 'miles of', lonlat);
+            await showAirportsInRadius(lonlat[1], lonlat[0], selectedRadius);
+        }
         console.log('Selected radius:', selectedRadius, 'miles');
     });
 
     //airportLayer.on('change:visible', checkAirportLayerVisibility);
-    //trafficVectorLayer.on('change:visible', checkTrafficLayerVisibility);
-    //radarLayer.on('change:visible', checkRadarLayerVisibility);
-    
     // Initial checks
-    //checkAirportLayerVisibility();
-    //checkTrafficLayerVisibility();
-    //checkRadarLayerVisibility();
+    // checkAirportLayerVisibility();
+    
     
     /**
      * Event to handle scaling of feature images
@@ -1766,242 +1477,6 @@ document.addEventListener('DOMContentLoaded', async function () {
     }
 
     /**
-     * Build the html for a traffic feature
-     * @param {*} feature: the traffic the user clicked on 
-     */
-    function displayTrafficPopup(feature) {
-        let traffic = feature.get("traffic");
-        let identifier = traffic.Tail || traffic.Reg || 'Unknown';
-        let registration = traffic.Reg || 'N/A';
-        
-        // If Tail and Reg are the same, just show one value
-        let headerText = (traffic.Tail && traffic.Reg && traffic.Tail === traffic.Reg) 
-            ? identifier 
-            : `${identifier}<br>${registration}`;
-        
-        let html = `<div class="featurepopup" id="featurepopup">`;
-        html += `<span class="trafficheader" style="background-color:#87ceeb; color:black; display: block; font-size: 18px; font-weight: bold; font-family: B612; padding: 12px; border-radius: 6px; text-align: center; line-height: 1.3; margin-bottom: 8px; border: 1px solid black;">`;
-        html += `${headerText}</span><br>`;
-        html += `<div class="traffic-popup-body" style="text-align: left; font-size: 16px;">`;
-        html += `<table style="width: 100%; border-collapse: collapse; margin-top: 5px;">`;
-        html += `<tr style="border-bottom: 1px solid #ddd;">`;
-        html += `<td style="text-align: left; padding: 8px 10px 8px 0; vertical-align: top;">Bearing:</td>`;
-        html += `<td style="text-align: left; padding: 8px 0; vertical-align: top;"><b>${traffic.Bearing ? traffic.Bearing.toFixed(1) + '°' : 'N/A'}</b></td>`;
-        html += `</tr>`;
-        html += `<tr style="border-bottom: 1px solid #ddd;">`;
-        html += `<td style="text-align: left; padding: 8px 10px 8px 0; vertical-align: top;">Distance:</td>`;
-        html += `<td style="text-align: left; padding: 8px 0; vertical-align: top;"><b>${traffic.Distance ? (traffic.Distance / 1609.344).toFixed(2) + ' mi' : 'N/A'}</b></td>`;
-        html += `</tr>`;
-        html += `<tr style="border-bottom: 1px solid #ddd;">`;
-        html += `<td style="text-align: left; padding: 8px 10px 8px 0; vertical-align: top;">Altitude:</td>`;
-        html += `<td style="text-align: left; padding: 8px 0; vertical-align: top;"><b>${traffic.Alt || 'N/A'}</b></td>`;
-        html += `</tr>`;
-        html += `<tr style="border-bottom: 1px solid #ddd;">`;
-        html += `<td style="text-align: left; padding: 8px 10px 8px 0; vertical-align: top;">Course:</td>`;
-        html += `<td style="text-align: left; padding: 8px 0; vertical-align: top;"><b>${traffic.Track || 'N/A'}° @ ${traffic.Speed || 'N/A'}kt</b></td>`;
-        html += `</tr>`;
-        // html += `<tr style="border-bottom: 1px solid #ddd;">`;
-        // html += `<td style="text-align: left; padding: 8px 10px 8px 0; vertical-align: top;">Signal Level:</td>`;
-        // html += `<td style="text-align: left; padding: 8px 0; vertical-align: top;"><b>${traffic.SignalLevel ? traffic.SignalLevel.toFixed(1) + ' dBm' : 'N/A'}</b></td>`;
-        // html += `</tr>`;
-        html += `</table>`;
-        html += `</div>`;
-        html += `<hr>`;
-        html += `<button class="custom-popup-closer" onclick="closePopup()" style="background:#87ceeb; color:black;">Close</button>`;
-        html += `</div>`;
-        
-        popupcontent.innerHTML = html;2
-    }
-
-    /**
-     * Draw any traffic on the map and process through traffic radar
-     */
-    async function processTraffic(trafficObject) {
-        /*-----------------------------------------------------------------------------------------    
-                                    Traffic JSON sample 
-        -------------------------------------------------------------------------------------------
-        {"Icao_addr":11316589,"Reg":"N916EV","Tail":"N916EV","Emitter_category":0,
-        "OnGround":false,"Addr_type":0,"TargetType":0,"SignalLevel":-28.00244822746525,
-        "Squawk":0,"Position_valid":false,"Lat":0,"Lng":0,"Alt":5550,"GnssDiffFromBaroAlt":0,
-        "AltIsGNSS":false,"NIC":0,"NACp":0,"Track":0,"Speed":0,"Speed_valid":false,"Vvel":0,
-        "Timestamp":"2019-03-12T13:32:30.563Z","PriorityStatus":0,"Age":18.2,"AgeLastAlt":1.83,
-        "Last_seen":"0001-01-01T00:39:27.49Z","Last_alt":"0001-01-01T00:39:43.86Z",
-        "Last_GnssDiff":"0001-01-01T00:00:00Z","Last_GnssDiffAlt":0,"Last_speed":"0001-01-01T00:00:00Z",
-        "Last_source":1,"ExtrapolatedPosition":false,"BearingDist_valid":true,
-        "Bearing":92.7782277589171,"Distance":9.616803034808295e+06}
-        --------------------------------------------------------------------------------------------*/
-        let id = trafficObject.Icao_addr;
-        
-        // Feed traffic data to the traffic radar for collision detection and warnings
-        if (trafficRadar && radarLayer.getVisible()) {
-            trafficRadar.processTraffic(trafficObject);
-        }
-        
-        // Only process for map display if we have valid position data
-        if (!trafficObject.Lat || !trafficObject.Lng || trafficObject.Lat === 0 || trafficObject.Lng === 0) {
-            return;
-        }
-        
-        // Auto-enable traffic layer if it's not visible and we have valid traffic data
-        if (!trafficVectorLayer.getVisible()) {
-            //trafficVectorLayer.setVisible(true);
-            //console.log('Auto-enabled traffic layer due to incoming traffic data');
-        }
-        
-        let geometry = new Point(fromLonLat([trafficObject.Lng, trafficObject.Lat]));
-        let trackRadians = trafficObject.Track * 0.0174533;
-        let currentPosition = [trafficObject.Lng, trafficObject.Lat];
-        let currentTime = new Date().getTime();
-
-        // Maintain position history for track lines
-        if (!trafficTrackHistory.has(id)) {
-            trafficTrackHistory.set(id, []);
-        }
-        let history = trafficTrackHistory.get(id);
-        
-        // Add current position to history
-        history.push({
-            position: currentPosition,
-            timestamp: currentTime
-        });
-        
-        // Keep only last 15 positions (configurable)
-        const maxTrackPoints = 15;
-        if (history.length > maxTrackPoints) {
-            history.shift();
-        }
-        
-        // Clean up old positions (older than 5 minutes)
-        const maxAge = 5 * 60 * 1000; // 5 minutes
-        const cutoffTime = currentTime - maxAge;
-        const filteredHistory = history.filter(point => point.timestamp > cutoffTime);
-        trafficTrackHistory.set(id, filteredHistory);
-        
-        // Create or update track line if we have enough points
-        if (filteredHistory.length > 1) {
-            const trackLineId = `track_${id}`;
-            const source = trafficVectorLayer.getSource();
-            const existingTrackFeature = source.getFeatureById(trackLineId);
-            
-            // Create line coordinates from position history
-            const lineCoords = filteredHistory.map(point => fromLonLat(point.position));
-            const lineGeometry = new LineString(lineCoords);
-            
-            if (existingTrackFeature) {
-                existingTrackFeature.setGeometry(lineGeometry);
-                existingTrackFeature.changed();
-            } else {
-                const trackFeature = new Feature({
-                    geometry: lineGeometry,
-                    datatype: "track",
-                    aircraft_id: id
-                });
-                
-                // Style the track line
-                trackFeature.setStyle(new Style({
-                    stroke: new Stroke({
-                        color: 'rgba(0, 0, 0, 0.7)', // Black with transparency
-                        width: 2,
-                        lineDash: [5, 5] // Dashed line
-                    })
-                }));
-                
-                trackFeature.setId(trackLineId);
-                source.addFeature(trackFeature);
-                trackFeature.changed();
-            }
-        }
-
-        let trafficmarker = new Icon({
-            crossOrigin: "anonymous",
-            src: `/images/${mapsettings.trafficimage}`,
-            offset: [0, 0],
-            opacity: 1,
-            scale: .08,
-            rotation: trackRadians
-        });
-
-        let source = trafficVectorLayer.getSource();
-        let existingFeature = source.getFeatureById(id);
-
-        if (existingFeature) {
-            // Update geometry and properties
-            existingFeature.setGeometry(geometry);
-            existingFeature.setProperties({
-                traffic: trafficObject
-            });
-            existingFeature.setStyle(new Style({
-                image: trafficmarker
-            }));
-            existingFeature.changed();
-        }
-        else {
-            let trafficFeature = new Feature({
-                ident: trafficObject.Reg,
-                traffic: trafficObject,
-                datatype: "traffic",
-                geometry: geometry
-            });
-            trafficFeature.setStyle(new Style({
-                image: trafficmarker
-            }));
-            trafficFeature.setId(id);
-            source.addFeature(trafficFeature);
-            trafficFeature.changed();
-            trafficVectorLayer.changed();
-        }
-    }
-
-    /**
-     * Clean up old traffic tracks for aircraft that are no longer being received
-     */
-    function cleanupOldTrafficTracks() {
-        const currentTime = new Date().getTime();
-        const maxAge = 10 * 60 * 1000; // 10 minutes
-        const cutoffTime = currentTime - maxAge;
-        
-        // Get current traffic IDs
-        const currentTrafficIds = new Set();
-        const source = trafficVectorLayer.getSource();
-        source.getFeatures().forEach(feature => {
-            if (feature.get('datatype') === 'traffic') {
-                currentTrafficIds.add(feature.getId());
-            }
-        });
-        
-        // Clean up track history and remove track lines for inactive aircraft
-        const tracksToRemove = [];
-        
-        trafficTrackHistory.forEach((history, aircraftId) => {
-            const lastSeen = history.length > 0 ? history[history.length - 1].timestamp : 0;
-            
-            if (!currentTrafficIds.has(aircraftId) && lastSeen < cutoffTime) {
-                // Remove from history
-                trafficTrackHistory.delete(aircraftId);
-                
-                // Mark track line for removal
-                const trackLineId = `track_${aircraftId}`;
-                const trackFeature = source.getFeatureById(trackLineId);
-                if (trackFeature) {
-                    tracksToRemove.push(trackFeature);
-                }
-            }
-        });
-        
-        // Remove old track lines
-        tracksToRemove.forEach(feature => {
-            source.removeFeature(feature);
-        });
-        
-        if (tracksToRemove.length > 0) {
-            trafficVectorLayer.changed();
-        }
-    }
-
-    // Run cleanup every 2 minutes
-    setInterval(cleanupOldTrafficTracks, 2 * 60 * 1000);
-
-    /**
      * Place metar features on the map. color-coded to the conditions
      * @param {object} metar object: JSON object with metar data
      */
@@ -2253,17 +1728,6 @@ document.addEventListener('DOMContentLoaded', async function () {
     }
 
     /**
-     * If saving position history is enabled,  
-     * save it at a specified time interval
-     */
-    async function setupPositionHistoryTimer() {
-        if (mapsettings.savepositionhistory) {
-            console.log(`Setting position history timer to repeat every ${mapsettings.histintervalmsec} milleseconds`);
-            setInterval(savePositionHistory, mapsettings.histintervalmsec);
-        }
-    }
-
-    /**
      * Convert statute miles to desired unit 
      * @param {*} miles: statute miles
      * @returns statute miles, kilometers or nautical miles   
@@ -2295,82 +1759,6 @@ document.addEventListener('DOMContentLoaded', async function () {
         if (num === NaN || num === undefined) return "";
         else return `${num.toFixed(1)} F°`;
     });
-
-    //updateOwnshipSituation({});
-
-    /**
-     * Set ownship orientation from Stratux situation, updates airplane image current position
-     */
-    function updateOwnshipSituation(jsondata) {
-        /*---------------------------------------------------------------
-        * Situation json data field example
-        *---------------------------------------------------------------
-        { "GPSLastFixSinceMidnightUTC": 61233.1,GPSLatitude": 30.714376,"GPSLongitude": -98.254944,"GPSFixQuality": 1,"GPSHeightAboveEllipsoid": 1187.6641,
-            "GPSGeoidSep": -78.41207,"GPSSatellites": 9,"GPSSatellitesTracked": 22,"GPSSatellitesSeen": 14,"GPSHorizontalAccuracy": 4.8500004,
-            "GPSNACp": 10,"GPSAltitudeMSL": 1266.0762,"GPSVerticalAccuracy": 6.85,"GPSVerticalSpeed": 0,"GPSLastFixLocalTime": "0001-01-03T18:43:51.48Z",
-            "GPSTrueCourse": 45.51,"GPSTurnRate": 0,"GPSGroundSpeed": 1.1610000133514404,"GPSLastGroundTrackTime": "0001-01-03T18:43:51.48Z",
-            "GPSTime": "2022-07-14T17:00:33.18Z","GPSLastGPSTimeStratuxTime": "0001-01-03T18:43:51.48Z","GPSLastValidNMEAMessageTime": "0001-01-03T18:43:51.48Z",
-            "GPSLastValidNMEAMessage": "$GNGGA,170033.10,3042.86261,N,09815.29674,W,1,09,0.97,385.9,M,-23.9,M,,*77","GPSPositionSampleRate": 9.998427260812582,
-            "BaroTemperature": 41.89,"BaroPressureAltitude": 1085.1527,"BaroVerticalSpeed": -3.136783,"BaroLastMeasurementTime": "0001-01-03T18:43:51.53Z",
-            "BaroSourceType": 1,"AHRSPitch": -0.0025035837716802546,"AHRSRoll": 0.049514056369771665,"AHRSGyroHeading": 3276.7,"AHRSMagHeading": 3276.7,
-            "AHRSSlipSkid": -0.03840070310305229,"AHRSTurnRate": 3276.7,"AHRSGLoad": 0.9996413993502861,"AHRSGLoadMin": 0.9930797723335983,
-            "AHRSGLoadMax": 1.0025976589458154,"AHRSLastAttitudeTime": "0001-01-03T18:43:51.53Z","AHRSStatus": 7
-        }
-        */
-        if (jsondata && jsondata.GPSLongitude === 0 && jsondata.GPSLatitude === 0) {
-            viewposition = [-94.578331, 39.099724];
-            jsondata.GPSLongitude = -94.578331;
-            jsondata.GPSLatitude = 39.099724;
-            jsondata.GPSAltitudeMSL = 1245;
-            jsondata.AHRSMagHeading = 1800;
-        }
-        else {
-            viewposition = fromLonLat([jsondata.GPSLongitude, jsondata.GPSLatitude]);
-        }
-        if (jsondata.GPSLongitude !== 0 && jsondata.GPSLatitude !== 0) {
-            myairplane.setOffset(offset);
-            myairplane.setPosition(viewposition);
-            lng = jsondata.GPSLongitude;
-            lat = jsondata.GPSLatitude;
-            alt = jsondata.GPSAltitudeMSL;
-            deg = parseInt(jsondata.AHRSMagHeading / 10);
-            airplaneElement.style.transform = "rotate(" + deg + "deg)";
-            
-            // Feed ownship situation data to traffic radar for collision detection
-            if (trafficRadar) {
-                //onsole.log('Updating traffic radar with ownship position:', jsondata.GPSLatitude, jsondata.GPSLongitude, jsondata.GPSAltitudeMSL);
-                trafficRadar.onSituationMessage(jsondata);
-            } 
-            // else {
-            //     console.log('Traffic radar not initialized yet');
-            // }
-        }
-    }
-
-    /**
-     * Save the position history in positionhistory.db
-     */
-    function savePositionHistory() {
-        if (last_longitude !== lng || last_latitude !== lat) {
-            if (lng + lat + deg + alt > 0) {
-                let poshistory = {
-                    longitude: lng,
-                    latitude: lat,
-                    heading: deg,
-                    altitude: Math.round(alt)
-                };
-                fetch('/savehistory', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json'
-                    },
-                    body: JSON.stringify(poshistory)
-                }).catch(err => {
-                    console.error('Failed to save position history:', err);
-                });
-            }
-        }
-    }
 
     /**
      * Utility function to replace all instances of a  
@@ -3476,7 +2864,8 @@ document.addEventListener('DOMContentLoaded', async function () {
             return d;
         }
         else {
-            throw new Error("Failed to parse Date");
+            console.log("Failed to parse Date");
+            return null;
         }
     }
 
@@ -3837,9 +3226,9 @@ document.addEventListener('DOMContentLoaded', async function () {
         }
     }
 
-    console.log("Line 2924: DOMContentLoaded, restoring map state.");
-    await restoreMapState();
-
-    await setupPositionHistoryTimer();
+    console.log("Line 3216: DOMContentLoaded"); //, restoring map state.");
+    
+    await getWeatherData();
+    //await restoreMapState();
 });
 

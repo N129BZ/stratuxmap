@@ -3,18 +3,18 @@ import { stateCache } from './map.js';
 import { attachAirportInfo } from './airportfunctions.js';
 
 /**
- * Converts a Stratux METAR object to FAA METAR format
- * @param {Object} stratuxObject - The raw Stratux METAR object
+ * Preprocesses an incoming METAR message
+ * @param {Object} messageObject - The raw Stratux METAR object
  * @param {Object} [stationInfo] - Optional lookup for lat/lon/elevation by station_id
  * @returns {Object} FAA-style METAR object
  */
-export async function convertStratuxToFAA(stratuxObject, stationInfo) {
+export async function preprocessMessage(messageObject, stationInfo) {
     
-    let location = stratuxObject.Location;
+    let location = stationInfo;
 
     if (location.length === 3) {
         location = `K${location}`;
-        stratuxObject.Location = location; 
+        messageObject.Location = location; 
     }
 
     stationInfo = await attachAirportInfo(location);
@@ -24,12 +24,12 @@ export async function convertStratuxToFAA(stratuxObject, stationInfo) {
     }
 
     // Make sure stratuxObject.Location is a string airport code, e.g. "KORD"
-    const cleanedData = stratuxObject.Data.replace(/\s*\n\s*/g, ' ').trim();
-    const forecast = parseWeatherForecast(stratuxObject.Data);
+    const cleanedData = messageObject.replace(/\s*\n\s*/g, ' ').trim();
+    const forecast = parseWeatherForecast(messageObject);
 
     // Time handling
-    let timestamp = stratuxObject.Time;
-    let loc_time = stratuxObject.LocaltimeReceived.replace(/^0001-01-01/, '');
+    let timestamp = messageObject.Time;
+    let loc_time = messageObject.LocaltimeReceived.replace(/^0001-01-01/, '');
 
 
     // Weather handling
@@ -38,7 +38,7 @@ export async function convertStratuxToFAA(stratuxObject, stationInfo) {
     const observation_time = await parseObservationTime(loc_time);
     //if (!weatherRaw) debugger; 
     const raw_text = weatherRaw;
-    const metar_type = stratuxObject.Type;
+    const metar_type = messageObject.type;
 
     // Basic regex parsing
     const tempDewRegex = /(\d{2})\/(\d{2})/;
@@ -95,10 +95,10 @@ export async function convertStratuxToFAA(stratuxObject, stationInfo) {
 
     let output = {
         raw_text,
-        type: stratuxObject.Type,
+        type: messageObject.Type,
         station_id: location,
         station_name: stationInfo?.name ?? "",
-        timestamp: stratuxObject.Time,
+        timestamp: messageObject.Time,
         observation_time,
         latitude: stationInfo?.lat ?? "",
         longitude: stationInfo?.lon ?? "",

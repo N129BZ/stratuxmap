@@ -2,26 +2,9 @@
 npm run build
 
 distpath="/home/bro/sources/stratuxmap/dist"
-stxexpresspath="/home/bro/sources/stratuxexpress/dist"
-stxpath="/home/bro/sources/stratux/web"
-optpath="/opt/stratux/www"
+expresspath="/home/bro/sources/gochartserver/dist"
 
-if [ "$EUID" -ne 0 ]; then
-    mkdir -p "$stxexpresspath"
-    cp -r -f "$distpath"/* "$stxexpresspath"
-    echo "dist copied to $stxexpresspath"
+mkdir -p "$expresspath"
 
-    if [ -d "$distpath" ]; then
-        mkdir -p "$stxpath"
-        cp -r -f "$distpath"/* "$stxpath"
-        echo "dist copied to $stxpath"
-    fi
-fi
-
-if [ "$EUID" -eq 0 ]; then
-    mkdir -p "$optpath"
-    cp -r -f "$stxpath"/* "$optpath"
-    echo "dist copied to $optpath"
-else
-    echo "RUN: sudo cp -r -f $distpath/* $optpath"
-fi
+cp -r -f "$distpath"/* "$expresspath"
+echo "dist copied to $expresspath"
