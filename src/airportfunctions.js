@@ -4,7 +4,8 @@ export async function attachAirportInfo(station) {
         if (!response.ok) {
             return {};
         }
-        return await response.json(); 
+        const resp = await response.json();
+        return resp; 
     }
     catch (error) 
     {

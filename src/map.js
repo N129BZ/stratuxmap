@@ -27,6 +27,7 @@ import { defaults as defaultControls, ScaleLine } from 'ol/control';
 import LayerSwitcher from 'ol-layerswitcher';
 import { saveMapState, restoreMapState } from './mapstatemanager.js';
 import { getAirportsInRadius } from './airportfunctions.js';
+import { attachAirportInfo } from './airportfunctions.js';
 import { parseWeatherMessage } from './weathermessageparser.js';
 
 export class FIFOCache {
@@ -283,47 +284,16 @@ document.addEventListener('DOMContentLoaded', async function () {
         autoPanAnimation: { duration: 500 }
     });
 
-    // const URL_WEBSOCKET = `ws://${URL_LOCATION}:${appsettings.wsport}`;
-    // const wsWeather = new WebSocket(URL_WEBSOCKET);
-    // wsWeather.onopen = () => {
-    //     wsWeather.send("Hello Server!");
-    // };
-
-    // wsWeather.onmmessage = (event) => {
-    //     let message = JSON.parse(event.data);
-    //     let mtype = message.Type;
-    //     let converted = {};
-
-    //     // TODO: Winds?
-    //     if (mtype === "WINDS") return;
-        
-    //     Promise.resolve(parseWeatherMessage(message))
-    //     .then((value) => { converted = value })
-    //     .then(() => {
-    //         switch (mtype) {
-    //             case "METAR":
-    //             case "SPECI":
-    //                 processMetar(converted);
-    //                 break;
-    //             case "TAF":
-    //             case "TAF.AMD":
-    //                 processTaf(converted);
-    //                 break;
-    //             case "PIREP":
-    //                 processPirep(converted);
-    //                 break;
-    //         }
-    //     });
-    // };
     var wsclient = {};
-    const startListening = async() => {
+    const startListening = () => {
         const URL_WEBSOCKET = `ws://${URL_LOCATION}:${appsettings.wsport}`;
         wsclient = new WebSocket(URL_WEBSOCKET);
-        wsclient.onmessage = (evt) => {
+        wsclient.onmessage = async (evt) => {
             const message = JSON.parse(evt.data);
             const mtype = message.Type;
-            const parsed = parseWeatherMessage(message);
-
+            const stationInfo = await attachAirportInfo(message.Location);
+            const parsed = parseWeatherMessage(message, stationInfo);
+            
             switch (mtype) {
                 case "METAR", "SPECI":
                     processMetar(parsed);
@@ -1501,9 +1471,9 @@ document.addEventListener('DOMContentLoaded', async function () {
      * Place metar features on the map. color-coded to the conditions
      * @param {object} metar object: JSON object with metar data
      */
-    async function processMetar(metar) {
-        let scaleSize = getScaleSize();
-
+    async function processMetar(metarPromise) {
+        // await the incoming metar...
+        const metar = await metarPromise;
         // Validate required properties
         if (!metar || typeof metar.longitude !== 'number' || typeof metar.latitude !== 'number') {
             //console.warn('processMetar: Missing longitude/latitude in metar object', metar);
@@ -1511,37 +1481,41 @@ document.addEventListener('DOMContentLoaded', async function () {
         }
 
         try {
-            let popupSvg = "";
-            let mapDotSvg = "";
-            let airportInfo = null;
+            var popupSvg = "";
+            var mapDotSvg = "";
+            var airportInfo = null;
             try {
                 popupSvg = rawWeatherTextToSVG(metar, 150, 150, appsettings.usemetricunits);
                 mapDotSvg = getWindBarbSvg(125, 125, metar);
             }
             catch { }
 
-            let metarmarker = new Icon({
+            const metarmarker = new Icon({
                 crossOrigin: 'anonymous',
                 src: `data:image/svg+xml;utf8,${encodeURIComponent(mapDotSvg)}`,
                 offset: [0, 0],
                 opacity: 1,
-                scale: scaleSize
+                scale: getScaleSize()
             });
-            let metarFeature = new Feature({
+
+            const metarFeature = new Feature({
                 data: metar,
                 datatype: "metar",
                 geometry: new Point(fromLonLat([metar.longitude, metar.latitude])),
                 station_name: metar.station_name,
                 svgimage: popupSvg
             });
+
             metarFeature.setStyle(new Style({
                 image: metarmarker
             }));
             metarFeature.setId(metar.station_id);
+
             const oldFeature = metarVectorLayer.getSource().getFeatureById(metar.station_id);
             if (oldFeature) {
                 metarVectorLayer.getSource().removeFeature(oldFeature);
             }
+            
             metarVectorLayer.getSource().addFeature(metarFeature);
             metarFeature.changed();
             metarVectorLayer.changed();
@@ -1555,7 +1529,9 @@ document.addEventListener('DOMContentLoaded', async function () {
      * Place taf feature objects on the map
      * @param {object} taf: JSON object
      */
-    async function processTaf(taf) {
+    async function processTaf(tafPromise) {
+        // await the incoming Promise
+        const taf = await tafPromise; 
         // Validate required properties
         if (!taf || typeof taf.longitude !== 'number' || typeof taf.latitude !== 'number') {
             return;
@@ -1613,7 +1589,10 @@ document.addEventListener('DOMContentLoaded', async function () {
      * Place pirep features on the map
      * @param {object} pirep: JSON object with LOTS of pireps 
      */
-    async function processPirep(pirep) {
+    async function processPirep(pirepPromise) {
+        // await the pirepPromise
+        const pirep = await pirepPromise;
+
         // Validate required properties
         if (!pirep || typeof pirep.longitude !== 'number' || typeof pirep.latitude !== 'number') {
             //console.warn('processPirep: Missing longitude/latitude in pirep object', pirep);

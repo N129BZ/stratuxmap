@@ -6,33 +6,33 @@ import { attachAirportInfo } from './airportfunctions.js';
 
 /**
  * Converts a Stratux METAR object to FAA METAR format
- * @param {Object} stratuxObject - The raw Stratux METAR object
+ * @param {Object} weatherMessage - The raw Stratux METAR object
  * @param {Object} [stationInfo] - Optional lookup for lat/lon/elevation by station_id
  * @returns {Object} FAA-style METAR object
  */
-export async function parseWeatherMessage(stratuxObject, stationInfo) {
+export async function parseWeatherMessage(weatherMessage, stationInfo) {
     
-    if (stratuxObject.Type === "METAR" || stratuxObject.Type === "TAF") {
-        if (!stationInfo) {
-            stationInfo = await attachAirportInfo(stratuxObject.Location);
-        }
-    }
+    // if (weatherMessage.Type === "METAR" || weatherMessage.Type === "TAF") {
+    //     if (!stationInfo) {
+    //         stationInfo = await attachAirportInfo(weatherMessage.Location);
+    //     }
+    // }
     
     // Make sure stratuxObject.Location is a string airport code, e.g. "KORD"
-    const cleanedData = stratuxObject.Data.replace(/\s*\n\s*/g, ' ').trim();
-    const forecast = parseWeatherForecast(stratuxObject.Data);
-
+    const cleanedData = weatherMessage.Data.replace(/\s*\n\s*/g, ' ').trim();
+    const forecast = await parseWeatherForecast(weatherMessage.Data);
+    
     // Time handling
-    let timestamp = stratuxObject.Time;
-    let loc_time = stratuxObject.LocaltimeReceived.replace(/^0001-01-01/, '');
+    let timestamp = weatherMessage.Time;
+    let loc_time = weatherMessage.LocaltimeReceived.replace(/^0001-01-01/, '');
 
 
     // Weather handling
-    const weatherRaw = `${stratuxObject.Location} ${timestamp} ${cleanedData}`;
-    const station_id = stratuxObject.Location;
+    const weatherRaw = `${weatherMessage.Location} ${timestamp} ${cleanedData}`;
+    const station_id = weatherMessage.Location;
     const observation_time = await parseObservationTime(loc_time);
     const raw_text = weatherRaw;
-    const metar_type = stratuxObject.Type;
+    const metar_type = weatherMessage.Type;
 
     // Basic regex parsing
     const tempDewRegex = /(\d{2})\/(\d{2})/;
@@ -67,10 +67,10 @@ export async function parseWeatherMessage(stratuxObject, stationInfo) {
     let output = {
         raw_text,
         //color: 
-        type: stratuxObject.Type,
+        type: weatherMessage.Type,
         station_id: station_id,
         station_name: stationInfo?.name ?? null,
-        timestamp: stratuxObject.Time,
+        timestamp: weatherMessage.Time,
         observation_time,
         latitude: stationInfo?.lat ?? null,
         longitude: stationInfo?.lon ?? null,
@@ -86,7 +86,7 @@ export async function parseWeatherMessage(stratuxObject, stationInfo) {
         elevation_m: stationInfo?.elevation_m ?? null,
         forecast: forecast,
     };
-
+    console.log(output);
     return output;
 }
 
