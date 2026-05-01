@@ -2,7 +2,7 @@
 npm run build
 
 distpath="/home/bro/sources/stratuxmap/dist"
-expresspath="/home/bro/sources/gochartserver/dist"
+expresspath="/home/bro/sources/stratuxexpress/dist"
 
 mkdir -p "$expresspath"
 

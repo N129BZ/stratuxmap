@@ -25,18 +25,9 @@ import Stroke from 'ol/style/Stroke';
 import Overlay from 'ol/Overlay';
 import { defaults as defaultControls, ScaleLine } from 'ol/control';
 import LayerSwitcher from 'ol-layerswitcher';
-import { preprocessMessage } from './preprocessmessage.js';
 import { saveMapState, restoreMapState } from './mapstatemanager.js';
 import { getAirportsInRadius } from './airportfunctions.js';
-import { XMLParser } from 'fast-xml-parser';
-
-
-export let mapsettings = {};
-let mapsettingsLoaded = (async function loadSettings(){
-    const response = await fetch('/data/mapsettings.json');
-    mapsettings = await response.json();
-})();
-
+import { parseWeatherMessage } from './weathermessageparser.js';
 
 export class FIFOCache {
     constructor(maxSize) {
@@ -88,9 +79,26 @@ if (parseInt(URL_PORT) > 0) {
 const URL_HOST_PROTOCOL = 'http://';
 const URL_SERVER = `${URL_HOST_PROTOCOL}${URL_HOST_BASE}`;
 const URL_GET_TILE = `${URL_SERVER}/tiles/{dbname}/{z}/{x}/{-y}`;
-const URL_GET_METARS = `${URL_SERVER}/metars`;
 const URL_GET_TAFS = `${URL_SERVER}/tafs`;
 const URL_GET_PIREPS = `${URL_SERVER}/pireps`;
+
+
+var appsettings = {};
+(function loadAppSettings() {
+    const request = new XMLHttpRequest();
+    // The 'false' parameter makes it synchronous
+    request.open('GET', `${URL_SERVER}/appsettings`, false); 
+    request.send(null);
+
+    if (request.status === 200) {
+        appsettings = JSON.parse(request.responseText);
+    } 
+    else {
+        throw new Error("Failed to load critical settings");
+    }
+})();
+
+console.log(appsettings)
 
 let deg = 0;
 let alt = 0;
@@ -118,6 +126,8 @@ let popup = {};
 let popupcontent = {};
 let airportRadiusSelector = {};
 
+const { promise, resolve, reject } = Promise.withResolvers();
+
 /**
  * These objects are used by the XMLParser to convert XML to JSON.
  * The alwaysArray object makes the parser translate sky_condition 
@@ -127,23 +137,8 @@ const alwaysArray = [
     "response.data.METAR.sky_condition",
     "response.data.PIREP.sky_condition"
 ];
-const xmlParseOptions = {
-    ignoreAttributes : false,
-    attributeNamePrefix : "",
-    allowBooleanAttributes: true,
-    ignoreDeclaration: true,
-    isArray: (name, jpath, isLeafNode, isAttribute) => { 
-        if( alwaysArray.indexOf(jpath) !== -1) return true;
-    }
-};
-/**
- * now the actual parser object is instantiated with the above options
- */
-const xmlparser = new XMLParser(xmlParseOptions);
 
 document.addEventListener('DOMContentLoaded', async function () {
-    // Wait for mapsettings to be loaded before initializing anything that depends on it
-    await mapsettingsLoaded;
 
     /**************** BEGINNING OF SVG GENERATION CLASSES *****************/
     class WeatherProcessItem {
@@ -288,10 +283,74 @@ document.addEventListener('DOMContentLoaded', async function () {
         autoPanAnimation: { duration: 500 }
     });
 
-    function buildWebSocketUrl(path) {
-        const protocol = "ws://";
-        return `${protocol}${location.host}${path}`;
+    // const URL_WEBSOCKET = `ws://${URL_LOCATION}:${appsettings.wsport}`;
+    // const wsWeather = new WebSocket(URL_WEBSOCKET);
+    // wsWeather.onopen = () => {
+    //     wsWeather.send("Hello Server!");
+    // };
+
+    // wsWeather.onmmessage = (event) => {
+    //     let message = JSON.parse(event.data);
+    //     let mtype = message.Type;
+    //     let converted = {};
+
+    //     // TODO: Winds?
+    //     if (mtype === "WINDS") return;
+        
+    //     Promise.resolve(parseWeatherMessage(message))
+    //     .then((value) => { converted = value })
+    //     .then(() => {
+    //         switch (mtype) {
+    //             case "METAR":
+    //             case "SPECI":
+    //                 processMetar(converted);
+    //                 break;
+    //             case "TAF":
+    //             case "TAF.AMD":
+    //                 processTaf(converted);
+    //                 break;
+    //             case "PIREP":
+    //                 processPirep(converted);
+    //                 break;
+    //         }
+    //     });
+    // };
+    var wsclient = {};
+    const startListening = async() => {
+        const URL_WEBSOCKET = `ws://${URL_LOCATION}:${appsettings.wsport}`;
+        wsclient = new WebSocket(URL_WEBSOCKET);
+        wsclient.onmessage = (evt) => {
+            const message = JSON.parse(evt.data);
+            const mtype = message.Type;
+            const parsed = parseWeatherMessage(message);
+
+            switch (mtype) {
+                case "METAR", "SPECI":
+                    processMetar(parsed);
+                    break;
+                case "TAF":
+                    processTaf(parsed);
+                    break;
+                case "PIREP":
+                    processPirep(parsed);
+                    break;
+            }
+        }
+
+        wsclient.onerror = function(evt){
+            console.log("Websocket ERROR: " + evt.data);
+        }
+        
+        wsclient.onopen = function(evt) {
+            console.log("Websocket CONNECTED.");
+        }
+        
+        wsclient.onclose = function(evt) {
+            console.log("Websocket CLOSED.");
+        }
     }
+
+    await startListening();
 
     /**
      * The scale of miles shown on lower left corner of map
@@ -307,7 +366,7 @@ document.addEventListener('DOMContentLoaded', async function () {
         target: 'map',
         view: new View({
             center: chicagoCoords,
-            zoom: mapsettings.startupzoom,
+            zoom: appsettings.startupzoom,
             enableRotation: false,
             minZoom: 1,
             maxZoom: 22,
@@ -328,7 +387,7 @@ document.addEventListener('DOMContentLoaded', async function () {
     map.addLayer(osmTileLayer);
 
 
-    let pirepVectorLayer = new VectorLayer({
+    const pirepVectorLayer = new VectorLayer({
         source: new VectorSource(),
         title: "Pireps",
         visible: false,
@@ -336,7 +395,7 @@ document.addEventListener('DOMContentLoaded', async function () {
     });
     map.addLayer(pirepVectorLayer);
 
-    let metarVectorLayer = new VectorLayer({
+    const metarVectorLayer = new VectorLayer({
         source: new VectorSource(),
         title: "Metars",
         visible: false,
@@ -344,7 +403,7 @@ document.addEventListener('DOMContentLoaded', async function () {
     });
     map.addLayer(metarVectorLayer);
 
-    let tafVectorLayer = new VectorLayer({
+    const tafVectorLayer = new VectorLayer({
         source: new VectorSource(),
         title: "TAFs",
         visible: false,
@@ -352,7 +411,7 @@ document.addEventListener('DOMContentLoaded', async function () {
     });
     map.addLayer(tafVectorLayer);
 
-    let airportLayer = new VectorLayer({
+    const airportLayer = new VectorLayer({
         title: 'Airports',
         source: new VectorSource(),
         zIndex: 100,
@@ -368,50 +427,6 @@ document.addEventListener('DOMContentLoaded', async function () {
         }
     })
     
-    await loadTileDatabases();
-    
-    async function getWeatherData() {
-        const mresponse = await fetch('/metars');
-        const message = await mresponse.json();
-        const metarresp = xmlparser.parse(message.raw_xml);
-        const metars = metarresp.response.data.METAR;
-        for (const metar of metars) {
-            if (metar.raw_text) {
-                const metarItem = new WeatherProcessItem();
-                parseWeatherText(metar.raw_text, metarItem);
-                processMetar(metarItem);
-                console.log("Rrocessed METAR:", metarItem);
-            }
-        };    
-        
-        const tresponse = await fetch(`/tafs`);
-        const tmessage = await tresponse.json();
-        const tafresp = xmlparser.parse(tmessage.raw_xml);
-        const tafs = tafresp.response.data.TAF;
-        
-        for (const taf of tafs) {   
-            if (taf.raw_text) {
-                const tafItem = new WeatherProcessItem();
-                parseWeatherText(taf.raw_text, tafItem);
-                processTaf(tafItem);
-                console.log("Preprocessed TAF:", tafItem);
-            }
-        };
-        
-        const presponse = await fetch(`/pireps`);
-        const pmessage = await presponse.json();
-        const pirepresp = xmlparser.parse(pmessage.raw_xml);
-        const pireps = pirepresp.response.data.AircraftReport; 
-        for (const pirep of pireps) {
-            if (pirep.raw_text) {
-                const pirepItem = new WeatherProcessItem();
-                parseWeatherText(pirep.raw_text, pirepItem);
-                processPirep(pirepItem);
-                console.log("Preprocessed PIREP:", pirepItem);
-            }
-        }  
-    }
-
     async function loadTileDatabases() {
         try {
 
@@ -487,7 +502,7 @@ document.addEventListener('DOMContentLoaded', async function () {
 
     // Function to clear airport features
     function clearAirportFeatures() {
-        airportLayer.getSource().clear();
+        Promise.resolve(airportLayer.getSource().clear());
     }
 
     // Function to find and display airports within radius
@@ -496,7 +511,7 @@ document.addEventListener('DOMContentLoaded', async function () {
             console.log(`Searching for airports within ${radiusMiles} miles of lat: ${centerLat}, lon: ${centerLon}`);
             
             // Use the existing getAirportsInRadius function
-            const airports = await getAirportsInRadius(centerLon, centerLat, radiusMiles);
+            const airports = await getAirportsInRadius(appsettings, centerLon, centerLat, radiusMiles);
             
             console.log(`Found ${airports ? airports.length : 0} airports`);
             
@@ -605,8 +620,8 @@ document.addEventListener('DOMContentLoaded', async function () {
         // Add airport features
         const features = airports.map(airport => {
             // Handle different possible property names
-            const longitude = airport.longitude || airport.lon;
-            const latitude = airport.latitude || airport.lat;
+            const longitude = airport.longitude_deg || airport.lon;
+            const latitude = airport.latitude_deg || airport.lat;
             const name = airport.name || airport.station_name || airport.ident;
             const ident = airport.ident || airport.id;
             let fillColor;
@@ -657,7 +672,7 @@ document.addEventListener('DOMContentLoaded', async function () {
                     <circle cx="6" cy="6" r="5" fill="red" stroke="black" stroke-width="1"/>
                     <text x="6" y="6" text-anchor="middle" dominant-baseline="central" font-family="Arial, sans-serif" font-size="8" font-weight="bold" fill="white">✕</text>
                 </svg>`;
-            } else if (mapsettings.showHeliports && isHeliport) {
+            } else if (appsettings.showHeliports && isHeliport) {
                 // Heliport: white circle with black "H"
                 airportSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 12 12">
                     <circle cx="6" cy="6" r="5" fill="white" stroke="black" stroke-width="1"/>
@@ -707,7 +722,7 @@ document.addEventListener('DOMContentLoaded', async function () {
         const radius = this.value;
         
         if (radius === 'clear') {
-            clearAirportFeatures();
+            Promise.resolve(clearAirportFeatures())
             selectedRadius = 0; // Set to 0 to indicate no search
             stateCache.selectedRadius = selectedRadius;
             this.value = ''; // Reset dropdown to default
@@ -729,7 +744,7 @@ document.addEventListener('DOMContentLoaded', async function () {
         if (selectedRadius > 0 && currentDoubleClickLocation) {
             let lonlat = [currentDoubleClickLocation.lon, currentDoubleClickLocation.lat];
             console.log('Searching for airports within', selectedRadius, 'miles of', lonlat);
-            await showAirportsInRadius(lonlat[1], lonlat[0], selectedRadius);
+            Promise.resolve(showAirportsInRadius(lonlat[1], lonlat[0], selectedRadius));
         }
         console.log('Selected radius:', selectedRadius, 'miles');
     });
@@ -756,7 +771,7 @@ document.addEventListener('DOMContentLoaded', async function () {
      */
     map.on('click', (evt) => {
         let features = [];
-        let htol = isMobile ? mapsettings.smallScreenHitTolerance : 1;
+        let htol = isMobile ? appsettings.smallScreenHitTolerance : 1;
         map.forEachFeatureAtPixel(evt.pixel, (feature) => {
             if (feature) {
                 features.push(feature);
@@ -905,6 +920,7 @@ document.addEventListener('DOMContentLoaded', async function () {
             html += `<span class="windsvg">${svg}</span>`;
             html += `</div>`; // end of metar-popup-body 
             html += `<hr>`;
+            html += `<button class="custom-airport-info" onclick="getAirportInfo()" style="background:${bgcolor}; color:${fgcolor};">Airport Info</button>`
             html += `<button class="custom-popup-closer" onclick="closePopup()" style="background:${bgcolor}; color:${fgcolor};">Close</button>`
             html += `<textarea id="rawdata" class="rawdata">${rawmetar}</textarea><br>`;
             //console.log("METAR POPUP", html);
@@ -997,14 +1013,14 @@ document.addEventListener('DOMContentLoaded', async function () {
             switch (pirepkey) {
                 case "receipt_time":
                     thistime = pirepvalue;
-                    if (mapsettings.uselocaltime) {
+                    if (appsettings.uselocaltime) {
                         thistime = getLocalTime(pirepvalue);
                     }
                     html += `${pireplabel}${fieldname}: <b>${thistime}</b></span><br>`;
                     break;
                 case "observation_time":
                     thistime = pirepvalue;
-                    if (mapsettings.uselocaltime) {
+                    if (appsettings.uselocaltime) {
                         thistime = getLocalTime(pirepvalue);
                     }
                     html += `${pireplabel}${fieldname}: <b>${thistime}</b></span><br>`;
@@ -1067,6 +1083,11 @@ document.addEventListener('DOMContentLoaded', async function () {
         popupcontent.innerHTML = innerhtml;
     }
 
+    function getAirportInfo(id) {
+        Promise.resolve(getAirportInfo((value) => {
+            console.log(value);
+        }));
+    }
     /**
      * Decode runway surface codes to full descriptions
      * @param {string} surfaceCode - The surface code (e.g., "[CON]", "[ASP]", "grass")
@@ -1494,7 +1515,7 @@ document.addEventListener('DOMContentLoaded', async function () {
             let mapDotSvg = "";
             let airportInfo = null;
             try {
-                popupSvg = rawWeatherTextToSVG(metar, 150, 150, mapsettings.usemetricunits);
+                popupSvg = rawWeatherTextToSVG(metar, 150, 150, appsettings.usemetricunits);
                 mapDotSvg = getWindBarbSvg(125, 125, metar);
             }
             catch { }
@@ -3227,8 +3248,7 @@ document.addEventListener('DOMContentLoaded', async function () {
     }
 
     console.log("Line 3216: DOMContentLoaded"); //, restoring map state.");
-    
-    await getWeatherData();
+
+    await loadTileDatabases();
     //await restoreMapState();
 });
-

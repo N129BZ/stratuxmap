@@ -16,5 +16,5 @@ export default defineConfig({
     },
     chunkSizeWarningLimit: 3000, // Increase chunk size warning limit to 2000 kB
   },
-  publicDir: '../public',
+  publicDir: '../public'
 });

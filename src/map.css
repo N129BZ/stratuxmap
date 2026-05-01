@@ -500,6 +500,15 @@ hr {
     margin-right: 1px;
     border-radius: 6px;
 }
+.custom-airport-info {
+    font-family: B612;
+    font-weight: bold;
+    border: 1px solid #000000;
+    border-radius: 5px;
+    padding: 4px 12px;
+    float: left;
+    margin-bottom: 8px;
+}
 .custom-popup-closer {
     font-family: B612;
     font-weight: bold;

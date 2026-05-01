@@ -18,6 +18,7 @@
     "fast-xml-parser": "^5.7.2",
     "http": "^0.0.1-security",
     "ol": "latest",
-    "ol-layerswitcher": "^4.1.2"
+    "ol-layerswitcher": "^4.1.2",
+    "socket.io": "^4.8.3"
   }
 }

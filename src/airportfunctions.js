@@ -1,13 +1,10 @@
-import { mapsettings } from "./map";
-
 export async function attachAirportInfo(station) {
     try {
         const response = await fetch(`/airport?id=${station}`);
         if (!response.ok) {
             return {};
         }
-        const airport = await response.json();
-        return airport; 
+        return await response.json(); 
     }
     catch (error) 
     {
@@ -15,13 +12,13 @@ export async function attachAirportInfo(station) {
     }
 }
 
-export async function getAirportsInRadius(lon, lat, radiusMiles) {
+export async function getAirportsInRadius(appsettings, lon, lat, radiusMiles) {
     try {
         //console.log(`Getting airports for lat: ${lat}, lon: ${lon}, radius: ${radiusMiles} miles`);
         
         const { minLat, maxLat, minLon, maxLon } = getBoundingBox(lat, lon, radiusMiles);
-        let getheliports = (mapsettings.showHeliports === true);
-        let getclosed = (mapsettings.showClosedAirports === true);
+        let getheliports = (appsettings.showHeliports === true);
+        let getclosed = (appsettings.showClosedAirports === true);
         //console.log(`Bounding box: minLat=${minLat}, maxLat=${maxLat}, minLon=${minLon}, maxLon=${maxLon}`);
 
         const response = await fetch(`/airportlist?getclosed=${getclosed}&getheliports=${getheliports}&minLat=${minLat}&maxLat=${maxLat}&minLon=${minLon}&maxLon=${maxLon}`);
