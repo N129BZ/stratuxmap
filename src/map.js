@@ -23,6 +23,7 @@ import Style from 'ol/style/Style';
 import Icon from 'ol/style/Icon';
 import Stroke from 'ol/style/Stroke';
 import Overlay from 'ol/Overlay';
+import Collection from 'ol/Collection.js';
 import { defaults as defaultControls, ScaleLine } from 'ol/control';
 import LayerSwitcher from 'ol-layerswitcher';
 import { saveMapState, restoreMapState } from './mapstatemanager.js';
@@ -73,7 +74,7 @@ export const stateCache = {
 */
 const URL_LOCATION = location.hostname;
 const URL_PORT = location.port;
-let URL_HOST_BASE = URL_LOCATION;
+var URL_HOST_BASE = URL_LOCATION;
 if (parseInt(URL_PORT) > 0) {
     URL_HOST_BASE += `:${URL_PORT}`;
 }
@@ -101,17 +102,17 @@ var appsettings = {};
 
 console.log(appsettings)
 
-let deg = 0;
-let alt = 0;
-let lng = 0;
-let lat = 0;
-let last_longitude = 0;
-let last_latitude = 0;
-let last_heading = 0;
+var deg = 0;
+var alt = 0;
+var lng = 0;
+var lat = 0;
+var last_longitude = 0;
+var last_latitude = 0;
+var last_heading = 0;
 
-let viewextent = [-180, -85, 180, 85];
-let viewposition = [];
-let offset = [-18, -18];
+var viewextent = [-180, -85, 180, 85];
+var viewposition = [];
+var offset = [-18, -18];
 
 const chicagoCoords = fromLonLat([-87.6298, 41.8781]); // Chicago: lon, lat
 const isMobile = /Mobi|Android|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
@@ -119,13 +120,13 @@ const isMobile = /Mobi|Android|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i
 /**
  * global variables
  */
-let currentZoom = 9.0;
-let tplcontainer = {};
-let DistanceUnits = {};
-let distanceunit = "";
-let popup = {};
-let popupcontent = {};
-let airportRadiusSelector = {};
+var currentZoom = 9.0;
+var tplcontainer = {};
+var DistanceUnits = {};
+var distanceunit = "";
+var popup = {};
+var popupcontent = {};
+var airportRadiusSelector = {};
 
 const { promise, resolve, reject } = Promise.withResolvers();
 
@@ -233,7 +234,7 @@ document.addEventListener('DOMContentLoaded', async function () {
     });
 
     document.addEventListener('visibilitychange', async function () {
-        let vs = document.visibilityState
+        var vs = document.visibilityState
         console.log('visibilitychange:', vs);
         try {
             if (vs === 'hidden') {
@@ -261,13 +262,13 @@ document.addEventListener('DOMContentLoaded', async function () {
 
 
     /* Map objects used for various keyname lookups */
-    let airportNameKeymap = new Map();
-    let tafFieldKeymap = new Map();
-    let metarFieldKeymap = new Map();
-    let weatherAcronymKeymap = new Map();
-    let icingCodeKeymap = new Map();
-    let turbulenceCodeKeymap = new Map();
-    let skyConditionKeymap = new Map();
+    var airportNameKeymap = new Map();
+    var tafFieldKeymap = new Map();
+    var metarFieldKeymap = new Map();
+    var weatherAcronymKeymap = new Map();
+    var icingCodeKeymap = new Map();
+    var turbulenceCodeKeymap = new Map();
+    var skyConditionKeymap = new Map();
     
     /*******keymap loading ******/
     loadTafFieldKeymap();
@@ -284,47 +285,6 @@ document.addEventListener('DOMContentLoaded', async function () {
         autoPanAnimation: { duration: 500 }
     });
 
-    var wsclient = {};
-    const startListening = () => {
-        const URL_WEBSOCKET = `ws://${URL_LOCATION}:${appsettings.wsport}`;
-        wsclient = new WebSocket(URL_WEBSOCKET);
-        wsclient.onmessage = async (evt) => {
-            const message = JSON.parse(evt.data);
-            const mtype = message.Type;
-            const stationInfo = await attachAirportInfo(message.Location);
-            const parsed = parseWeatherMessage(message, stationInfo);
-            
-            switch (mtype) {
-                case "METAR", "SPECI":
-                    processMetar(parsed);
-                    break;
-                case "TAF":
-                    processTaf(parsed);
-                    break;
-                case "PIREP":
-                    processPirep(parsed);
-                    break;
-            }
-        }
-
-        wsclient.onerror = function(evt){
-            console.log("Websocket ERROR: " + evt.data);
-        }
-        
-        wsclient.onopen = function(evt) {
-            console.log("Websocket CONNECTED.");
-        }
-        
-        wsclient.onclose = function(evt) {
-            console.log("Websocket CLOSED.");
-        }
-    }
-
-    await startListening();
-
-    /**
-     * The scale of miles shown on lower left corner of map
-     */
     const scaleLine = new ScaleLine({
         units: 'imperial',
         bar: true,
@@ -346,7 +306,7 @@ document.addEventListener('DOMContentLoaded', async function () {
     });
     map.addOverlay(popupoverlay);
 
-    let osmTileLayer = new TileLayer({
+    var osmTileLayer = new TileLayer({
         source: new OSM({
             onTileLoadError: function(event) {} // Suppress annoying console 404 errors
         }),
@@ -396,6 +356,66 @@ document.addEventListener('DOMContentLoaded', async function () {
             airportRadiusSelector.style.display = 'none';
         }
     })
+    var wsclient = {};
+    const metarcountries = new Set(appsettings.metarcountries);
+    const startListening = () => {
+        const URL_WEBSOCKET = `ws://${URL_LOCATION}:${appsettings.wsport}`;
+        wsclient = new WebSocket(URL_WEBSOCKET);
+        wsclient.onmessage = async (evt) => {
+            const message = JSON.parse(evt.data);
+            const source = message.source;
+            const mtype = message.Type;
+            const localtimercvd = message.LocalTimeReceived;
+            const response = message.Data.response;
+            const data = response.data;
+            if (mtype === "METARS" || mtype === "TAFS" || mtype === "PIREPS") {
+                switch (mtype) {
+                    case "METARS":
+                        processMetars(data, localtimercvd);
+                        //console.log(data);
+                        break;
+                    case "TAFS":
+                        processTafs(data, localtimercvd);
+                        //console.log(data);
+                        break;
+                    case "PIREPS":
+                        processPireps(data, localtimercvd);
+                        //console.log(data);
+                        break;
+
+                }
+            }
+            else {
+                const stationInfo = await attachAirportInfo(message.Location);
+                const parsed = parseWeatherMessage(message, stationInfo);
+                switch (mtype) {
+                    case "METAR", "SPECI":
+                        processMetar(parsed);
+                        break;
+                    case "TAF":
+                        processTaf(parsed);
+                        break;
+                    case "PIREP":
+                        processPirep(parsed);
+                        break;
+                }
+            }
+        }
+
+        wsclient.onerror = function(evt){
+            console.log("Websocket ERROR: " + evt.data);
+        }
+        
+        wsclient.onopen = function(evt) {
+            console.log("Websocket CONNECTED.");
+        }
+        
+        wsclient.onclose = function(evt) {
+            console.log("Websocket CLOSED.");
+        }
+    }
+
+    await startListening();
     
     async function loadTileDatabases() {
         try {
@@ -403,23 +423,23 @@ document.addEventListener('DOMContentLoaded', async function () {
             const response = await fetch('/tiles/tilesets');
             const dblist = await response.json();
 
-            let extent = transformExtent(viewextent, 'EPSG:4326', 'EPSG:3857');
+            var extent = transformExtent(viewextent, 'EPSG:4326', 'EPSG:3857');
 
             if (dblist) {
                 const entries = Object.entries(dblist).reverse();
                 for (const [dbname, metadata] of entries) {
                     
-                    let zOrder = 10;
+                    var zOrder = 10;
                     if (dbname === "terminal") {
                         zOrder = 12;
                     }
 
-                    let title = metadata.description ? metadata.description.replace(" Chart", "") : dbname;
+                    var title = metadata.description ? metadata.description.replace(" Chart", "") : dbname;
                     if (title === "osm.mbtiles") title = "OSM Offline";
-                    //let layertype = metadata.type === "baselayer" ? "base" : metadata.type;
-                    let layertype = ""; //metadata.type === "baselayer" ? "base" : metadata.type;
+                    //var layertype = metadata.type === "baselayer" ? "base" : metadata.type;
+                    var layertype = ""; //metadata.type === "baselayer" ? "base" : metadata.type;
 
-                    let dburl = URL_GET_TILE.replace("{dbname}", dbname);
+                    var dburl = URL_GET_TILE.replace("{dbname}", dbname);
                     var layer = new TileLayer({
                         source: new XYZ({
                             onTileLoadError: function(event) {}, // Suppress annoying console 404 errors
@@ -467,8 +487,8 @@ document.addEventListener('DOMContentLoaded', async function () {
 
     // Airport Radius Selector functionality
     const radiusSelector = document.getElementById('airport-radius-selector');
-    let currentDoubleClickLocation = null;
-    let selectedRadius = 50; // Default radius in miles
+    var currentDoubleClickLocation = null;
+    var selectedRadius = 50; // Default radius in miles
 
     // Function to clear airport features
     function clearAirportFeatures() {
@@ -517,22 +537,22 @@ document.addEventListener('DOMContentLoaded', async function () {
      * @param {jsonobj} airport JSON object 
      */
     function processAirports(jsonobj) {
-        let usastates = new Map();
-        let isoregions = new Map();
+        var usastates = new Map();
+        var isoregions = new Map();
         try {
-            for (let i=0; i< jsonobj.airports.length; i++) {
-                let airport = jsonobj.airports[i];
-                let lon = airport.lon;
-                let lat = airport.lat;
-                let isoregion = airport.isoregion;
-                let country = airport.country;
+            for (var i=0; i< jsonobj.airports.length; i++) {
+                var airport = jsonobj.airports[i];
+                var lon = airport.lon;
+                var lat = airport.lat;
+                var isoregion = airport.isoregion;
+                var country = airport.country;
                 if (isoregion.search("US-") > -1) { 
                     usastates.set(country, country);
                 } 
                 else {
                     isoregions.set(country, country);
                 }
-                let airportFeature = new Feature({
+                var airportFeature = new Feature({
                     ident: airport.ident,
                     type: airport.type,
                     datatype: "airport",
@@ -562,7 +582,7 @@ document.addEventListener('DOMContentLoaded', async function () {
                 yield* [...this.entries()].sort((a, b) => a[1] - b[1]);
             }
             usastates.forEach((country, isoregion) => {
-                let option = document.createElement("option");
+                var option = document.createElement("option");
                 option.value = isoregion;
                 option.text = country;
                 regionselect.appendChild(option);
@@ -572,7 +592,7 @@ document.addEventListener('DOMContentLoaded', async function () {
                 yield* [...this.entries()].sort((a, b) => a[1] - b[1]);
             }
             isoregions.forEach((country, isoregion) => { 
-                let option = document.createElement("option");
+                var option = document.createElement("option");
                 option.value = isoregion;
                 option.text = country;
                 regionselect.appendChild(option);
@@ -594,16 +614,16 @@ document.addEventListener('DOMContentLoaded', async function () {
             const latitude = airport.latitude_deg || airport.lat;
             const name = airport.name || airport.station_name || airport.ident;
             const ident = airport.ident || airport.id;
-            let fillColor;
-            let airportSvg;
-            let skipFeature = false;
+            var fillColor;
+            var airportSvg;
+            var skipFeature = false;
 
             if (!longitude || !latitude) {
                 console.warn('Airport missing coordinates:', airport);
                 return null;
             }
             
-            let feature = new Feature({
+            const feature = new Feature({
                 ident: ident,
                 datatype: "airport",
                 name: name,  // Use 'name' instead of 'station_name' for popup compatibility
@@ -712,7 +732,7 @@ document.addEventListener('DOMContentLoaded', async function () {
         
         // Only search for airports if a radius is selected (not 0/clear)
         if (selectedRadius > 0 && currentDoubleClickLocation) {
-            let lonlat = [currentDoubleClickLocation.lon, currentDoubleClickLocation.lat];
+            var lonlat = [currentDoubleClickLocation.lon, currentDoubleClickLocation.lat];
             console.log('Searching for airports within', selectedRadius, 'miles of', lonlat);
             Promise.resolve(showAirportsInRadius(lonlat[1], lonlat[0], selectedRadius));
         }
@@ -728,7 +748,7 @@ document.addEventListener('DOMContentLoaded', async function () {
      * Event to handle scaling of feature images
      */
     map.on('moveend', function (e) {
-        let newZoom = map.getView().getZoom();
+        var newZoom = map.getView().getZoom();
         if (currentZoom != newZoom) {
             resizeDots(newZoom);
             currentZoom = newZoom;
@@ -740,15 +760,15 @@ document.addEventListener('DOMContentLoaded', async function () {
      * Event to view Metar/TAF popup & closure
      */
     map.on('click', (evt) => {
-        let features = [];
-        let htol = isMobile ? appsettings.smallScreenHitTolerance : 1;
+        var features = [];
+        var htol = isMobile ? appsettings.smallScreenHitTolerance : 1;
         map.forEachFeatureAtPixel(evt.pixel, (feature) => {
             if (feature) {
                 features.push(feature);
             }
         }, {hitTolerance: htol});
 
-        let handled = false;
+        var handled = false;
         // Prioritize METAR, then TAF, then others
         const metarFeature = features.find(f => f.get('datatype') === 'metar');
         if (metarFeature) {
@@ -821,17 +841,17 @@ document.addEventListener('DOMContentLoaded', async function () {
      * @param {feature} Feature: the metar feature the user clicked on 
      */
     function displayMetarPopup(feature) {
-        let metar = feature.get("data");
-        let rawmetar = metar.raw_text;
-        let ident = metar.station_id;
-        let svg = feature.get("svgimage");
-        let cat = metar.flight_category;
+        var metar = feature.get("data");
+        var rawmetar = metar.raw_text;
+        var ident = metar.station_id;
+        var svg = feature.get("svgimage");
+        var cat = metar.flight_category;
 
         if (cat == undefined || cat == "undefined") {
             cat = "VFR";
         }
 
-        let time = (function () {
+        var time = (function () {
             if (metar.observation_time) {
                 return metar.observation_time;
             }
@@ -843,37 +863,36 @@ document.addEventListener('DOMContentLoaded', async function () {
             }
         })();
 
-
-        let tempC = metar.temp_c;
-        let dewpC = metar.dewpoint_c;
-        let temp = convertCtoF(metar.temp_c);
-        let dewp = convertCtoF(metar.dewpoint_c);
-        let windir = metar.wind_dir_degrees;
-        let winspd = metar.wind_speed_kt + "";
-        let wingst = metar.wind_gust_kt ? metar.wind_gust_kt + "" : "";
-        let altim = getAltimeterSetting(metar.altim_in_hg);
-        let vis = getDistanceUnits(metar.visibility_statute_mi);
-        let wxcode = metar.wx_string !== undefined ? decodeWxDescriptions(metar.wx_string) : "";
-        let taflabelcssClass = "taflabel"
-        let skycondition = metar.sky_condition;
-        let skyconditions;
-        let icingconditions;
+        var tempC = metar.temp_c;
+        var dewpC = metar.dewpoint_c;
+        var temp = convertCtoF(metar.temp_c);
+        var dewp = convertCtoF(metar.dewpoint_c);
+        var windir = metar.wind_dir_degrees;
+        var winspd = metar.wind_speed_kt + "";
+        var wingst = metar.wind_gust_kt ? metar.wind_gust_kt + "" : "";
+        var altim = getAltimeterSetting(metar.altim_in_hg);
+        var vis = getDistanceUnits(metar.visibility_statute_mi);
+        var wxcode = metar.wx_string !== undefined ? decodeWxDescriptions(metar.wx_string) : "";
+        var taflabelcssClass = "taflabel"
+        var skycondition = metar.sky_condition;
+        var skyconditions;
+        var icingconditions;
         if (skycondition !== undefined) {
             skyconditions = decodeSkyCondition(skycondition, taflabelcssClass);
         }
-        let icingcondition = metar.icing_condition;
+        var icingcondition = metar.icing_condition;
         if (icingcondition !== undefined) {
             icingconditions = decodeIcingOrTurbulenceCondition(icingcondition, taflabelCssClass);
         }
 
-        let btncolors = getCategoryColors(cat);
-        let bgcolor = btncolors.bgcolor;
-        let fgcolor = btncolors.fgcolor;
-        let css = `<span class="metarheader" style="background-color:${bgcolor}; color:${fgcolor}";>`;
+        var btncolors = getCategoryColors(cat);
+        var bgcolor = btncolors.bgcolor;
+        var fgcolor = btncolors.fgcolor;
+        var css = `<span class="metarheader" style="background-color:${bgcolor}; color:${fgcolor}";>`;
 
         if (ident != "undefined") {
-            let name = feature.get('station_name');
-            let html = `<div class="featurepopup" id="featurepopup">`;
+            var name = feature.get('station_name');
+            var html = `<div class="featurepopup" id="featurepopup">`;
             html += `${css}${name}<br>${ident} - ${cat}</span><br>`;
             html += `<div class="metar-popup-body">`; // beginning of metar-popup-body
             html += `Time:&nbsp<b>${time}</b><br>`;
@@ -904,15 +923,15 @@ document.addEventListener('DOMContentLoaded', async function () {
      * @param {feature} Feature: the taf feature the user clicked on
      */
     function displayTafPopup(feature) {
-        let taf = feature.get("data");
-        let id = feature.get("ident");
-        let rawtaf = taf.raw_text;
-        let btncolors = getCategoryColors(taf.flight_category);
-        let bgcolor = btncolors.bgcolor;
-        let fgcolor = btncolors.fgcolor;
-        let forecast = taf.forecast;
+        var taf = feature.get("data");
+        var id = feature.get("ident");
+        var rawtaf = taf.raw_text;
+        var btncolors = getCategoryColors(taf.flight_category);
+        var bgcolor = btncolors.bgcolor;
+        var fgcolor = btncolors.fgcolor;
+        var forecast = taf.forecast;
 
-        let outerhtml = `<div style="display:block;">` +
+        var outerhtml = `<div style="display:block;">` +
             `<span class="taftitlelabel" style="background-color:${bgcolor}; color:${fgcolor};">Terminal Area Forecast - ${id}</span>` +
             `<div class="taf-popup-content">` +
             `<div class="taf">` +
@@ -925,31 +944,31 @@ document.addEventListener('DOMContentLoaded', async function () {
             `</code></pre>` +
             `</div>`;
 
-        let html = "<div>"; // beginning of forecast div
+        var html = "<div>"; // beginning of forecast div
 
         for (const item in forecast) {
-            let value = forecast[item];
+            var value = forecast[item];
             if (typeof (value) === 'object') {
                 for (const subitem in value) {
-                    let subvalue = value[subitem];
-                    let fcv = parseForecastField(subitem, subvalue);
+                    var subvalue = value[subitem];
+                    var fcv = parseForecastField(subitem, subvalue);
                     if (fcv) html += fcv;
                 }
                 //html += "</p><hr>";
             }
             else {
-                let pff = parseForecastField(item, value);
+                var pff = parseForecastField(item, value);
                 if (pff) html += pff;
             }
         }
 
-        let temphtml = outerhtml.replace("###", html) + `</p></div>`; // end of forecast div
-        let footerhtml = `<div class="taf-popup-footer">`; // beginning of footer div
+        var temphtml = outerhtml.replace("###", html) + `</p></div>`; // end of forecast div
+        var footerhtml = `<div class="taf-popup-footer">`; // beginning of footer div
         footerhtml += `<button class="custom-popup-closer" onclick="closePopup()" style="background:${bgcolor}; color:${fgcolor};">Close</button>`;
         footerhtml += `<textarea id="rawdata" class="rawdata">${rawtaf}</textarea><br>`;
         footerhtml += `</div>`;  // end of footer div
         footerhtml += `</div>`; // end of taf-popup-container div
-        let innerhtml = temphtml + footerhtml;
+        var innerhtml = temphtml + footerhtml;
         popupcontent.innerHTML = innerhtml;
     }
 
@@ -958,9 +977,9 @@ document.addEventListener('DOMContentLoaded', async function () {
      * @param {object} feature: the pirep the user clicked on
      */
     function displayPirepPopup(feature) {
-        let pirep = feature.get("data");
-        let rawpirep = pirep.get("raw_text");
-        let outerhtml = `<div class="taftitle">` +
+        var pirep = feature.get("data");
+        var rawpirep = pirep.get("raw_text");
+        var outerhtml = `<div class="taftitle">` +
             `<span class="taftitlelabel">${pirep.report_type} FROM AIRCRAFT: ${pirep.aircraft_ref}</span><p></p>` +
             `</div>` +
             `<div class="taf">` +
@@ -974,12 +993,12 @@ document.addEventListener('DOMContentLoaded', async function () {
             `</div>` +
             `<br><br>`;
 
-        let html = "<div>";
-        let pireplabel = `<span class="pirepitem">`
-        let thistime = "";
+        var html = "<div>";
+        var pireplabel = `<span class="pirepitem">`
+        var thistime = "";
         for (const pirepkey in pirep) {
-            let pirepvalue = pirep[pirepkey];
-            let fieldname = getFieldDescription(pirepkey);
+            var pirepvalue = pirep[pirepkey];
+            var fieldname = getFieldDescription(pirepkey);
             switch (pirepkey) {
                 case "receipt_time":
                     thistime = pirepvalue;
@@ -1027,15 +1046,15 @@ document.addEventListener('DOMContentLoaded', async function () {
                     html += `<span class="pirepskyheader">Weather</span><br>`;
                     break;
                 case "altim_in_hg":
-                    let altimvalue = getInchesOfMercury(pirepvalue);
+                    var altimvalue = getInchesOfMercury(pirepvalue);
                     html += `<span class="pirepitem">${fieldname}: <b>${altimvalue}</b></span><br>`;
                     break;
                 case "wx_string":
-                    let lineval = decodeWxDescriptions(pirepvalue);
+                    var lineval = decodeWxDescriptions(pirepvalue);
                     html += `<span class="pirepitem">${fieldname}: <b>${lineval}</b></span><br>`;
                     break;
                 case "change_indicator":
-                    let change = getSkyConditionDescription(pirepvalue);
+                    var change = getSkyConditionDescription(pirepvalue);
                     html += `<span class="pirepitem">${fieldname}: <b>${change}</b></span><br>`;
                     break;
                 case "pirep_type":
@@ -1049,7 +1068,7 @@ document.addEventListener('DOMContentLoaded', async function () {
         }
         html += `<button class="custom-popup-closer" onclick="closePopup()" style="background:${bgcolor}; color:${fgcolor};">close</button>`
         html += `<textarea id="rawdata" class="rawdata">${rawpirep}</textarea><br>`;
-        let innerhtml = outerhtml.replace("###", html);
+        var innerhtml = outerhtml.replace("###", html);
         popupcontent.innerHTML = innerhtml;
     }
 
@@ -1102,7 +1121,7 @@ document.addEventListener('DOMContentLoaded', async function () {
         const name = airport.name;
         const type = airport.type;
         const elevation = airport.elevation_ft;
-        let headerBackgroundColor, headerTextColor;
+        var headerBackgroundColor, headerTextColor;
 
         // Get full airport data with frequencies and runways
         const fullAirportData = airport.fullData || airport;
@@ -1141,7 +1160,7 @@ document.addEventListener('DOMContentLoaded', async function () {
             headerTextColor = 'white';
         }
         
-        let html = `<div class="featurepopup" id="featurepopup">`;
+        var html = `<div class="featurepopup" id="featurepopup">`;
         html += `<span class="airportheader" style="background-color:${headerBackgroundColor}; color:${headerTextColor}; border: 1px solid black;">`;
         html += `${name}<br>${ident} - ${type.replace('_', ' ').toUpperCase()}</span><br>`;
         html += `<div class="airport-popup-body">`;
@@ -1213,15 +1232,15 @@ document.addEventListener('DOMContentLoaded', async function () {
      * @returns 
      */
     function parseForecastField(rawfieldname, fieldvalue) {
-        let html = "";
-        let fieldname = tafFieldKeymap.get(rawfieldname);
+        var html = "";
+        var fieldname = tafFieldKeymap.get(rawfieldname);
 
         if (fieldname && rawfieldname) {
-            let formattedvalue = null;
+            var formattedvalue = null;
             switch (rawfieldname) {
                 case "fcst_time_from":
-                    let thistime = fieldvalue;
-                    if (mapsettingsuselocaltime) {
+                    var thistime = fieldvalue;
+                    if (appsettings.uselocaltime) {
                         thistime = getLocalTime(fieldvalue);
                     }
                     html = `<span class="fcstlabel"><b>${thistime}</b></span>`;
@@ -1231,7 +1250,7 @@ document.addEventListener('DOMContentLoaded', async function () {
                     //html = `<span class="fcstlabel">${formattedvalue}</span><br>`;
                     break;
                 case "change_indicator":
-                    let changevalue = getWeatherAcronymDescription(fieldvalue);
+                    var changevalue = getWeatherAcronymDescription(fieldvalue);
                     if (changevalue) {
                         html = `<span class="taflabel">${fieldname}: <b>${changevalue}</b></span><br>`;
                     }
@@ -1290,15 +1309,15 @@ document.addEventListener('DOMContentLoaded', async function () {
      * @returns html string 
      */
     function decodeSkyCondition(skycondition) {
-        let html = "";
+        var html = "";
         if (skycondition) {
             try {
-                let values = Object.values(skycondition);
+                var values = Object.values(skycondition);
                 for (const x in values) {
-                    let condition = skycondition[x];
+                    var condition = skycondition[x];
                     if (condition) {
-                        let fieldname = "";
-                        let fieldvalue = "";
+                        var fieldname = "";
+                        var fieldvalue = "";
                         if (typeof (condition) === "object") {
                             for (const index in condition) {
                                 fieldname = getFieldDescription(index);
@@ -1331,7 +1350,7 @@ document.addEventListener('DOMContentLoaded', async function () {
      * @returns 
      */
     function getInchesOfMercury(altimeter) {
-        let inhg = parseFloat(altimeter);
+        var inhg = parseFloat(altimeter);
         return inhg.toFixed(2);
     }
 
@@ -1341,12 +1360,12 @@ document.addEventListener('DOMContentLoaded', async function () {
      * @returns html string
      */
     function decodeIcingOrTurbulenceCondition(condition) {
-        let html = "";
+        var html = "";
         for (const item in condition) {
-            let value = condition[item];
+            var value = condition[item];
             if (typeof (value) === 'object') {
                 for (const subitem in value) {
-                    let subvalue = value[subitem];
+                    var subvalue = value[subitem];
                     html += parseConditionField(subitem, subvalue);
                 }
                 html += "<br><hr>";
@@ -1366,9 +1385,9 @@ document.addEventListener('DOMContentLoaded', async function () {
      * @returns html string
      */
     function parseConditionField(rawfieldname, fieldvalue) {
-        let fieldname = getFieldDescription(rawfieldname);
-        let image = "";
-        let html = "";
+        var fieldname = getFieldDescription(rawfieldname);
+        var image = "";
+        var html = "";
         switch (rawfieldname) {
             case "turbulence_type":
             case "icing_type":
@@ -1401,7 +1420,7 @@ document.addEventListener('DOMContentLoaded', async function () {
      * @returns html image string
      */
     function getConditionImage(conditiontype, conditionvalue) {
-        let image = "";
+        var image = "";
         if (conditiontype === "icing_intensity") {
             switch (conditionvalue) {
                 case "NEGclr":
@@ -1536,10 +1555,10 @@ document.addEventListener('DOMContentLoaded', async function () {
         if (!taf || typeof taf.longitude !== 'number' || typeof taf.latitude !== 'number') {
             return;
         }
-        let catcolors = getCategoryColors(taf.flight_category);
-        let bgcolor = catcolors.bgcolor;
-        let fgcolor = catcolors.fgcolor;
-        let svgimg = `<svg xmlns="http://www.w3.org/2000/svg" width="126.713" height="89.273" viewBox="0 0 33.526 23.62">
+        var catcolors = getCategoryColors(taf.flight_category);
+        var bgcolor = catcolors.bgcolor;
+        var fgcolor = catcolors.fgcolor;
+        var svgimg = `<svg xmlns="http://www.w3.org/2000/svg" width="126.713" height="89.273" viewBox="0 0 33.526 23.62">
         <g transform="translate(-.143 -.036)">
         <path d="M32.995 11.846A16.095 11.149 0 0 1 16.96 22.995 16.095 11.149 0 0 1 .805 11.928 16.095 11.149 0 0 1 16.72.698a16.095 11.149 0 0 1 16.272 10.983l-16.093.165z" 
         style="fill:${bgcolor};fill-opacity:1;stroke:#000;stroke-width:1.32292;stroke-miterlimit:4;stroke-dasharray:none;stroke-opacity:1"/>
@@ -1547,7 +1566,7 @@ document.addEventListener('DOMContentLoaded', async function () {
         <text xml:space="preserve" x="4.995" y="17.051" style="font-style:normal;font-variant:normal;
         font-weight:700;font-stretch:normal;font-size:14.2894px;line-height:1.25;font-family:sans-serif;
         -inkscape-font-specification:&quot;sans-serif, Bold&quot;;font-variant-ligatures:normal;
-        font-variant-caps:normal;font-variant-numeric:normal;font-variant-east-asian:normal;letter-spacing:0;
+        font-variant-caps:normal;font-variant-numeric:normal;font-variant-east-asian:normal;varter-spacing:0;
         word-spacing:0;fill:#ff0;fill-opacity:1;stroke:none;stroke-width:.357233" transform="scale(.9667 1.03444)">
         <tspan x="4.995" y="17.051" style="font-style:normal;font-variant:normal;font-weight:700;font-stretch:normal;
         font-size:14.2894px;font-family:sans-serif;-inkscape-font-specification:&quot;sans-serif, Bold&quot;;font-variant-ligatures:normal;
@@ -1555,7 +1574,7 @@ document.addEventListener('DOMContentLoaded', async function () {
         fill-opacity:1;stroke-width:.357233">TAF</tspan></text></g></svg>`
         
         try {
-            let tafFeature = new Feature({
+            var tafFeature = new Feature({
                 ident: taf.station_id,
                 data: taf,
                 datatype: "taf",
@@ -1600,14 +1619,14 @@ document.addEventListener('DOMContentLoaded', async function () {
         }
         try {
             // generate a "pseudo-heading" to use if wind dir is absent
-            let id = pirep.aircraft_ref ? pirep.aircraft_ref : pirep.station_id;
-            let geometry = new Point(fromLonLat([pirep.longitude, pirep.latitude]));
-            let heading = Math.random() * Math.PI * 2;
+            var id = pirep.aircraft_ref ? pirep.aircraft_ref : pirep.station_id;
+            var geometry = new Point(fromLonLat([pirep.longitude, pirep.latitude]));
+            var heading = Math.random() * Math.PI * 2;
          
             if (pirep.wind_dir_degrees) {
                 heading = (pirep.wind_dir_degrees * 0.0174533);
             }
-            let pirepFeature = new Feature({
+            var pirepFeature = new Feature({
                 ident: id,
                 data: pirep,
                 datatype: "pirep",
@@ -1628,18 +1647,67 @@ document.addEventListener('DOMContentLoaded', async function () {
     }
 
     /**
+     * Place metar features on the map. color-coded to the conditions
+     * @param {object} metarsobject: JSON object with LOTS of metars
+     */
+    async function processMetars(metarsobject, timercvd) {
+        
+        try {
+            metarsobject.METAR.forEach(async (metar) => {
+                const weatherMessage = { Type: "METAR", Location:metar.station_id, Data: metar, LocalTimeReceived: timercvd };
+                //const stationInfo = await attachAirportInfo(metar.station_id);
+                const parsed = parseWeatherMessage(weatherMessage); //, stationInfo);
+                processMetar(parsed);
+            });
+        }
+        catch(error) {
+            console.log(error.message);
+        }
+    }
+
+    /**
+     * Place taf feature objects on the map
+     * @param {object} tafsobject: JSON object with LOTS of tafs 
+     */
+    async function processTafs(tafsobject) {
+        try {
+            tafsobject.TAF.forEach(async (taf) => {
+                await processTaf(taf)
+            });
+        }
+        catch (error){
+            console.log(error.message);
+        }
+    }
+
+    /**
+     * Place pirep features on the map
+     * @param {object} pirepsobject: JSON object with LOTS of pireps 
+     */
+    async function processPireps(pirepsobject) {
+        try {
+            pirepsobject.AVIATIONREPORT.forEach(async (pirep) => {
+                await processPirep(pirep);
+            });
+        }
+        catch (error){
+            console.log(error.message);
+        }
+    }
+
+    /**
      * This routine adjusts feature "dot" image 
      * sizes, depending on current zoom level
      */
-    let resizing = false;
+    var resizing = false;
     function resizeDots(newzoom) {
         if (!resizing) {
             resizing = true;
             currentZoom = parseInt(newzoom.toFixed(0));
-            let newscale = getScaleSize();
-            let metarMarkers = metarVectorLayer.getSource().getFeatures();
-            for (let i = 0; i < metarMarkers.length; i++) {
-                let style = metarMarkers[i].getStyle();
+            var newscale = getScaleSize();
+            var metarMarkers = metarVectorLayer.getSource().getFeatures();
+            for (var i = 0; i < metarMarkers.length; i++) {
+                var style = metarMarkers[i].getStyle();
                 if (style && style.getImage && style.getImage()) {
                     style.getImage().setScale(newscale);
                     metarMarkers[i].setStyle(style); // update the feature's style
@@ -1650,7 +1718,7 @@ document.addEventListener('DOMContentLoaded', async function () {
     }
 
     function getScaleSize() {
-        let scale = 1;
+        var scale = 1;
         switch (true) {
             case currentZoom >= 0 && currentZoom < 1:
                 scale = .05;
@@ -1694,7 +1762,7 @@ document.addEventListener('DOMContentLoaded', async function () {
 
     // Airport-specific scaling function that maintains readability at all zoom levels
     function getAirportScaleSize() {
-        let scale = 1;
+        var scale = 1;
         switch (true) {
             case currentZoom >= 0 && currentZoom < 2:
                 scale = 0.8;  // Larger at very far zoom
@@ -1721,7 +1789,7 @@ document.addEventListener('DOMContentLoaded', async function () {
     /**
      * This allows a clicked feature to raise an event
      */
-    let select = null;
+    var select = null;
     function selectStyle(feature) {
         console.log(`FEATURE: ${feature}`);
         return selected;
@@ -1733,8 +1801,8 @@ document.addEventListener('DOMContentLoaded', async function () {
      * @returns statute miles, kilometers or nautical miles   
      */
     function getDistanceUnits(miles) {
-        let num = parseFloat(miles);
-        let label = "mi";
+        var num = parseFloat(miles);
+        var label = "mi";
         switch (distanceunit) {
             case DistanceUnits.kilometers:
                 num = miles * 1.609344;
@@ -1755,7 +1823,7 @@ document.addEventListener('DOMContentLoaded', async function () {
      */
     const convertCtoF = ((temp) => {
         if (temp == undefined) return "";
-        let num = (temp * 9 / 5 + 32);
+        var num = (temp * 9 / 5 + 32);
         if (num === NaN || num === undefined) return "";
         else return `${num.toFixed(1)} F°`;
     });
@@ -1778,8 +1846,8 @@ document.addEventListener('DOMContentLoaded', async function () {
      * @returns string: cleaned zulu date
      */
     function formatZuluDate(zuludate) {
-        let workstring = zuludate.split("T");
-        let zstring = workstring[1].slice(0, -1);
+        var workstring = zuludate.split("T");
+        var zstring = workstring[1].slice(0, -1);
         return `${workstring[0]} ${zstring} Z`;
     }
 
@@ -1789,21 +1857,21 @@ document.addEventListener('DOMContentLoaded', async function () {
      * @returns string: the translated date in standard or daylight time
      */
     function getLocalTime(zuludate) {
-        let date = new Date(zuludate);
-        let hours = date.getHours();
-        let minutes = date.getMinutes();
-        let ampm = hours >= 12 ? 'PM' : 'AM';
-        let month = date.getMonth() + 1;
-        let day = date.getDate();
-        let year = date.getFullYear();
-        let tzone = "";
+        var date = new Date(zuludate);
+        var hours = date.getHours();
+        var minutes = date.getMinutes();
+        var ampm = hours >= 12 ? 'PM' : 'AM';
+        var month = date.getMonth() + 1;
+        var day = date.getDate();
+        var year = date.getFullYear();
+        var tzone = "";
 
         hours = hours % 12;
         hours = hours ? hours : 12; // the hour '0' should be '12'
         minutes = minutes < 10 ? '0' + minutes : minutes;
 
-        let timex = date.toString().split("GMT");
-        let time = timex[1];
+        var timex = date.toString().split("GMT");
+        var time = timex[1];
 
         if (time.search("Eastern Standard") > -1) {
             tzone = "(EST)";
@@ -1851,7 +1919,7 @@ document.addEventListener('DOMContentLoaded', async function () {
      * @returns 
      */
     function getAltimeterSetting(altimeter) {
-        let dbl = parseFloat(altimeter);
+        var dbl = parseFloat(altimeter);
         return dbl.toFixed(2).toString();
     }
 
@@ -1861,7 +1929,7 @@ document.addEventListener('DOMContentLoaded', async function () {
      * @returns string, formatted name of the airport
      */
     function getFormattedAirportName(ident) {
-        let retvalue = airportNameKeymap.get(ident);
+        var retvalue = airportNameKeymap.get(ident);
         if (retvalue === undefined ||
             retvalue === "undefined" ||
             retvalue === "") {
@@ -1880,7 +1948,7 @@ document.addEventListener('DOMContentLoaded', async function () {
      * @returns string, readable description of fieldname 
      */
     function getFieldDescription(fieldname) {
-        let retvalue = fieldname;
+        var retvalue = fieldname;
         if (!Number.isInteger(fieldname)) {
             retvalue = tafFieldKeymap.get(fieldname);
             if (retvalue === undefined) {
@@ -1950,7 +2018,7 @@ document.addEventListener('DOMContentLoaded', async function () {
      * @returns string, readable description of fieldname 
      */
     function getMetarFieldDescription(fieldname) {
-        let retvalue = metarFieldKeymap.get(fieldname);
+        var retvalue = metarFieldKeymap.get(fieldname);
         if (retvalue === undefined || retvalue === "") {
             retvalue = replaceAll(fieldname, "_", " ");
         }
@@ -2002,7 +2070,7 @@ document.addEventListener('DOMContentLoaded', async function () {
      * @returns string, readable description of acronym 
      */
     function getWeatherAcronymDescription(acronym) {
-        let retvalue = weatherAcronymKeymap.get(acronym);
+        var retvalue = weatherAcronymKeymap.get(acronym);
         if (retvalue === undefined) retvalue = acronym;
         return retvalue;
     }
@@ -2062,9 +2130,9 @@ document.addEventListener('DOMContentLoaded', async function () {
         weatherAcronymKeymap.set("+SN", "Heavy snow");
         weatherAcronymKeymap.set("SG", "Snow grains");
         weatherAcronymKeymap.set("IC", "Ice crystals");
-        weatherAcronymKeymap.set("PE PL", "Ice pellets");
-        weatherAcronymKeymap.set("PE", "Ice pellets");
-        weatherAcronymKeymap.set("PL", "Ice pellets");
+        weatherAcronymKeymap.set("PE PL", "Ice pelvars");
+        weatherAcronymKeymap.set("PE", "Ice pelvars");
+        weatherAcronymKeymap.set("PL", "Ice pelvars");
         weatherAcronymKeymap.set("-SHRA", "Light rain showers");
         weatherAcronymKeymap.set("SHRA", "Moderate rain showers");
         weatherAcronymKeymap.set("+SHRA", "Heavy rain showers");
@@ -2089,7 +2157,7 @@ document.addEventListener('DOMContentLoaded', async function () {
      * @returns acronym if found, otherwise just returns key
      */
     function getSkyConditionDescription(acronym) {
-        let retvalue = skyConditionKeymap.get(acronym);
+        var retvalue = skyConditionKeymap.get(acronym);
         if (retvalue === undefined || retvalue === null) {
             return acronym;
         }
@@ -2106,7 +2174,7 @@ document.addEventListener('DOMContentLoaded', async function () {
         skyConditionKeymap.set("PROB", "Probability");
         skyConditionKeymap.set("CB", "Cumulo-Nimbus");
         skyConditionKeymap.set("IMC", "Instrument meteorological conditions"),
-            skyConditionKeymap.set("IMPR", "Improving");
+        skyConditionKeymap.set("IMPR", "Improving");
         skyConditionKeymap.set("INC", "In Clouds");
         skyConditionKeymap.set("INS", "Inches");
         skyConditionKeymap.set("INTER", "Intermittent");
@@ -2276,11 +2344,11 @@ document.addEventListener('DOMContentLoaded', async function () {
      * @returns string with any weather description(s)
      */
     function decodeWxDescriptions(codevalue) {
-        let outstr = null;
-        let vals = codevalue.split(" ");
-        let wak = null;
+        var outstr = null;
+        var vals = codevalue.split(" ");
+        var wak = null;
 
-        for (let i = 0; i < vals.length; i++) {
+        for (var i = 0; i < vals.length; i++) {
             if (i === 0) {
                 wak = weatherAcronymKeymap.get(vals[i]);
                 wak ? outstr = wak : null;
@@ -2299,7 +2367,7 @@ document.addEventListener('DOMContentLoaded', async function () {
      * @returns string, readable description of code 
      */
     function getIcingCodeDescription(code) {
-        let retvalue = icingCodeKeymap.get(code);
+        var retvalue = icingCodeKeymap.get(code);
         if (retvalue === undefined) retvalue = code;
         return retvalue;
     }
@@ -2325,7 +2393,7 @@ document.addEventListener('DOMContentLoaded', async function () {
      * @returns string, readable description of code 
      */
     function getTurbulenceCodeDescription(code) {
-        let retvalue = turbulenceCodeKeymap.get(code);
+        var retvalue = turbulenceCodeKeymap.get(code);
         if (retvalue === undefined) retvalue = code;
         return retvalue;
     }
@@ -2372,7 +2440,7 @@ document.addEventListener('DOMContentLoaded', async function () {
     // Overcast
     var OVC = "<g id=\"ovc\">\n    <circle cx=\"250\" cy=\"250\" r=\"" + size + "\" class=\"ovc\"/>\n</g>";
     //Cloud abbreviation map
-    let CLOUDS = {
+    var CLOUDS = {
         NCD: { svg: CLR_CIRCLE, text: "no clouds", rank: 0 },
         SKC: { svg: CLR_CIRCLE, text: "sky clear", rank: 0 },
         CLR: { svg: CLR_CIRCLE, text: "no clouds under 12,000 ft", rank: 0 },
@@ -2575,7 +2643,7 @@ document.addEventListener('DOMContentLoaded', async function () {
     /**
      * Map of weather abbriviation to SVG data and Full text
      */
-    let WEATHER = {
+    const WEATHER = {
         "FU": { svg: FU_VA, text: "Smoke" },
         "VA": { svg: FU_VA, text: "Volcanic Ash" },
         "HZ": { svg: HZ, text: "Haze" },
@@ -2627,7 +2695,7 @@ document.addEventListener('DOMContentLoaded', async function () {
         "PE": { svg: PE_PL, text: "Ice Pellets" },
         "PL": { svg: PE_PL, text: "Ice Pellets" }
     };
-    let RECENT_WEATHER = {
+    const RECENT_WEATHER = {
         REBLSN: "Moderate/heavy blowing snow (visibility significantly reduced)reduced",
         REDS: "Dust Storm",
         REFC: "Funnel Cloud",
@@ -3052,8 +3120,8 @@ document.addEventListener('DOMContentLoaded', async function () {
      */
     function rawWeatherTextToWeatherPlot(weatherobject, metric) {
         var _a;
-        let rawMetar = weatherobject.raw_text;
-        let time = weatherobject.timestamp;
+        var rawMetar = weatherobject.raw_text;
+        var time = weatherobject.timestamp;
         var weatherItem = new WeatherProcessItem(rawMetar, weatherobject.station_id, time);
         var wx = weatherItem.weather.map(function (weather) { return weather.abbreviation; }).join("");
         //Metric converion
@@ -3180,9 +3248,9 @@ document.addEventListener('DOMContentLoaded', async function () {
      * @returns 
      */
     function getWindBarbSvg(width, height, metar) {
-        let catcolor = "";
-        let svg = "";
-        let thismetar = {
+        var catcolor = "";
+        var svg = "";
+        var thismetar = {
             wind_direction: metar.wind_dir_degrees,
             wind_speed: metar.wind_speed_kt,
             gust_speed: metar.gust_speed_kt,

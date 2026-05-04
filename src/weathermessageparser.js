@@ -12,20 +12,22 @@ import { attachAirportInfo } from './airportfunctions.js';
  */
 export async function parseWeatherMessage(weatherMessage, stationInfo) {
     
-    // if (weatherMessage.Type === "METAR" || weatherMessage.Type === "TAF") {
-    //     if (!stationInfo) {
-    //         stationInfo = await attachAirportInfo(weatherMessage.Location);
-    //     }
-    // }
+    if (weatherMessage.Type === "METAR" || weatherMessage.Type === "TAF") {
+        if (!stationInfo) {
+            stationInfo = await attachAirportInfo(weatherMessage.Location);
+        }
+    }
     
     // Make sure stratuxObject.Location is a string airport code, e.g. "KORD"
-    const cleanedData = weatherMessage.Data.replace(/\s*\n\s*/g, ' ').trim();
-    const forecast = await parseWeatherForecast(weatherMessage.Data);
+    const cleanedData = weatherMessage.Data.raw_text.replace(/\s*\n\s*/g, ' ').trim();
+    const forecast = await parseWeatherForecast(weatherMessage.Data.raw_text);
     
     // Time handling
-    let timestamp = weatherMessage.Time;
-    let loc_time = weatherMessage.LocaltimeReceived.replace(/^0001-01-01/, '');
-
+    let timestamp = weatherMessage.Data.observation_time;
+    let loc_time = weatherMessage.LocaltimeReceived;
+    if (loc_time) {
+        loc_time = loc_time.replace(/^0001-01-01/, '');
+    }
 
     // Weather handling
     const weatherRaw = `${weatherMessage.Location} ${timestamp} ${cleanedData}`;
@@ -86,7 +88,6 @@ export async function parseWeatherMessage(weatherMessage, stationInfo) {
         elevation_m: stationInfo?.elevation_m ?? null,
         forecast: forecast,
     };
-    console.log(output);
     return output;
 }
 
