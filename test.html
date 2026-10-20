@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <link rel="stylesheet" href="./map.css">
+  <link rel="icon" type="image/png" href="/images/logo-android3.png">
+  <title>Stratux Map</title>
+</head>
+<body>
+    <div style="display:block;">
+        <span class="pireptitlelabel" style="background-color:#98294c; color:#ffffff;">PIREP FROM AIRCRAFT: E75S</span>
+        <div class="popup-content">
+            <div class="pirep">
+                <div class="table-scroll-container">
+                    <table class="pireptable" id="pireptable">
+                        <tr class="table-row-data"><td style="width:100%;">Receipt Time: <td style="width:100%;"><b>10-20-2026 11:55 AM CDT</b></td></tr>
+                        <tr class="table-row-data"><td style="width:100%;">Observation Time: <td style="width:100%;"><b>10-20-2026 11:45 AM CDT</b></td></tr>
+                        <tr class="table-row-data"><td style="width:100%;">Latitude: <td style="width:100%;"><b>41.3475°</b></td></tr>
+                        <tr class="table-row-data"><td style="width:100%;">Longitude: <td style="width:100%;"><b>-87.5954°</b></td></tr>
+                        <tr class="table-row-data"><td style="width:100%;">Altitude (FT MSL): <td style="width:100%;"><b>18000</b></td></tr>
+                        <tr class="skyheader"><td style="display:block;width:99%;text-align:center;border:1px solid #000000;"><td style="width:100%;">Turbulence Condition</td></tr>
+                        <tr class="table-row-data"><td style="width:100%;">Intensity: <td style="width:100%;"><b>NEGATIVE</b></td></tr>
+                    </table>
+                </div>
+                <div class="popup-footer">
+                    <div class="popup-button-row" style="display: flex; flex-direction: row; justify-content: flex-end; width: 100%;">
+                        <button class="custom-popup-closer" onclick="closePopup()" style="background:#98294c; color:#ffffff;">Close</button>
+                    </div>
+                    <textarea id="rawdata" class="rawdata">IKK UA /OV EON060010/TM 1645/FL180/TP E75S/TB NEG/RM DURC</textarea><br>
+                </div>
+            </div>
+        </div>
+    </div>
+</body>

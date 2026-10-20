@@ -437,9 +437,13 @@ hr {
     font-size: smaller;
     width: 100%;
 }
-.taf-popup-content {
-    overflow-y: auto;
-    flex: 1 1 auto;
+.popup-content {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    box-sizing: border-box;
+    /* overflow-y: auto;
+    flex: 1 1 auto; */
     margin-bottom: 0;
     padding-bottom: 0;
 }
@@ -520,34 +524,16 @@ hr {
     font-size: smaller;
     /* width: 100%; */
 }
-.pirep-popup-content {
-    overflow: hidden;
-    flex: 1 1 auto;
-    margin-bottom: 0;
-    padding-bottom: 0;
-}
+
 .popup-footer {
-    /* flex: 0 0 auto; */
-    padding-top: 0px;    /* Small space above footer */
     margin-top: 0;       /* Remove extra margin */
     background: #fff;
     border-top: 1px solid #ccc;
     display: flex;
     flex-direction: column;
-    align-items: flex-end;
-    height: 110px;
-}
-.pirepskyheader {
-    background-color:lavender;
-    color:#000000;
-    font-family: B612;
-    /* font-style: italic; */
-    font-weight:bold;
-    font-size: medium;
-    display:inline-block;
-    overflow: hidden;
-    text-align:center;
-    width: 98%;
+    gap: 4px;
+    padding-top: 4px;
+    min-height: 110px;
 }
 .pireptable {
     overflow-x: hidden;
@@ -579,11 +565,10 @@ hr {
     font-size: medium;
     box-sizing:border-box;
     border-radius: 6px;
-    field-sizing: content; 
-    width: 99%; 
-    max-width: 99%;
-    height: auto;
-    resize: none;
+    width: 100%; 
+    min-height: 50px;
+    resize: vertical;
+    flex-grow: 1;
 }
 .custom-airport-info {
     font-family: B612;
