@@ -15,8 +15,7 @@ export async function saveMapState() {
         const now = Math.floor(Date.now() / 1000); // seconds since epoch
         const stateToSave = {
             ...stateCache,
-            messages: messagesArray,
-            timestamp: now
+            messages: messagesArray
         };
 
         await fetch('/savemapstate', {
@@ -41,23 +40,14 @@ export async function restoreMapState() {
         else {
             console.log("Restoring map state:", restoredState);
         }
-        const now = Math.floor(Date.now() / 1000);
-        const maxAgeMinutes = 10; // set your desired age limit here
-        let detail = {};
-        if (restoredState.timestamp && (now - restoredState.timestamp) <= maxAgeMinutes * 60) {
-            // State is recent, use all
-            detail = restoredState;
-        } else {
-            // State is too old, only restore position/zoom/rotation
-            detail = {
+        const detail = {
                 zoom: restoredState.zoom,
                 viewposition: restoredState.viewposition,
                 rotation: restoredState.rotation,
                 layervisibility: restoredState.layervisibility,
                 selectedRadius: restoredState.selectedRadius,
                 messages: []
-            };
-        }
+        };
         const replayEvent = new CustomEvent('stateReplay', { detail });
         window.dispatchEvent(replayEvent);
     } 

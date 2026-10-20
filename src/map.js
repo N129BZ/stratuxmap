@@ -26,7 +26,7 @@ import Overlay from 'ol/Overlay';
 import { defaults as defaultControls, ScaleLine } from 'ol/control';
 import LayerSwitcher from 'ol-layerswitcher';
 import { saveMapState, restoreMapState } from './mapstatemanager.js';
-import { getAirportsInRadius } from './airportfunctions.js';
+import { getAirportsInRadius, decodeRunwaySurface } from './airportfunctions.js';
 import { attachAirportInfo } from './airportfunctions.js';
 import { parseWeatherMessage } from './weathermessageparser.js';
 
@@ -80,11 +80,29 @@ if (parseInt(URL_PORT) > 0) {
 const URL_HOST_PROTOCOL = 'http://';
 const URL_SERVER = `${URL_HOST_PROTOCOL}${URL_HOST_BASE}`;
 const URL_GET_TILE = `${URL_SERVER}/tiles/{dbname}/{z}/{x}/{-y}`;
-const URL_GET_TAFS = `${URL_SERVER}/tafs`;
-const URL_GET_PIREPS = `${URL_SERVER}/pireps`;
 
+let appsettings = {
+    "wsport":  8550,
+    "startupzoom":  9,
+    "useOSMonlinemap":  true,
+    "debug":  false,
+    "uselocaltime":  true,
+    "distanceunit":  "sm",
+    "maxmetarcount":  800,
+    "animatedwxurl":  "https://mesonet.agron.iastate.edu/cgi-bin/wms/nexrad/n0r-t.cgi",
+    "addscurrentwxurl":  "https://aviationweather.gov/data/cache/###.cache.xml.gz",
+    "addscurrentwxurlcsv":  "https://aviationweather.gov/data/cache/###.cache.csv.gz",
+    "showattribution":  true,
+    "usemetricunits":  false,
+    "smallScreenHitTolerance": 40,
+    "swipeThreshold": 100,
+    "getHeliports": false,
+    "getClosedAirports": false,
+    "airportsFilter": "US",
+    "usemetricunits": false,
+    "wxupdateintervalmsec": 660000
+};
 
-var appsettings = {};
 (function loadAppSettings() {
     const request = new XMLHttpRequest();
     // The 'false' parameter makes it synchronous
@@ -99,11 +117,22 @@ var appsettings = {};
     }
 })();
 
-console.log(appsettings)
+// try {
+//     const response = await fetch('/appsettings');
+//     if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+//     // 1. Capture the exact raw text string from the network stream
+//     const rawTextData = await response.text();
+//     // 2. Log it out to inspect hidden characters, HTML tags, or trailing commas
+//     console.log("Raw payload from server:", rawTextData);
+//     // 3. Manually parse the validated string
+//     appsettings = JSON.parse(rawTextData);
+// } catch (error) {
+//     console.error("Parse Error Details:", error);
+// }
 
 let deg = 0;
 let alt = 0;
-let lng = 0;
+let lng = 0;    
 let lat = 0;
 let last_longitude = 0;
 let last_latitude = 0;
@@ -184,7 +213,8 @@ document.addEventListener('DOMContentLoaded', async function () {
     tplcontainer = document.getElementById('tplcontainer');
     popup = document.getElementById('popup');
     popupcontent = document.getElementById('popup-content');
-    airportRadiusSelector = document.getElementById('airport-radius-selector');
+    
+    let socket = null;
 
     document.getElementById('radius-header').textContent = `Airport Search Radius\nDouble-click on any location`;
     
@@ -232,26 +262,46 @@ document.addEventListener('DOMContentLoaded', async function () {
         finally {} 
     });
 
+    // Handle Back-Forward Cache (bfcache) Restoration
+    window.addEventListener('pageshow', async (event) => {
+        console.log(`pageshow triggered. Page restored from cache: ${event.persisted}`);
+        
+        // If event.persisted is true, the browser froze the page and killed the socket.
+        // We must force a reconnection.
+        if (event.persisted || !socket) {
+            await restoreMapState();
+            await startListening();;
+        }
+    });
+
+    // Handle Page Unload / Freezing into bfcache
+    window.addEventListener('pagehide', async (event) => {
+        console.log(`pagehide triggered. Entering cache: ${event.persisted}`);
+        // Cleanly close the connection before the page goes into memory sleep
+        stateCache.zoom = map.getView().getZoom();
+        stateCache.viewposition = map.getView().getCenter();
+        stateCache.rotation = map.getView().getRotation();
+        stateCache.selectedRadius = selectedRadius;
+        
+        stateCache.layervisibility = map.getLayers().getArray().map(layer => ({
+            title: layer.get('title'),
+            visible: typeof layer.getVisible === 'function' ? layer.getVisible() : undefined
+        }))
+        console.log("SAVING MAP STATE!")
+        await saveMapState();
+        await disconnectWebSocket();
+    });
+
+
     document.addEventListener('visibilitychange', async function () {
         let vs = document.visibilityState
         console.log('visibilitychange:', vs);
         try {
-            if (vs === 'hidden') {
-                stateCache.zoom = map.getView().getZoom();
-                stateCache.viewposition = map.getView().getCenter();
-                stateCache.rotation = map.getView().getRotation();
-                stateCache.selectedRadius = selectedRadius;
-                
-                stateCache.layervisibility = map.getLayers().getArray().map(layer => ({
-                    title: layer.get('title'),
-                    visible: typeof layer.getVisible === 'function' ? layer.getVisible() : undefined
-                }))
-                console.log("SAVING MAP STATE!")
-                await saveMapState();
+            if (vs === 'hidden') {               
+                disconnectWebSocket();
             }
             else if (vs === 'visible') {
-                console.log("Line 228: visibilitychange event, restoring map state.");
-                await restoreMapState();
+                console.log("visibilitychange event, restoring map state...");
             }
         }
         catch (error) {
@@ -259,8 +309,27 @@ document.addEventListener('DOMContentLoaded', async function () {
         }
     });
 
+    async function disconnectWebSocket() {
+        if (socket) {
+            console.log("Closing WebSocket cleanly...");
+            // Remove listeners first so .onclose doesn't fire an accidental auto-reconnect
+            socket.onclose = null; 
+            socket.close();
+            socket = null;
+        }
+        clearTimeout(reconnectTimeout);
+    }
+
+    async function scheduleReconnect() {
+        clearTimeout(reconnectTimeout);
+        reconnectTimeout = setTimeout(() => {
+            console.log("Scheduled WebSocket reconnect...")
+            startListening();
+        }, 5000); // 5-second retry delay (or use exponential backoff)
+    }
 
     /* Map objects used for various keyname lookups */
+    let reconnectTimeout = null;
     let airportNameKeymap = new Map();
     let tafFieldKeymap = new Map();
     let metarFieldKeymap = new Map();
@@ -284,39 +353,87 @@ document.addEventListener('DOMContentLoaded', async function () {
         autoPanAnimation: { duration: 500 }
     });
 
-    var wsclient = {};
-    const startListening = () => {
+    /***********************************
+     * WEBSOCKET LISTENER STARTS HERE
+     ***********************************/
+    async function startListening() {
+        // Prevent duplicate connections if one is already active or connecting
+        if (socket && (socket.readyState === WebSocket.OPEN || socket.readyState === WebSocket.CONNECTING)) {
+            console.log("WebSocket already open or connecting. Skipping.");
+            return;
+        }
         const URL_WEBSOCKET = `ws://${URL_LOCATION}:${appsettings.wsport}`;
-        wsclient = new WebSocket(URL_WEBSOCKET);
-        wsclient.onmessage = async (evt) => {
+        socket = new WebSocket(URL_WEBSOCKET);
+        socket.onmessage = async (evt) => {
             const message = JSON.parse(evt.data);
-            const mtype = message.Type;
-            const stationInfo = await attachAirportInfo(message.Location);
-            const parsed = parseWeatherMessage(message, stationInfo);
-            
-            switch (mtype) {
-                case "METAR", "SPECI":
-                    processMetar(parsed);
-                    break;
-                case "TAF":
-                    processTaf(parsed);
-                    break;
-                case "PIREP":
-                    processPirep(parsed);
-                    break;
+            console.log(message);
+
+            // Find the key name that holds the array (skipping non-array properties)
+            const arrayKey = Object.keys(message).find(key => Array.isArray(message[key]));
+
+            if (arrayKey) {
+                // remove all existing features matching the arrayKey
+                switch (arrayKey.toLowerCase()) {
+                    case "metar":
+                        metarVectorLayer.getSource().clear();
+                        break;
+                    case "taf":
+                        tafVectorLayer.getSource().clear();
+                        break;
+                    case "aircraftreport":
+                        pirepVectorLayer.getSource().clear();
+                        break;
+                }
+                const reportArray = message[arrayKey];
+                let index = 0;
+                // Iterate through the dynamically discovered array
+                for (const report of reportArray) {
+                    let stationInfo = "";
+                    if (report.raw_text) { 
+                       const message = {
+                            Type: arrayKey,
+                            Location: report.station_id ? report.station_id : "",
+                            Time: report.observation_time ? report.observation_time : "",
+                            Data: report.raw_text,
+                            LocaltimeReceived: new Date().toLocaleTimeString()
+                        };
+                        
+                        if (arrayKey ) {
+                            switch (arrayKey) {
+                                case "METAR":
+                                    await processMetar(report, stationInfo);
+                                    break;
+                                case "TAF":
+                                    await processTaf(report, stationInfo);
+                                    break;
+                                default:
+                                    await processPirep(report);
+                                    break;
+                            }  
+                        }
+                    }
+                   index++;
+                }
+            } 
+            else {
+                console.log("No report array found in data.");
             }
         }
 
-        wsclient.onerror = function(evt){
+        socket.onerror = function(evt){
             console.log("Websocket ERROR: " + evt.data);
         }
         
-        wsclient.onopen = function(evt) {
+        socket.onopen = function(evt) {
             console.log("Websocket CONNECTED.");
+            clearTimeout(reconnectTimeout);
         }
         
-        wsclient.onclose = function(evt) {
+        socket.onclose = function(evt) {
             console.log("Websocket CLOSED.");
+            if (document.visibilityState === 'visible') {
+                scheduleReconnect();
+            }
         }
     }
 
@@ -352,7 +469,8 @@ document.addEventListener('DOMContentLoaded', async function () {
         }),
         visible: true,
         type: "none",
-        zIndex: 0
+        zIndex: 0,
+        canvasWillReadFrequently: true
     });
     map.addLayer(osmTileLayer);
 
@@ -361,7 +479,10 @@ document.addEventListener('DOMContentLoaded', async function () {
         source: new VectorSource(),
         title: "Pireps",
         visible: false,
-        zindex: 99
+        zindex: 99,
+        canvasWillReadFrequently: true,
+        updateWhileAnimating: false,
+        updateWhileInteracting: false
     });
     map.addLayer(pirepVectorLayer);
 
@@ -369,7 +490,10 @@ document.addEventListener('DOMContentLoaded', async function () {
         source: new VectorSource(),
         title: "Metars",
         visible: false,
-        zIndex: 99
+        zIndex: 99,
+        canvasWillReadFrequently: true,
+        updateWhileAnimating: false,
+        updateWhileInteracting: false
     });
     map.addLayer(metarVectorLayer);
 
@@ -377,7 +501,10 @@ document.addEventListener('DOMContentLoaded', async function () {
         source: new VectorSource(),
         title: "TAFs",
         visible: false,
-        zIndex: 88
+        zIndex: 88,
+        canvasWillReadFrequently: true,
+        updateWhileAnimating: false,
+        updateWhileInteracting: false
     });
     map.addLayer(tafVectorLayer);
 
@@ -385,15 +512,21 @@ document.addEventListener('DOMContentLoaded', async function () {
         title: 'Airports',
         source: new VectorSource(),
         zIndex: 100,
-        visible: false
+        visible: false,
+        canvasWillReadFrequently: true,
+        updateWhileAnimating: false,
+        updateWhileInteracting: false
     });
     map.addLayer(airportLayer);
+
+    // Airport Radius Selector functionality
+    const radiusSelector = document.getElementById('airport-radius-selector');
     airportLayer.on('change:visible', () => {
         if (airportLayer.getVisible()) {
-            airportRadiusSelector.style.display = 'block';
+            radiusSelector.style.display = 'block';
         }
         else {
-            airportRadiusSelector.style.display = 'none';
+            radiusSelector.style.display = 'none';
         }
     })
     
@@ -465,8 +598,6 @@ document.addEventListener('DOMContentLoaded', async function () {
     }
     window.closePopup = closePopup;
 
-    // Airport Radius Selector functionality
-    const radiusSelector = document.getElementById('airport-radius-selector');
     let currentDoubleClickLocation = null;
     let selectedRadius = 50; // Default radius in miles
 
@@ -475,18 +606,15 @@ document.addEventListener('DOMContentLoaded', async function () {
         Promise.resolve(airportLayer.getSource().clear());
     }
 
-    // Function to find and display airports within radius
-    async function showAirportsInRadius(centerLat, centerLon, radiusMiles) {
+    // // Function to find and display airports within radius
+    async function showAirportsInRadius(lon, lat, radiusMiles) {
         try {
-            console.log(`Searching for airports within ${radiusMiles} miles of lat: ${centerLat}, lon: ${centerLon}`);
-            
             // Use the existing getAirportsInRadius function
-            const airports = await getAirportsInRadius(appsettings, centerLon, centerLat, radiusMiles);
-            
+            const airports = await getAirportsInRadius(lon, lat, radiusMiles);
             console.log(`Found ${airports ? airports.length : 0} airports`);
             
             if (airports && airports.length > 0) {
-                displayAirportFeatures(airports);
+                await displayAirportFeatures(airports);
             } else {
                 console.log('No airports found in the specified radius');
             }
@@ -494,22 +622,6 @@ document.addEventListener('DOMContentLoaded', async function () {
         } catch (error) {
             console.error('Error fetching airports:', error);
         }
-    }
-
-    // Helper function to calculate bounding box
-    function getBoundingBox(centerLat, centerLon, radiusMiles) {
-        const earthRadiusMiles = 3959;
-        const radiusRadians = radiusMiles / earthRadiusMiles;
-        const latRad = centerLat * (Math.PI / 180);
-        
-        const minLat = centerLat - (radiusRadians * 180 / Math.PI);
-        const maxLat = centerLat + (radiusRadians * 180 / Math.PI);
-        
-        const deltaLon = Math.asin(Math.sin(radiusRadians) / Math.cos(latRad)) * 180 / Math.PI;
-        const minLon = centerLon - deltaLon;
-        const maxLon = centerLon + deltaLon;
-        
-        return { minLat, maxLat, minLon, maxLon };
     }
 
     /**
@@ -583,7 +695,7 @@ document.addEventListener('DOMContentLoaded', async function () {
         }
     }
     // Function to display airport features on map
-    function displayAirportFeatures(airports) {
+    async function displayAirportFeatures(airports) {
         // Use the existing airport layer
         airportLayer.getSource().clear();
         
@@ -701,20 +813,19 @@ document.addEventListener('DOMContentLoaded', async function () {
         
         if (radius === '') {
             clearAirportFeatures();
-            selectedRadius = 0;
-            stateCache.selectedRadius = selectedRadius;
+            stateCache.selectedRadius = 50;
             return;
         }
         
         // Store the selected radius
-        selectedRadius = parseInt(radius);
+        const selectedRadius = parseInt(radius);
         stateCache.selectedRadius = selectedRadius;
         
         // Only search for airports if a radius is selected (not 0/clear)
         if (selectedRadius > 0 && currentDoubleClickLocation) {
             let lonlat = [currentDoubleClickLocation.lon, currentDoubleClickLocation.lat];
             console.log('Searching for airports within', selectedRadius, 'miles of', lonlat);
-            Promise.resolve(showAirportsInRadius(lonlat[1], lonlat[0], selectedRadius));
+            await showAirportsInRadius(lonlat[0], lonlat[1], selectedRadius);
         }
         console.log('Selected radius:', selectedRadius, 'miles');
     });
@@ -742,6 +853,7 @@ document.addEventListener('DOMContentLoaded', async function () {
     map.on('click', (evt) => {
         let features = [];
         let htol = isMobile ? appsettings.smallScreenHitTolerance : 1;
+
         map.forEachFeatureAtPixel(evt.pixel, (feature) => {
             if (feature) {
                 features.push(feature);
@@ -771,19 +883,11 @@ document.addEventListener('DOMContentLoaded', async function () {
                     handled = true;
                 }
                 else {
-                    const trafficFeature = features.find(f => f.get('datatype') === 'traffic');
-                    if (trafficFeature) {
-                        displayTrafficPopup(trafficFeature);
+                    const airportFeature = features.find(f => f.get('datatype') === 'airport');
+                    if (airportFeature) {
+                        displayAirportPopup(airportFeature);
                         popupoverlay.setPosition(evt.coordinate);
                         handled = true;
-                    }
-                    else {
-                        const airportFeature = features.find(f => f.get('datatype') === 'airport');
-                        if (airportFeature) {
-                            displayAirportPopup(airportFeature);
-                            popupoverlay.setPosition(evt.coordinate);
-                            handled = true;
-                        }
                     }
                 }
             }
@@ -802,17 +906,19 @@ document.addEventListener('DOMContentLoaded', async function () {
         
         // Store the clicked location for radius selector
         currentDoubleClickLocation = {
-            lat: lonLat[1],
-            lon: lonLat[0]
+            lon: lonLat[0],
+            lat: lonLat[1]
         };
         
         // Clear previous airport features
         clearAirportFeatures();
         
+        const radius = parseInt(radiusDropdown.value);
+
         // Only search for airports if a radius is selected (not 0/clear)
-        if (selectedRadius > 0) {
-            console.log('Searching for airports within', selectedRadius, 'miles of', lonLat);
-            await showAirportsInRadius(lonLat[1], lonLat[0], selectedRadius);
+        if (radius > 0) {
+            console.log('Searching for airports within', radius, 'miles of', lonLat);
+            await showAirportsInRadius(lonLat[0], lonLat[1], radius);
         }
     });
 
@@ -874,8 +980,8 @@ document.addEventListener('DOMContentLoaded', async function () {
         if (ident != "undefined") {
             let name = feature.get('station_name');
             let html = `<div class="featurepopup" id="featurepopup">`;
-            html += `${css}${name}<br>${ident} - ${cat}</span><br>`;
-            html += `<div class="metar-popup-body">`; // beginning of metar-popup-body
+            html += `${css}${name ? name : ""}<br>${ident} - ${cat}</span><br>`;
+            html += `<div class="metar-popup-body">`; 
             html += `Time:&nbsp<b>${time}</b><br>`;
             html += temp ? `Temp:&nbsp<b>${tempC} °C</b> (${temp})<br>` : "";
             html += dewp ? `Dewpoint:&nbsp<b>${dewpC} °C</b> (${dewp})<br>` : "";
@@ -888,14 +994,22 @@ document.addEventListener('DOMContentLoaded', async function () {
             html += skyconditions ? `${skyconditions}` : "";
             html += icingconditions ? `${icingconditions}` : "";
             html += `<span class="windsvg">${svg}</span>`;
-            html += `</div>`; // end of metar-popup-body 
+            html += `</div>`; 
             html += `<hr>`;
-            html += `<button class="custom-airport-info" onclick="getAirportInfo()" style="background:${bgcolor}; color:${fgcolor};">Airport Info</button>`
+            html += `<button id="airport-info" class="custom-airport-info" ident="${ident}" style="background:${bgcolor}; color:${fgcolor};">Airport Info</button>`
             html += `<button class="custom-popup-closer" onclick="closePopup()" style="background:${bgcolor}; color:${fgcolor};">Close</button>`
             html += `<textarea id="rawdata" class="rawdata">${rawmetar}</textarea><br>`;
-            //console.log("METAR POPUP", html);
-            //debugger;
+            
             popupcontent.innerHTML = html;
+
+            // Step 2: Bind the click event immediately inside the same module scope
+            const infoBtn = popupcontent.querySelector('#airport-info');
+            if (infoBtn) {
+                infoBtn.addEventListener('click', () => {
+                    const stationId = infoBtn.getAttribute('ident');
+                    getAirportInfo(stationId); // This will never throw a ReferenceError
+                });
+            }
         }
     }
 
@@ -904,52 +1018,52 @@ document.addEventListener('DOMContentLoaded', async function () {
      * @param {feature} Feature: the taf feature the user clicked on
      */
     function displayTafPopup(feature) {
-        let taf = feature.get("data");
-        let id = feature.get("ident");
-        let rawtaf = taf.raw_text;
-        let btncolors = getCategoryColors(taf.flight_category);
-        let bgcolor = btncolors.bgcolor;
-        let fgcolor = btncolors.fgcolor;
-        let forecast = taf.forecast;
+        // const rowPrefix = `<tr class="table-row-data"><td style="width:100%;">`;
+        // const rowSuffix = `</td></tr>`;
+        // const skyHeader = `<tr class="skyheader"><td style="display:block;width:99%;text-align:center;border:1px solid #000000;">`;
+        const popupFeature = feature.get("data");
+        const id = feature.get("ident");
+        const rawData = popupFeature.raw_text;
+        const btncolors = getCategoryColors(popupFeature.flight_category);
+        const bgcolor = btncolors.bgcolor;
+        const fgcolor = btncolors.fgcolor;
+        const forecast = popupFeature.forecast;
 
-        let outerhtml = `<div style="display:block;">` +
-            `<span class="taftitlelabel" style="background-color:${bgcolor}; color:${fgcolor};">Terminal Area Forecast - ${id}</span>` +
-            `<div class="taf-popup-content">` +
-            `<div class="taf">` +
-            `<pre><code>` +
-            `<table class="tafmessage" id="taftable">` +
-            `<tr class="tafbody">` +
-            `<td id="tafdata">###</td>` +
-            `</tr>` +
-            `</table>` +
-            `</code></pre>` +
-            `</div>`;
+        let detailhtml = "";
+        let innerhtml = 
+           `<div style="display:block;">
+            <span class="taftitlelabel" style="background-color:${bgcolor}; color:${fgcolor};">Terminal Area Forecast - ${id}</span>
+            <div class="taf-popup-content">
+                <div class="taf">
+                    <div class="table-scroll-container">
+                        <table class="taftable" id="taftable">`;
+                            for (const item in forecast) {
+                                let parsedForecast = "";
+                                const value = forecast[item];
+                                if (typeof (value) === 'object') {
+                                    for (const subitem in value) {
+                                        const subvalue = value[subitem];
+                                        console.log(`Line 1046: ${subitem} = ${subvalue}`);
+                                        parsedForecast = parseForecastField(subitem, subvalue);
 
-        let html = "<div>"; // beginning of forecast div
-
-        for (const item in forecast) {
-            let value = forecast[item];
-            if (typeof (value) === 'object') {
-                for (const subitem in value) {
-                    let subvalue = value[subitem];
-                    let fcv = parseForecastField(subitem, subvalue);
-                    if (fcv) html += fcv;
-                }
-                //html += "</p><hr>";
-            }
-            else {
-                let pff = parseForecastField(item, value);
-                if (pff) html += pff;
-            }
-        }
-
-        let temphtml = outerhtml.replace("###", html) + `</p></div>`; // end of forecast div
-        let footerhtml = `<div class="taf-popup-footer">`; // beginning of footer div
-        footerhtml += `<button class="custom-popup-closer" onclick="closePopup()" style="background:${bgcolor}; color:${fgcolor};">Close</button>`;
-        footerhtml += `<textarea id="rawdata" class="rawdata">${rawtaf}</textarea><br>`;
-        footerhtml += `</div>`;  // end of footer div
-        footerhtml += `</div>`; // end of taf-popup-container div
-        let innerhtml = temphtml + footerhtml;
+                                        detailhtml += parsedForecast;
+                                    }
+                                }
+                                else {
+                                    console.log(`Line 1052: ${item} = ${value}`);
+                                    parsedForecast = parseForecastField(item, value);
+                                    detailhtml = parsedForecast;
+                                }
+                            }
+                            innerhtml += detailhtml + `
+                        </table>
+                    </div>
+                </div>
+                <div class="popup-footer">
+                    <button class="custom-popup-closer" onclick="closePopup()" style="background:${bgcolor}; color:${fgcolor};">Close</button>
+                    <textarea id="rawdata" class="rawdata">${rawData}</textarea><br>
+                </div>
+            </div>`;
         popupcontent.innerHTML = innerhtml;
     }
 
@@ -958,141 +1072,139 @@ document.addEventListener('DOMContentLoaded', async function () {
      * @param {object} feature: the pirep the user clicked on
      */
     function displayPirepPopup(feature) {
-        let pirep = feature.get("data");
-        let rawpirep = pirep.get("raw_text");
-        let outerhtml = `<div class="taftitle">` +
-            `<span class="taftitlelabel">${pirep.report_type} FROM AIRCRAFT: ${pirep.aircraft_ref}</span><p></p>` +
-            `</div>` +
-            `<div class="taf">` +
-            `<pre><code>` +
-            `<table class="tafmessage" id="taftable">` +
-            `<tr class="tafbody">` +
-            `<td id="tafdata">###</td>` +
-            `</tr>` +
-            `</table>` +
-            `</code></pre>` +
-            `</div>` +
-            `<br><br>`;
+        const popupFeature = feature.get("data");
+        const rawData = feature.get("raw_text");
+        const rowPrefix = `<tr class="table-row-data"><td style="width:100%;">`;
+        const rowSuffix = `</td></tr>`;
+        const skyHeader = `<tr class="skyheader"><td style="display:block;width:99%;text-align:center;border:1px solid #000000;">`;
+        const btncolors = getCategoryColors("pirep");
+        const bgcolor = btncolors.bgcolor;
+        const fgcolor = btncolors.fgcolor;
 
-        let html = "<div>";
-        let pireplabel = `<span class="pirepitem">`
-        let thistime = "";
-        for (const pirepkey in pirep) {
-            let pirepvalue = pirep[pirepkey];
-            let fieldname = getFieldDescription(pirepkey);
-            switch (pirepkey) {
-                case "receipt_time":
-                    thistime = pirepvalue;
-                    if (appsettings.uselocaltime) {
-                        thistime = getLocalTime(pirepvalue);
-                    }
-                    html += `${pireplabel}${fieldname}: <b>${thistime}</b></span><br>`;
-                    break;
-                case "observation_time":
-                    thistime = pirepvalue;
-                    if (appsettings.uselocaltime) {
-                        thistime = getLocalTime(pirepvalue);
-                    }
-                    html += `${pireplabel}${fieldname}: <b>${thistime}</b></span><br>`;
-                    break;
-                case "latitude":
-                case "longitude":
-                case "altitude_ft_msl":
-                case "temp_c":
-                case "dewpoint_c":
-                case "time_becoming":
-                case "probability":
-                case "wind_speed_kt":
-                case "wind_gust_kt":
-                case "wind_dir_degrees":
-                case "wind_shear_dir_degrees":
-                case "wind_shear_hgt_ft_agl":
-                case "wind_shear_speed_kt":
-                case "vert_vis_ft":
-                case "visibility_statute_mi":
-                    html += `${pireplabel}${fieldname}: <b>${pirepvalue}°</b></span><br>`;
-                    break;
-                case "sky_condition":
-                    html += `<span class="pirepskyheader">${fieldname}</span><br>`;
-                    html += decodeSkyCondition(pirepvalue, "pirepitem");
-                    html += "<hr>";
-                    break;
-                case "turbulence_condition":
-                case "icing_condition":
-                    html += `<span class="pirepskyheader">${fieldname}</span><br>`;
-                    html += decodeIcingOrTurbulenceCondition(pirepvalue, "pirepitem");
-                    html += "<hr>";
-                    break;
-                case "temperature":
-                    html += `<span class="pirepskyheader">Weather</span><br>`;
-                    break;
-                case "altim_in_hg":
-                    let altimvalue = getInchesOfMercury(pirepvalue);
-                    html += `<span class="pirepitem">${fieldname}: <b>${altimvalue}</b></span><br>`;
-                    break;
-                case "wx_string":
-                    let lineval = decodeWxDescriptions(pirepvalue);
-                    html += `<span class="pirepitem">${fieldname}: <b>${lineval}</b></span><br>`;
-                    break;
-                case "change_indicator":
-                    let change = getSkyConditionDescription(pirepvalue);
-                    html += `<span class="pirepitem">${fieldname}: <b>${change}</b></span><br>`;
-                    break;
-                case "pirep_type":
-                case "aircraft_ref":
-                case "raw_text":
-                    break;
-                default:
-                    console.log(`${pirepkey} NOT FOUND!`);
-                    break;
-            }
-        }
-        html += `<button class="custom-popup-closer" onclick="closePopup()" style="background:${bgcolor}; color:${fgcolor};">close</button>`
-        html += `<textarea id="rawdata" class="rawdata">${rawpirep}</textarea><br>`;
-        let innerhtml = outerhtml.replace("###", html);
+        let rt = "";
+        let ot = "";
+        let detailhtml = "";
+        let html = 
+           `<div style="display:block;">
+                <span class="pireptitlelabel" style="background-color:${bgcolor}; color:${fgcolor};">${popupFeature.report_type.toUpperCase()} FROM AIRCRAFT: ${popupFeature.aircraft_ref}</span>
+                <div class="pirep-popup-content">
+                    <div class="pirep">
+                        <div class="table-scroll-container">
+                           <table class="pireptable" id="pireptable">`;
+                                for (const item in popupFeature) {
+                                    const value = popupFeature[item];
+                                    const fieldname = getFieldDescription(item);
+                                    switch (item) {
+                                        case "receipt_time":
+                                            rt = value;
+                                            if (appsettings.uselocaltime) {
+                                                rt = getLocalTime(value);
+                                            }
+                                            detailhtml += `${rowPrefix}${fieldname}: <b>${rt}</b>${rowSuffix}`;
+                                            break;
+                                        case "observation_time":
+                                            ot = value;
+                                            if (appsettings.uselocaltime) {
+                                                ot = getLocalTime(value);
+                                            }
+                                            detailhtml += `${rowPrefix}${fieldname}: <b>${ot}</b>${rowSuffix}`;
+                                            break;
+                                        case "latitude":
+                                            detailhtml += `${rowPrefix}${fieldname}: <b>${value}°</b>${rowSuffix}`;
+                                            break;
+                                        case "longitude":
+                                            detailhtml += `${rowPrefix}${fieldname}: <b>${value}°</b>${rowSuffix}`;
+                                            break;
+                                        case "altitude_ft_msl":
+                                            detailhtml += `${rowPrefix}${fieldname}: <b>${value}</b>${rowSuffix}`;
+                                            break;
+                                        case "temp_c":
+                                            detailhtml += `${rowPrefix}${fieldname}: <b>${value}°</b>${rowSuffix}`;
+                                            break;
+                                        case "dewpoint_c":
+                                            detailhtml += `${rowPrefix}${fieldname}: <b>${value}°</b>${rowSuffix}`;
+                                            break;
+                                        case "time_becoming":
+                                            detailhtml += `${rowPrefix}${fieldname}: <b>${value}</b>${rowSuffix}`;
+                                            break;
+                                        case "probability":
+                                            detailhtml +=`${rowPrefix}${fieldname}: <b>${value}</b>${rowSuffix}`;
+                                            break;
+                                        case "wind_speed_kt":
+                                            detailhtml += `${rowPrefix}${fieldname}: <b>${value}</b>${rowSuffix}`;
+                                            break;
+                                        case "wind_gust_kt":
+                                            detailhtml += `${rowPrefix}${fieldname}: <b>${value}</b>${rowSuffix}`;
+                                            break;
+                                        case "wind_dir_degrees":
+                                            detailhtml += `${rowPrefix}${fieldname}: <b>${value}°</b>${rowSuffix}`;
+                                            break;
+                                        case "wind_shear_dir_degrees":
+                                            detailhtml += `${rowPrefix}${fieldname}: <b>${value}°</b>${rowSuffix}`;
+                                            break;
+                                        case "wind_shear_hgt_ft_agl":
+                                            detailhtml += `${rowPrefix}${fieldname}: <b>${value}</b>${rowSuffix}`;
+                                            break;
+                                        case "wind_shear_speed_kt":
+                                            detailhtml += `${rowPrefix}${fieldname}: <b>${value}</b>${rowSuffix}`;
+                                            break;
+                                        case "vert_vis_ft":
+                                            detailhtml += `${rowPrefix}${fieldname}: <b>${value}</b>${rowSuffix}`;
+                                            break;
+                                        case "visibility_statute_mi":
+                                            detailhtml += `${rowPrefix}${fieldname}: <b>${value}</b>${rowSuffix}`;
+                                            break;
+                                        case "sky_condition":
+                                            detailhtml += `${skyHeader}${fieldname}${rowSuffix}
+                                                           ${decodeSkyCondition(value)}`;
+                                            break;
+                                        case "turbulence_intensity":
+                                            detailhtml += `${rowPrefix}${fieldname}: <b>${value}</b>${rowSuffix}`;
+                                            break;
+                                        case "turbulence_condition":
+                                            detailhtml += `${skyHeader}${fieldname}${rowSuffix}
+                                                           ${decodeIcingOrTurbulenceCondition(value)}`;
+                                            break;
+                                        case "icing_condition":
+                                            detailhtml += `${skyHeader}${fieldname}${rowSuffix}
+                                                           ${decodeIcingOrTurbulenceCondition(value)}`;
+                                            break;
+                                        case "temperature":
+                                            detailhtml += `${skyHeader}Weather<hr>${rowSuffix}`;
+                                            break;
+                                        case "altim_in_hg":
+                                            detailhtml += `${rowPrefix}${fieldname}: <b>${getInchesOfMercury(value)}</b>${rowSuffix}`;
+                                            break;
+                                        case "wx_string":
+                                            detailhtml += `${rowPrefix}${fieldname}: <b>${decodeWxDescriptions(value)}</b>${rowSuffix}`;
+                                            break;
+                                        case "change_indicator":
+                                            detailhtml +=`${rowPrefix}${fieldname}: <b>${getSkyConditionDescription(value)}</b>${rowSuffix}`; ;
+                                            break;
+                                        case "pirep_type":
+                                        case "aircraft_ref":
+                                        case "raw_text":
+                                        default:
+                                            break;
+                                    }
+                                }
+                                detailhtml += `
+                            </table>
+                        </div>
+                        <div class="popup-footer">
+                            <button class="custom-popup-closer" onclick="closePopup()" style="background:${bgcolor}; color:${fgcolor};">Close</button>
+                            <textarea id="rawdata" class="rawdata">${rawData}</textarea><br>
+                        </div>
+                    </div>
+                </div>
+            </div>`;    
+        const innerhtml = html + detailhtml;
         popupcontent.innerHTML = innerhtml;
+        console.log(innerhtml);
     }
 
     function getAirportInfo(id) {
-        Promise.resolve(getAirportInfo((value) => {
-            console.log(value);
-        }));
-    }
-    /**
-     * Decode runway surface codes to full descriptions
-     * @param {string} surfaceCode - The surface code (e.g., "[CON]", "[ASP]", "grass")
-     * @returns {string} - Full surface description
-     */
-    function decodeRunwaySurface(surfaceCode) {
-        if (!surfaceCode) return '';
         
-        // Remove brackets if present and convert to uppercase
-        const code = surfaceCode.replace(/[\[\]]/g, '').toUpperCase();
-        
-        const surfaceMap = {
-            'CON': 'CONCRETE',
-            'ASP': 'ASPHALT', 
-            'CONC': 'CONCRETE',
-            'ASPH': 'ASPHALT',
-            'GRASS': 'GRASS',
-            'TURF': 'TURF',
-            'DIRT': 'DIRT',
-            'GRAVEL': 'GRAVEL',
-            'WATER': 'WATER',
-            'SNOW': 'SNOW',
-            'ICE': 'ICE',
-            'CORAL': 'CORAL',
-            'SAND': 'SAND',
-            'CLAY': 'CLAY',
-            'MACADAM': 'MACADAM',
-            'BRICK': 'BRICK',
-            'STEEL': 'STEEL MATTING',
-            'PSP': 'PIERCED STEEL PLANKING',
-            'ALU': 'ALUMINUM',
-            'METAL': 'METAL'
-        };
-        
-        return surfaceMap[code] || code; // Return mapped value or original code if not found
     }
 
     function displayAirportPopup(feature) {
@@ -1213,28 +1325,61 @@ document.addEventListener('DOMContentLoaded', async function () {
      * @returns 
      */
     function parseForecastField(rawfieldname, fieldvalue) {
-        let html = "";
-        let fieldname = tafFieldKeymap.get(rawfieldname);
+        const rowPrefix = `<tr class="table-row-data"><td style="width:100%;">`;
+        const rowSuffix = `</td></tr>`;
+        const skyHeader = `<tr class="skyheader"><td style="display:block;width:99%;text-align:center;border:1px solid #000000;">`;
+        const fieldname = tafFieldKeymap.get(rawfieldname);
+
+        if (rawfieldname === "sky_cover") {
+            console.trace("Sky cover trace");
+        }
+        let detailhtml = "";
+        let formattedValue = "";
 
         if (fieldname && rawfieldname) {
             let formattedvalue = null;
             switch (rawfieldname) {
+
                 case "fcst_time_from":
-                    let thistime = fieldvalue;
-                    if (mapsettingsuselocaltime) {
-                        thistime = getLocalTime(fieldvalue);
+                    formattedValue = fieldvalue;
+                    if (appsettings.uselocaltime) {
+                        formattedValue = getLocalTime(fieldvalue);
                     }
-                    html = `<span class="fcstlabel"><b>${thistime}</b></span>`;
+                    detailhtml = `${rowPrefix}Time from: <b>${formattedValue}</b>${rowSuffix}`;
                     break;
                 case "fcst_time_to": // I'm going to ignore this field to save space on the popup
-                    //html = `&nbspto&nbsp<b>${fieldvalue}</b></span><br>`
-                    //html = `<span class="fcstlabel">${formattedvalue}</span><br>`;
+                    formattedValue = fieldvalue;
+                    if (appsettings.uselocaltime) {
+                        formattedValue = getLocalTime(fieldvalue);
+                    }
+                    detailhtml = `${rowPrefix}Time to: <b>${formattedValue}</b>${rowSuffix}`;
                     break;
                 case "change_indicator":
-                    let changevalue = getWeatherAcronymDescription(fieldvalue);
-                    if (changevalue) {
-                        html = `<span class="taflabel">${fieldname}: <b>${changevalue}</b></span><br>`;
+                    formattedValue = getWeatherAcronymDescription(fieldvalue);
+                    if (formattedValue) {
+                        detailhtml = `${rowPrefix}${fieldname}: <b>${formattedValue}</b>${rowSuffix}`;
                     }
+                    break;
+                case "cloud_base_ft_agl":
+                case "cloud_base_ft_msl":
+                case "cloud_base":
+                case "sky_cover":
+                case "visibility_statute_mi":
+                    detailhtml = `${rowPrefix}${fieldname}: <b>${fieldvalue}</b>${rowSuffix}`;
+                    break;
+                case "change_indicator": 
+                    formattedValue = getWeatherAcronymDescription(fieldvalue);
+                    detailhtml = `${rowPrefix}${fieldname}: <b>${formattedValue}</b>${rowSuffix}`;
+                    break;
+                case "sky_cover":
+                    detailhtml = `${rowPrefix}${fieldname}:<b>${fieldvalue}</b>${rowSuffix}`;
+                    break;
+                case "cloud_base_ft_agl":
+                    detailhtml = `${rowPrefix}${fieldname}: <b>${fieldvalue}</b>${rowSuffix}`;
+                    break;
+                case "wx_string":
+                    formattedvalue = getWeatherAcronymDescription(fieldvalue);
+                    detailhtml = `${rowPrefix}${fieldname}:<b>${formattedvalue}</b>${rowSuffix}`;
                     break;
                 case "temperature":
                 case "time_becoming":
@@ -1245,42 +1390,39 @@ document.addEventListener('DOMContentLoaded', async function () {
                 case "wind_shear_speed_kt":
                 case "altim_in_hg":
                 case "vert_vis_ft":
-                case "wx_string":
-                    if (fieldname === "wx_string") {
-                        formattedvalue = decodeWxDescriptions(fieldvalue);
-                        if (formattedvalue) {
-                            html = `<span class="tafwxlabel">${fieldname}: <b>${formattedvalue}</b></span><br>`;
-                        }
-                    }
-                    else {
-                        if (fieldvalue) {
-                            html = `<span class="taflabel">${fieldname}: <b>${fieldvalue}</b></span><br>`;
-                        }
+                    if (fieldvalue) {
+                        //formattedValue = getWeatherAcronymDescription(fieldvalue);
+                        detailhtml = `${rowPrefix}${fieldname}: <b>${fieldvalue}</b>${rowSuffix}`;
                     }
                     break;
                 case "sky_condition":
-                    formattedvalue = decodeSkyCondition(fieldvalue);
-                    if (formattedvalue) {
-                        html = `<span class="tafskyheader">${fieldname}</span><br>${formattedvalue}`;
-                    }
+                    detailhtml += `${skyHeader}${fieldname}${rowSuffix}
+                                   ${decodeSkyCondition(fieldvalue)}`;
                     break;
                 case "turbulence_condition":
+                    detailhtml += `${skyHeader}${fieldname}${rowSuffix}
+                                   ${decodeIcingOrTurbulenceCondition(fieldvalue)}`;
+                    break;
                 case "icing_condition":
-                    formattedvalue = decodeIcingOrTurbulenceCondition(fieldvalue);
-                    if (formattedvalue) {
-                        html = `<span class="tafskyheader">${fieldname}</span><br>${formattedvalue}`;
-                    }
+                    detailhtml += `${skyHeader}${fieldname}${rowSuffix}
+                                   ${decodeIcingOrTurbulenceCondition(fieldvalue)}`;
                     break;
                 case "wind_dir_degrees":
                 case "wind_shear_dir_degrees":
                     if (fieldvalue) {
-                        html = `<span class="taflabel">${fieldname}: <b>${fieldvalue}°</b></span><br>`;
+                        formattedvalue = getWeatherAcronymDescription(fieldvalue);
+                        detailhtml = `${rowPrefix}${fieldname}: <b>${formattedvalue}°</b>${rowSuffix}`;
                     }
                     break;
 
             }
         }
-        return html;
+
+        if (detailhtml === "") {
+            console.log(`Switch case not hit: raw: ${rawfieldname} formatted:${fieldname} value: ${fieldvalue}`);
+        }
+
+        return detailhtml;
     }
 
     /**
@@ -1289,40 +1431,34 @@ document.addEventListener('DOMContentLoaded', async function () {
      * @param {string} css class to use 
      * @returns html string 
      */
-    function decodeSkyCondition(skycondition) {
-        let html = "";
-        if (skycondition) {
-            try {
-                let values = Object.values(skycondition);
-                for (const x in values) {
-                    let condition = skycondition[x];
-                    if (condition) {
-                        let fieldname = "";
-                        let fieldvalue = "";
-                        if (typeof (condition) === "object") {
-                            for (const index in condition) {
-                                fieldname = getFieldDescription(index);
-                                fieldvalue = condition[index];
-                                if (fieldname && fieldvalue) {
-                                    html += `<span>${fieldname}: <b>${fieldvalue}</b></span><br>`;
-                                }
-                            }
-                        }
-                        else {
-                            fieldname = getFieldDescription(x);
-                            fieldvalue = getSkyConditionDescription(condition);
-                            if (fieldname && fieldvalue) {
-                                html += `<span>${fieldname}: <b>${fieldvalue}</b></span><br>`;
-                            }
-                        }
+    function decodeSkyCondition(condition) {
+        const rowPrefix = `<tr class="table-row-data"><td style="width:100%;">`;
+        const rowSuffix = `</td></tr>`;
+        let output = "";
+        let fieldname = "";
+        let fieldvalue = "";
+        
+        //let values = Object.values(condition);
+        for (const item in condition) {
+            const value = condition[item];
+            if (typeof (value) === "object") {
+                for (const subitem in value) {
+                    const subvalue = value[subitem];
+                    fieldname = getFieldDescription(subitem);
+                    if (fieldname && subvalue) {
+                        output += `${rowPrefix}${fieldname}: <b>${subvalue}</b>${rowSuffix}`;
                     }
                 }
             }
-            catch (error) {
-                console.log(error.message);
+            else {
+                fieldname = getFieldDescription(item);
+                fieldvalue = getSkyConditionDescription(value);
+                if (fieldname && fieldvalue) {
+                    output += `${rowPrefix}${fieldname}: <b>${fieldvalue}</b>${rowSuffix}`;
+                }
             }
         }
-        return html;
+        return output;
     }
 
     /**
@@ -1341,23 +1477,24 @@ document.addEventListener('DOMContentLoaded', async function () {
      * @returns html string
      */
     function decodeIcingOrTurbulenceCondition(condition) {
-        let html = "";
+        const rowPrefix = `<tr class="pirepdata"><td style="width:100%;">`
+        const rowSuffix = `</td></tr>`
+        let output = "";
         for (const item in condition) {
-            let value = condition[item];
+            const value = condition[item];
             if (typeof (value) === 'object') {
                 for (const subitem in value) {
-                    let subvalue = value[subitem];
-                    html += parseConditionField(subitem, subvalue);
+                    const subvalue = value[subitem];
+                    output += `${rowPrefix}${parseConditionField(subitem, subvalue)}${rowSuffix}`;
                 }
-                html += "<br><hr>";
             }
             else {
-                html += parseConditionField(item, value);
+                output += `${rowPrefix}${parseConditionField(item, value)}${rowSuffix}`;
             }
         }
-        return html;
+        return output;
     }
-
+    
     /**
      * Parse an icing or turbulence condition field value, 
      * which could be an object or a string and return html
@@ -1365,33 +1502,37 @@ document.addEventListener('DOMContentLoaded', async function () {
      * @param {object} fieldvalue 
      * @returns html string
      */
-    function parseConditionField(rawfieldname, fieldvalue) {
+    function  parseConditionField(rawfieldname, fieldvalue) {
         let fieldname = getFieldDescription(rawfieldname);
-        let image = "";
-        let html = "";
+        let output = "";
         switch (rawfieldname) {
             case "turbulence_type":
             case "icing_type":
-                html += `<span class="pirepitem">${fieldname}: <b>${fieldvalue}</b></span><br>`;
+                output = `${fieldname}: <b>${fieldvalue}</b>`;
                 break;
             case "turbulence_intensity":
             case "icing_intensity":
-                image = getConditionImage(rawfieldname, fieldvalue);
-                html += `<span class="pirepitem">${fieldname}</span>`;
-                html += `<div class="conditionimage"><image src="/images/${image}"></div><br>`;
+                const fldval = skyConditionKeymap.get(fieldvalue);
+                output = `${fieldname}: <b>${fldval}</b>`;
+                //image = getConditionImage(rawfieldname, fieldvalue);
+                //output = `${fieldname}:<img class="conditionimage" src="${image}">`;
+                break;
+            case "turbulence_frequency":
+            case "turbulence_intensity":
+                output = `${fieldname}: <b>${fieldvalue}</b>`;
                 break;
             case "turbulence_base_ft_msl":
             case "icing_base_ft_msl":
-                html += `<span class="pirepitem">${fieldname}: <b>${fieldvalue}</b></span><br>`;
+                output = `${fieldname}: <b>${fieldvalue}</b>`;
                 break;
             case "turbulence_top_ft_msl":
             case "icing_top_ft_msl":
-                html += `<span class="pirepitem">${fieldname}: <b>${fieldvalue}</b></span></br />`;
+                output = `${fieldname}: <b>${fieldvalue}</b>`;
                 break;
             default:
                 break;
         }
-        return html;
+        return output;
     }
 
     /**
@@ -1401,91 +1542,83 @@ document.addEventListener('DOMContentLoaded', async function () {
      * @returns html image string
      */
     function getConditionImage(conditiontype, conditionvalue) {
-        let image = "";
         if (conditiontype === "icing_intensity") {
             switch (conditionvalue) {
                 case "NEGclr":
+                    return "Negative Clear";
                 case "NEG":
-                    image = "/images/Nil.png";
-                    break;
+                    return "Negative"
                 case "RIME":
+                    return "Rime"
                 case "TRC":
-                    image = "/images/IceTrace.png";
-                    break;
+                    return"Trace";
                 case "TRC-LGT":
-                    image = "/images/IceTraceLight.png"
+                    return "Trace to Light";
                 case "LGT":
-                    image = "/images/IceLight.png";
-                    break;
+                    return "Light";
                 case "LGT-MOD":
-                    image = "/images/IceLightMod.png";
-                    break;
+                    return "Light to Moderate"; 
                 case "MOD":
-                    image = "/images/IceMod.png";
-                    break;
+                    return "Moderate";
                 case "MOD-SEV":
-                    image = "/images/IceLight.png";
-                    break;
+                    return "Moderate to Severe";
                 case "SEV":
-                    image = "/images/IceSevere.png";
-                    break;
+                    return "Severe";
+                default:
+                    return conditionvalue;
             }
         }
         else if (conditiontype === "turbulence_intensity") {
             switch (conditionvalue) {
-                case "NEG":
                 case "NEGclr":
-                    image = "/images/Nil.png";
-                    break;
+                    return "Negative Clear";
+                case "NEG":
+                    return "Negative";
                 case "SMTH-LGT":
+                    return "Smooth to Light";
                 case "LGT":
-                    image = "/images/TurbSmoothLight.png";
+                    return "Light";
                 case "LGT-CHOP":
-                    image = "/images/TurbLight.png";
-                    break;
+                    return "Light to Chop";
                 case "CHOP":
+                    return "Chop";
                 case "LGT-MOD":
-                    image = "/images/TurbLightMod.png";
-                    image = "/images/TurbLightMod.png";
-                    break;
+                    return "Light to Moderate";
                 case "MOD":
+                    return "Moderate";
                 case "MOD-CHOP":
-                    image = "/images/TurbMod.png";
-                    break;
+                    return "Moderate to Chop";
                 case "MOD-SEV":
-                    image = "/images/TurbModSevere.png";
-                    break;
+                    return "Moderate to Severe";
                 case "SEV":
-                    image = "/images/TurbSevere.png";
-                    break;
+                    return "Severe";
+                default:
+                    return conditionvalue;
             }
         }
         else {
-            image = "";
+            return conditionvalue;;
         }
-
-        return image;
     }
 
     /**
      * Place metar features on the map. color-coded to the conditions
      * @param {object} metar object: JSON object with metar data
      */
-    async function processMetar(metarPromise) {
+    async function processMetar(metarPromise, stationInfoPromise) {
         // await the incoming metar...
         const metar = await metarPromise;
+        const airportInfo = await stationInfoPromise;
         // Validate required properties
         if (!metar || typeof metar.longitude !== 'number' || typeof metar.latitude !== 'number') {
-            //console.warn('processMetar: Missing longitude/latitude in metar object', metar);
             return;
         }
 
         try {
             var popupSvg = "";
             var mapDotSvg = "";
-            var airportInfo = null;
             try {
-                popupSvg = rawWeatherTextToSVG(metar, 150, 150, appsettings.usemetricunits);
+                popupSvg = rawWeatherTextToSVG(metar, 150, 150);
                 mapDotSvg = getWindBarbSvg(125, 125, metar);
             }
             catch { }
@@ -1503,6 +1636,7 @@ document.addEventListener('DOMContentLoaded', async function () {
                 datatype: "metar",
                 geometry: new Point(fromLonLat([metar.longitude, metar.latitude])),
                 station_name: metar.station_name,
+                station_info: airportInfo,
                 svgimage: popupSvg
             });
 
@@ -1511,10 +1645,10 @@ document.addEventListener('DOMContentLoaded', async function () {
             }));
             metarFeature.setId(metar.station_id);
 
-            const oldFeature = metarVectorLayer.getSource().getFeatureById(metar.station_id);
-            if (oldFeature) {
-                metarVectorLayer.getSource().removeFeature(oldFeature);
-            }
+            // const oldFeature = metarVectorLayer.getSource().getFeatureById(metar.station_id);
+            // if (oldFeature) {
+            //     metarVectorLayer.getSource().removeFeature(oldFeature);
+            // }
             
             metarVectorLayer.getSource().addFeature(metarFeature);
             metarFeature.changed();
@@ -1572,10 +1706,10 @@ document.addEventListener('DOMContentLoaded', async function () {
                 })
             }));
             tafFeature.setId(taf.station_id);
-            const oldFeature = tafVectorLayer.getSource().getFeatureById(taf.station_id);
-            if (oldFeature) {
-                tafVectorLayer.getSource().removeFeature(oldFeature);
-            }
+            // const oldFeature = tafVectorLayer.getSource().getFeatureById(taf.station_id);
+            // if (oldFeature) {
+            //     tafVectorLayer.getSource().removeFeature(oldFeature);
+            // }
             tafVectorLayer.getSource().addFeature(tafFeature)
             tafFeature.changed();
             tafVectorLayer.changed();
@@ -1600,31 +1734,44 @@ document.addEventListener('DOMContentLoaded', async function () {
         }
         try {
             // generate a "pseudo-heading" to use if wind dir is absent
-            let id = pirep.aircraft_ref ? pirep.aircraft_ref : pirep.station_id;
-            let geometry = new Point(fromLonLat([pirep.longitude, pirep.latitude]));
-            let heading = Math.random() * Math.PI * 2;
+            const id = pirep.aircraft_ref ? pirep.aircraft_ref : pirep.station_id;
+            const geometry = new Point(fromLonLat([pirep.longitude, pirep.latitude]));
+            const heading = pirep.wind_dir_degrees > 0 ? pirep.wind_dir_degrees * 0.0174533 : 0;
          
-            if (pirep.wind_dir_degrees) {
-                heading = (pirep.wind_dir_degrees * 0.0174533);
-            }
-            let pirepFeature = new Feature({
+            const pirepFeature = new Feature({
                 ident: id,
+                id: id,
                 data: pirep,
                 datatype: "pirep",
                 geometry: geometry,
+                raw_text: pirep.raw_text
             });
+
+            const pirepmarker = new Icon({
+                crossOrigin: 'anonymous',
+                src: '/images/pirep.png',
+                offset: [0, 0],
+                opacity: 1,
+                scale: .05,
+                rotation: heading
+            });
+
             pirepFeature.setStyle(new Style({
-                image: new Icon({
-                    crossOrigin: 'anonymous',
-                    src: '/images/pirep.png',
-                    size: [85, 85],
-                    offset: [0, 0],
-                    opacity: 1,
-                    scale: .50
-                })
+                image: pirepmarker
             }));
+            
+            // const oldFeature = pirepVectorLayer.getSource().getFeatureById(id);
+            // if (oldFeature) {
+            //     pirepVectorLayer.getSource().removeFeature(oldFeature);
+            // }
+            
+            pirepVectorLayer.getSource().addFeature(pirepFeature);
+            pirepFeature.changed();
+            pirepVectorLayer.changed();
         }
-        finally {}
+        catch (err) {
+           console.error(`Error in processPirep: ${err}`);
+        }
     }
 
     /**
@@ -1637,12 +1784,29 @@ document.addEventListener('DOMContentLoaded', async function () {
             resizing = true;
             currentZoom = parseInt(newzoom.toFixed(0));
             let newscale = getScaleSize();
-            let metarMarkers = metarVectorLayer.getSource().getFeatures();
-            for (let i = 0; i < metarMarkers.length; i++) {
-                let style = metarMarkers[i].getStyle();
-                if (style && style.getImage && style.getImage()) {
+            let features = {};
+            features = metarVectorLayer.getSource().getFeatures();
+            for (let i = 0; i < features.length; i++) {
+                let style = features[i].getStyle();
+                if (style && style.getImage()) {
                     style.getImage().setScale(newscale);
-                    metarMarkers[i].setStyle(style); // update the feature's style
+                    features[i].setStyle(style); // update the feature's style
+                }
+            }
+            features = tafVectorLayer.getSource().getFeatures();
+            for (let i = 0; i < features.length; i++) {
+                let style = features[i].getStyle();
+                if (style && style.getImage()) {
+                    style.getImage().setScale(newscale * .20);
+                    features[i].setStyle(style); // update the feature's style
+                }
+            }
+            features = pirepVectorLayer.getSource().getFeatures();
+            for (let i = 0; i < features.length; i++) {
+                let style = features[i].getStyle();
+                if (style && style.getImage()) {
+                    style.getImage().setScale(newscale * .12);
+                    features[i].setStyle(style); // update the feature's style
                 }
             }
             resizing = false;
@@ -1879,15 +2043,15 @@ document.addEventListener('DOMContentLoaded', async function () {
      * @param {string} fieldname 
      * @returns string, readable description of fieldname 
      */
-    function getFieldDescription(fieldname) {
-        let retvalue = fieldname;
+    function getFieldDescription(fieldname) { 
         if (!Number.isInteger(fieldname)) {
-            retvalue = tafFieldKeymap.get(fieldname);
-            if (retvalue === undefined) {
-                retvalue = fieldname;
+            //console.log(tafFieldKeymap);
+            const testval = tafFieldKeymap.get(fieldname);
+            if (testval !== undefined && testval !== "") {
+                return testval;
             }
         }
-        return retvalue;
+        return fieldname;
     }
 
     /**
@@ -1939,9 +2103,10 @@ document.addEventListener('DOMContentLoaded', async function () {
         tafFieldKeymap.set("turbulence_min_alt_ft_agl", "Min altitude feet AGL");
         tafFieldKeymap.set("turbulence_max_alt_ft_agl", "Max altitude feet AGL");
         tafFieldKeymap.set("turbulence_freq", "Frequency");
-        tafFieldKeymap.set("turbulence_type", "Type");
+        tafFieldKeymap.set("turbulence_type", "Turbulence Type");
         tafFieldKeymap.set("turbulence_top_ft_msl", "Top in feet MSL");
         tafFieldKeymap.set("turbulence_base_ft_msl", "Base in feet MSL");
+        tafFieldKeymap.set("LLWS", "Low Level Wind Shear");
     }
 
     /**
@@ -2106,7 +2271,7 @@ document.addEventListener('DOMContentLoaded', async function () {
         skyConditionKeymap.set("PROB", "Probability");
         skyConditionKeymap.set("CB", "Cumulo-Nimbus");
         skyConditionKeymap.set("IMC", "Instrument meteorological conditions"),
-            skyConditionKeymap.set("IMPR", "Improving");
+        skyConditionKeymap.set("IMPR", "Improving");
         skyConditionKeymap.set("INC", "In Clouds");
         skyConditionKeymap.set("INS", "Inches");
         skyConditionKeymap.set("INTER", "Intermittent");
@@ -2233,6 +2398,7 @@ document.addEventListener('DOMContentLoaded', async function () {
         skyConditionKeymap.set("TORA", "Takeoff run available");
         skyConditionKeymap.set("TS", "Thunderstorm");
         skyConditionKeymap.set("TSNO", "Thunderstorm/lightning detector not available");
+        skyConditionKeymap.set("LLWS", "Low Level Wind Shear");
         skyConditionKeymap.set("TURB", "Turbulence");
         skyConditionKeymap.set("TWY", "Taxiway");
         skyConditionKeymap.set("UFN", "Until further notice");
@@ -2286,7 +2452,7 @@ document.addEventListener('DOMContentLoaded', async function () {
                 wak ? outstr = wak : null;
             }
             else {
-                wak = eatherAcronymKeymap.get(vals[i]);
+                wak = weatherAcronymKeymap.get(vals[i]);
                 wak ? outstr += ` / ${wak}` : null;
             }
         }
@@ -2864,7 +3030,7 @@ document.addEventListener('DOMContentLoaded', async function () {
             return d;
         }
         else {
-            console.log("Failed to parse Date");
+            //console.log("Failed to parse Date");
             return null;
         }
     }
@@ -3039,8 +3205,8 @@ document.addEventListener('DOMContentLoaded', async function () {
      * @param metric true for metric units(m, hPa, mps), false for north american units (miles, inHg, Kts)
      * @returns
      */
-    function rawWeatherTextToSVG(weatherobject, width, height, metric) {
-        var plot = rawWeatherTextToWeatherPlot(weatherobject, metric);
+    function rawWeatherTextToSVG(weatherobject, width, height) {
+        var plot = rawWeatherTextToWeatherPlot(weatherobject);
         return metarToSVG(plot, width, height);
     }
 
@@ -3050,31 +3216,18 @@ document.addEventListener('DOMContentLoaded', async function () {
      * @param metric true for metric units(m, hPa, mps), false for north american units (miles, inHg, Kts)
      * @returns
      */
-    function rawWeatherTextToWeatherPlot(weatherobject, metric) {
+    function rawWeatherTextToWeatherPlot(weatherobject) {
         var _a;
-        let rawMetar = weatherobject.raw_text;
-        let time = weatherobject.timestamp;
-        var weatherItem = new WeatherProcessItem(rawMetar, weatherobject.station_id, time);
-        var wx = weatherItem.weather.map(function (weather) { return weather.abbreviation; }).join("");
-        //Metric converion
-        var pressure;
-        var vis = undefined;
-        var temp = weatherItem.temperature;
-        var dp = weatherItem.dewpoint;
-        if (metric) {
-            pressure = (weatherItem.altimeter != null) ? Math.round(weatherItem.altimeter * 33.86) : undefined;
-            if (weatherItem.visibility != null) {
-                vis = weatherItem.visibility > 9999 ? 9999 : Math.round(weatherItem.visibility);
-            }
-        }
-        else {
-            temp = cToF(temp);
-            dp = cToF(dp);
-            pressure = weatherItem.altimeter;
-            vis = milePrettyPrint((_a = weatherItem.visibility) !== null && _a !== void 0 ? _a : -1);
-        }
+        const rawMetar = weatherobject.raw_text;
+        const time = weatherobject.timestamp;
+        const weatherItem = new WeatherProcessItem(rawMetar, weatherobject.station_id, time);
+        const wx = weatherItem.weather.map(function (weather) { return weather.abbreviation; }).join("");
+        const temp = cToF(weatherItem.temperature);
+        const dp = cToF(weatherItem.dewpoint);
+        const pressure = weatherItem.altimeter;
+        const vis = milePrettyPrint((_a = weatherItem.visibility) !== null && _a !== void 0 ? _a : -1);
+        
         return {
-            metric: metric !== null && metric !== void 0 ? metric : false,
             visiblity: vis,
             temp: temp,
             dew_point: dp,
@@ -3107,9 +3260,11 @@ document.addEventListener('DOMContentLoaded', async function () {
             case "IFR":
                 return { bgcolor: "#ff0000", fgcolor: "#ffffff" };
             case "LIFR":
-                return { bgcolor: "#ff00ff", fgcolor: "#000000" };
+                return { bgcolor: "#ff00ff", fgcolor: "#ffffff" };
             case "MVFR":
                 return { bgcolor: "#0000cd", fgcolor: "#ffffff" };
+            case "pirep":
+                return { bgcolor: "#98294c", fgcolor: "#ffffff" };
             case "VFR":
             default:
                 return { bgcolor: "#12f23c", fgcolor: "#000000" };

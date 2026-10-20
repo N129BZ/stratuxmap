@@ -4,7 +4,7 @@ export async function attachAirportInfo(station) {
         if (!response.ok) {
             return {};
         }
-        const resp = await response.json();
+        const resp = response.json();
         return resp; 
     }
     catch (error) 
@@ -13,21 +13,18 @@ export async function attachAirportInfo(station) {
     }
 }
 
-export async function getAirportsInRadius(appsettings, lon, lat, radiusMiles) {
+export async function getAirportsInRadius(lon, lat, radiusMiles) {
     try {
-        //console.log(`Getting airports for lat: ${lat}, lon: ${lon}, radius: ${radiusMiles} miles`);
+        const bounds = await getBoundingBox(lon, lat, radiusMiles);
         
-        const { minLat, maxLat, minLon, maxLon } = getBoundingBox(lat, lon, radiusMiles);
-        let getheliports = (appsettings.showHeliports === true);
-        let getclosed = (appsettings.showClosedAirports === true);
-        //console.log(`Bounding box: minLat=${minLat}, maxLat=${maxLat}, minLon=${minLon}, maxLon=${maxLon}`);
-
-        const response = await fetch(`/airportlist?getclosed=${getclosed}&getheliports=${getheliports}&minLat=${minLat}&maxLat=${maxLat}&minLon=${minLon}&maxLon=${maxLon}`);
+        const response = await fetch(`/airportlist?minLat=${bounds.minLat}&maxLat=${bounds.maxLat}&minLon=${bounds.minLon}&maxLon=${bounds.maxLon}`);
         if (!response.ok) {
             console.log(`Bad Response: ${response.status} ${response.statusText}`);
             return [];
         }
-        const airports = await response.json();
+        
+        const airports = response.json();
+
         console.log(`Found ${airports.length} airports`);
         return airports; 
     }
@@ -38,35 +35,54 @@ export async function getAirportsInRadius(appsettings, lon, lat, radiusMiles) {
     }
 }
 
-function getBoundingBox(centerLat, centerLon, radiusMiles) {
-    // Convert miles to degrees (approximate)
-    // 1 degree of latitude ≈ 69 miles everywhere
-    // 1 degree of longitude ≈ 69 miles * cos(latitude)
+async function getBoundingBox(centerLon, centerLat, radiusMiles) {
+        const earthRadiusMiles = 3959;
+        const radiusRadians = radiusMiles / earthRadiusMiles;
+        const latRad = centerLat * (Math.PI / 180);
+        
+        const minLat = centerLat - (radiusRadians * 180 / Math.PI);
+        const maxLat = centerLat + (radiusRadians * 180 / Math.PI);
+        
+        const deltaLon = Math.asin(Math.sin(radiusRadians) / Math.cos(latRad)) * 180 / Math.PI;
+        const minLon = centerLon - deltaLon;
+        const maxLon = centerLon + deltaLon;
+        
+        return { minLat, maxLat, minLon, maxLon };
+}
+
+/**
+ * Decode runway surface codes to full descriptions
+ * @param {string} surfaceCode - The surface code (e.g., "[CON]", "[ASP]", "grass")
+ * @returns {string} - Full surface description
+ */
+export function decodeRunwaySurface(surfaceCode) {
+    if (!surfaceCode) return '';
     
-    const latRadiusDegrees = radiusMiles / 69.0;
+    // Remove brackets if present and convert to uppercase
+    const code = surfaceCode.replace(/[\[\]]/g, '').toUpperCase();
     
-    // Calculate latitude bounds
-    const minLat = centerLat - latRadiusDegrees;
-    const maxLat = centerLat + latRadiusDegrees;
-    
-    // Calculate longitude bounds (accounting for latitude compression)
-    const latRad = centerLat * (Math.PI / 180);
-    const lonRadiusDegrees = radiusMiles / (69.0 * Math.cos(latRad));
-    
-    const minLon = centerLon - lonRadiusDegrees;
-    const maxLon = centerLon + lonRadiusDegrees;
-    
-    // Clamp latitude to valid range
-    const clampedMinLat = Math.max(-90, minLat);
-    const clampedMaxLat = Math.min(90, maxLat);
-    
-    // For longitude, don't normalize - just use the calculated values
-    // The database should handle longitude wrapping if needed
-    
-    return {
-        minLat: clampedMinLat,
-        maxLat: clampedMaxLat,
-        minLon: minLon,
-        maxLon: maxLon
+    const surfaceMap = {
+        'CON': 'CONCRETE',
+        'ASP': 'ASPHALT', 
+        'CONC': 'CONCRETE',
+        'ASPH': 'ASPHALT',
+        'GRASS': 'GRASS',
+        'TURF': 'TURF',
+        'DIRT': 'DIRT',
+        'GRAVEL': 'GRAVEL',
+        'WATER': 'WATER',
+        'SNOW': 'SNOW',
+        'ICE': 'ICE',
+        'CORAL': 'CORAL',
+        'SAND': 'SAND',
+        'CLAY': 'CLAY',
+        'MACADAM': 'MACADAM',
+        'BRICK': 'BRICK',
+        'STEEL': 'STEEL MATTING',
+        'PSP': 'PIERCED STEEL PLANKING',
+        'ALU': 'ALUMINUM',
+        'METAL': 'METAL'
     };
+    
+    return surfaceMap[code] || code; // Return mapped value or original code if not found
 }

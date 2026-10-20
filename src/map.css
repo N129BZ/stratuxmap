@@ -334,15 +334,19 @@ hr {
 }
 .taf {
     width: 400px;
-    height: 256px;
-    overflow-y: auto;
-    overflow-x: hidden;
+    height: 286px;
+    display: flex; 
+    flex-direction: column; 
+    overflow: hidden;
 }
-.tafmessage {
+.taftable {
     border: 2px;
     width: 400px;
     font-family: B612;
     font-size: medium;
+    overflow-x: hidden;
+    overflow-y: auto;
+    width: 100%;
 }
 .taflabel {
     font-family: B612;
@@ -392,11 +396,11 @@ hr {
     overflow: hidden;
     width: 370px;
 }
-.tafskyheader {
+.skyheader {
     background-color:lavender;
-    color:#777676;
+    color:#000000;
     font-family: B612;
-    font-style: italic;
+    /* font-style: italic; */
     font-weight:bold;
     font-size: medium;
     display:inline-block;
@@ -436,11 +440,93 @@ hr {
 .taf-popup-content {
     overflow-y: auto;
     flex: 1 1 auto;
-    /* Remove excessive padding or margin at the bottom */
     margin-bottom: 0;
     padding-bottom: 0;
 }
-.taf-popup-footer {
+.pirep {
+    width: 400px;
+    height: 286px;
+    display: flex; 
+    flex-direction: column; 
+    overflow: hidden;
+}
+.pirepmessage {
+    border: 2px;
+    width: 400px;
+    font-family: B612;
+    font-size: medium;
+}
+.pireptitle {
+    width:400px;
+    height:50px;
+    align-content: center;
+    vertical-align: middle;
+    border-color: #000000;
+    border-radius: 8px;
+    border-width: 2px;
+}
+.pireptitlelabel {
+    display: flex;
+    align-items: center;      /* vertical centering */
+    justify-content: center;  /* horizontal centering */
+    font-family: B612; 
+    font-weight: bold;
+    font-size: large;
+    text-align: center;
+    margin-top: 0px;
+    height: 42px;
+    width: 400px;
+    border: 1px solid #000;
+    border-radius: 8px;
+    /* border-width: 2px; */
+}
+.pirepheader {
+    font-family: B612; 
+    font-weight: bold;
+    font-size:medium;
+    align-content: center;
+    vertical-align: middle;
+}
+.pirepbody {
+    width: 400px;
+}
+.pirepsubheader {
+    background-color:lavender;
+    color:#000000;
+    font-family: B612;
+    font-weight:normal;
+    font-size: smaller;
+    display:inline-block;
+    overflow: hidden;
+    width: 370px;
+}
+.pirepitem {
+    background-color:white;
+    color:#000000;
+    font-family: B612;
+    font-weight: normal;
+    font-size:medium;
+    display:inline-block;
+    overflow: hidden;
+    align-content: start;
+    width:370px;
+}
+.table-row-data {
+    display: flex;
+    background-color: white;
+    color: #000000;
+    font-family: B612;
+    font-weight:normal;
+    font-size: smaller;
+    /* width: 100%; */
+}
+.pirep-popup-content {
+    overflow: hidden;
+    flex: 1 1 auto;
+    margin-bottom: 0;
+    padding-bottom: 0;
+}
+.popup-footer {
     /* flex: 0 0 auto; */
     padding-top: 0px;    /* Small space above footer */
     margin-top: 0;       /* Remove extra margin */
@@ -450,16 +536,6 @@ hr {
     flex-direction: column;
     align-items: flex-end;
     height: 110px;
-}
-.pirepitem {
-    background-color:lightyellow;
-    color:#000000;
-    font-family: B612;
-    font-weight: normal;
-    font-size:medium;
-    display:inline-block;
-    overflow: hidden;
-    width:370px;
 }
 .pirepskyheader {
     background-color:lavender;
@@ -471,13 +547,17 @@ hr {
     display:inline-block;
     overflow: hidden;
     text-align:center;
-    width: 370px;
+    width: 98%;
+}
+.pireptable {
+    overflow-x: hidden;
+    overflow-y: auto;
+    width: 100%;
 }
 .conditionimage {
-    text-align: center;
-    align-items: center;
-    scale: .80;
-    /*width: 370px;*/
+    align-content: end; 
+    scale: .90;
+    display: flex;
 }
 .airportpopuplabel {
     font-family: B612;
@@ -486,6 +566,11 @@ hr {
     text-align: center;
     height:160px;
 }
+.table-scroll-container {
+    max-height: 250px;
+    overflow-y: auto; 
+    margin-bottom: 10px;
+}
 .rawdata {
     background-color:lightyellow;
     color:#000000;
@@ -493,12 +578,12 @@ hr {
     font-weight: bold;
     font-size: medium;
     box-sizing:border-box;
-    width: 100%;
-    height: 70px;
-    max-width: 440px;
-    margin-left: 0px;
-    margin-right: 1px;
     border-radius: 6px;
+    field-sizing: content; 
+    width: 99%; 
+    max-width: 99%;
+    height: auto;
+    resize: none;
 }
 .custom-airport-info {
     font-family: B612;
@@ -509,14 +594,23 @@ hr {
     float: left;
     margin-bottom: 8px;
 }
+.custom-airport-info:active {
+    transform: translateY(1px); /* Moves the button slightly down */
+    box-shadow: inset 0px 2px 4px rgba(0, 0, 0, 0.2); /* Adds an internal shadow */
+}
 .custom-popup-closer {
     font-family: B612;
     font-weight: bold;
     border: 1px solid #000000;
     border-radius: 5px;
-    padding: 4px 12px;
+    padding: 4px 12px ;
     float: right;
+    margin-top: 8px;
     margin-bottom: 8px;
+}
+.custom-popup-closer:active {
+    transform: translateY(1px); /* Moves the button slightly down */
+    box-shadow: inset 0px 2px 4px rgba(0, 0, 0, 0.2); /* Adds an internal shadow */
 }
 .featurepopup {
     width: 361px;

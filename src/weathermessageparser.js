@@ -24,7 +24,7 @@ export async function parseWeatherMessage(weatherMessage, stationInfo) {
     
     // Time handling
     let timestamp = weatherMessage.Time;
-    let loc_time = weatherMessage.LocaltimeReceived.replace(/^0001-01-01/, '');
+    let loc_time = weatherMessage.LocaltimeReceived;
 
 
     // Weather handling
@@ -92,12 +92,12 @@ export async function parseWeatherMessage(weatherMessage, stationInfo) {
 
 /**
  * Parses a TAF Data string into forecast periods with wind, visibility, and sky conditions
- * @param {string} tafData - Raw TAF Data string
+ * @param {string} weatherData - Raw TAF Data string
  * @returns {Array} Array of forecast objects
  */
-function parseWeatherForecast(tafData) {
+function parseWeatherForecast(weatherData) {
     // Split into lines/periods
-    const lines = tafData
+    const lines = weatherData
         .replace(/\n/g, ' ')
         .replace(/=+$/, '')
         .split(/(?=\bFM\d{6}|TEMPO|PROB\d{2}|BECMG)/)
