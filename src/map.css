@@ -583,17 +583,16 @@ hr {
     transform: translateY(1px); /* Moves the button slightly down */
     box-shadow: inset 0px 2px 4px rgba(0, 0, 0, 0.2); /* Adds an internal shadow */
 }
-.custom-popup-closer {
+.custom-popup-button {
     font-family: B612;
     font-weight: bold;
     border: 1px solid #000000;
     border-radius: 5px;
     padding: 4px 12px ;
-    float: right;
     margin-top: 8px;
     margin-bottom: 8px;
 }
-.custom-popup-closer:active {
+.custom-popup-button:active {
     transform: translateY(1px); /* Moves the button slightly down */
     box-shadow: inset 0px 2px 4px rgba(0, 0, 0, 0.2); /* Adds an internal shadow */
 }

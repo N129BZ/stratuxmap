@@ -905,31 +905,35 @@ document.addEventListener('DOMContentLoaded', async function () {
      * @param {feature} Feature: the metar feature the user clicked on 
      */
     function displayMetarPopup(feature) {
-        let metar = feature.get("data");
-        let rawmetar = metar.raw_text;
-        let ident = metar.station_id;
-        let svg = feature.get("svgimage");
-        let cat = metar.flight_category ?? "VFR";
-        let tempC = metar.temp_c;
-        let dewpC = metar.dewpoint_c;
-        let temp = convertCtoF(metar.temp_c) ?? "";
-        let dewp = convertCtoF(metar.dewpoint_c) ?? "";
-        let windir = metar.wind_dir_degrees ?? "";
-        let winspd = metar.wind_speed_kt ?? "";
-        let wingst = metar.wind_gust_kt ?? "";
-        let altim = getAltimeterSetting(metar.altim_in_hg) ?? "";
-        let vis = getDistanceUnits(metar.visibility_statute_mi) ?? "";
-        let wxcode = decodeWxDescriptions(metar.wx_string) ?? "";
-        let taflabelcssClass = "taflabel";
-        let skycondition = metar.sky_condition;
-        let skyconditions = decodeSkyCondition(skycondition, taflabelcssClass) ?? "";
-        let icingconditions = decodeIcingOrTurbulenceCondition(icingcondition) ?? ""; //, taflabelCssClass) ?? ""; 
-        let btncolors = getCategoryColors(cat);
-        let bgcolor = btncolors.bgcolor;
-        let fgcolor = btncolors.fgcolor;
-        let css = `<span class="metarheader" style="background-color:${bgcolor}; color:${fgcolor}";>`;
-        let name = feature.get('station_name') ?? "";    
-
+        const metar = feature.get("data");
+        const rawData = metar.raw_text;
+        const ident = metar.station_id;
+        const svg = feature.get("svgimage");
+        const cat = metar.flight_category ?? "VFR";
+        const tempC = metar.temp_c;
+        const dewpC = metar.dewpoint_c;
+        const temp = convertCtoF(tempC ?? "") ?? "";
+        const dewp = convertCtoF(dewpC ?? "") ?? "";
+        const windir = metar.wind_dir_degrees ?? "";
+        const winspd = metar.wind_speed_kt ?? "";
+        const wingst = metar.wind_gust_kt ?? "";
+        const altim = getAltimeterSetting(metar.altim_in_hg ?? "") ?? "";
+        const vis = getDistanceUnits(metar.visibility_statute_mi ?? "") ?? "";
+        const wxcode = decodeWxDescriptions(metar.wx_string ?? "") ?? "";
+        const taflabelcssClass = "taflabel";
+        const skycondition = metar.sky_condition;
+        const skyconditions = decodeSkyCondition(skycondition ?? "") ?? "";
+        const icingconditions = decodeIcingOrTurbulenceCondition(skycondition ?? "") ?? ""; 
+        const btncolors = getCategoryColors(cat);
+        const bgcolor = btncolors.bgcolor;
+        const fgcolor = btncolors.fgcolor;
+        const css = `<span class="metarheader" style="background-color:${bgcolor}; color:${fgcolor}";>`;
+        const rowPrefix = `<tr class="table-row-data">`
+        const cellData = `<td style="width:100%;">`;
+        const rowSuffix = `</td></tr>`;
+        const skyHeader = `<tr class="skyheader"><td colspan="2" style="display:block;width:99%;text-align:center;border:1px solid #000000;">`;
+        
+        let detailhtml = "";
         let time = (function () {
             if (metar.observation_time) {
                 return metar.observation_time;
@@ -942,42 +946,66 @@ document.addEventListener('DOMContentLoaded', async function () {
             }
         })();
 
+        let name = feature.get('station_name') ?? "";   
+        name = name ? `${name}<br>` : "";
+        
         if (ident != "undefined") {
-                    
-            let html = `<div class="featurepopup" id="featurepopup">
-                ${css}${name}<br>${ident} - ${cat}</span><br>
+            detailhtml = 
+            `<div style="display:block;">
                 <div class="metar-popup-body"> 
-                    Time:&nbsp<b>${time}</b><br>
-                    Temp:&nbsp<b>${tempC} °C</b> (${temp})<br>
-                    Dewpoint:&nbsp<b>${dewpC} °C</b> (${dewp})<br>
-                    Wind Direction:&nbsp<b>${windir}°</b><br>
-                    Wind Speed:&nbsp<b>${winspd}&nbspkt</b><br>
-                    Wind Gust:&nbsp<b>${wingst}&nbspkt</b><br>
-                    Altimeter:&nbsp<b>${altim}&nbsphg</b><br>
-                    Horizontal Visibility:&nbsp<b>${vis}</b><br>
-                    Weather:&nbsp<b>${wxcode}</b><br>
-                    ${skyconditions}
-                    ${icingconditions}
-                    <span class="windsvg">${svg}</span>
-                </div> 
-                <hr>
-                <button id="airport-info" class="custom-airport-info" ident="${ident}" style="background:${bgcolor}; color:${fgcolor};">Airport Info</button>
-                <button class="custom-popup-closer" onclick="closePopup()" style="background:${bgcolor}; color:${fgcolor};">Close</button>
-                <textarea id="rawdata" class="rawdata">${rawmetar}</textarea><br>`;
+                    <div class="table-scroll-container">
+                        <table class="taftable" id="metartable">
+                            <div class="table-scroll-container">
+                                ${rowPrefix}${cellData}Time: ${cellData}<b>${time}</b>${rowSuffix}
+                                ${rowPrefix}${cellData}Flight Category: ${cellData}<b>${cat}</b>${rowSuffix}
+                                ${rowPrefix}${cellData}Temperature: ${cellData}<b>${tempC} °C</b> (${temp})${rowSuffix}
+                                ${rowPrefix}${cellData}Dewpoint: ${cellData}<b>${dewpC} °C</b> (${dewp})${rowSuffix}
+                                ${rowPrefix}${cellData}Wind Direction: ${cellData}<b>${windir}°</b>${rowSuffix}
+                                ${rowPrefix}${cellData}Wind Speed: ${cellData}<b>${winspd}KT</b>${rowSuffix}
+                                ${rowPrefix}${cellData}Wind Gust: ${cellData}<b>${wingst} KT</b>${rowSuffix}
+                                ${rowPrefix}${cellData}Altimeter: ${cellData}<b>${altim} hg</b>${rowSuffix}
+                                ${rowPrefix}${cellData}Horizontal Visibility: ${cellData}<b>${vis}</b>${rowSuffix}
+                                ${rowPrefix}${cellData}Temp: ${cellData}<b>${tempC} °C</b>${rowSuffix}
+                                ${rowPrefix}${cellData}Dewpoint: ${cellData}<b>${dewpC}°C</b>${rowSuffix}
+                                ${rowPrefix}${cellData}Wind Direction: {cellData}<b>${windir}°</b>${rowSuffix}
+                                ${rowPrefix}${cellData}Wind Speed: ${cellData}<b>${winspd} KT</b>${rowSuffix}
+                                ${rowPrefix}${cellData}Wind Gust: {cellData}<b>${wingst} KT</b>${rowSuffix}
+                                ${rowPrefix}${cellData}Altimeter: ${cellData}<b>${altim} hg</b>${rowSuffix}
+                                ${rowPrefix}${cellData}Horizontal Visibility: ${cellData}<b>${vis}</b>${rowSuffix}
+                                ${skyHeader}Sky Conditions${rowSuffix}
+                                        ${skyconditions}
+                                ${skyHeader}Icing Conditions${rowSuffix}
+                                        ${icingconditions}
+                                <span class="windsvg">${svg}</span>
+                            </div>
+                        </table>
+                    </div>    
+                    <hr>
+                    <div class="popup-footer">
+                        <div class="popup-button-row" style="display: flex; flex-direction: row; justify-content: space-between; width: 100%;">
+                            <button class="custom-popup-button" onclick="closePopup()" style="background:${bgcolor}; color:${fgcolor};">Station Info</button>
+                            <button class="custom-popup-button" onclick="closePopup()" style="background:${bgcolor}; color:${fgcolor};">Close</button>
+                        </div>
+                        <textarea id="rawdata" class="rawdata">${rawData}</textarea><br>
+                    </div>
+                </div>
+            </div>`;
+         
+        } // | End of if (ident != "undefined") block  
             
-            popupcontent.innerHTML = html;
+        console.log(`METAR POPUP\n${detailhtml}`);
+        popupcontent.innerHTML = detailhtml;
 
-            // Step 2: Bind the click event immediately inside the same module scope
-            const infoBtn = popupcontent.querySelector('#airport-info');
-            if (infoBtn) {
-                infoBtn.addEventListener('click', () => {
-                    const stationId = infoBtn.getAttribute('ident');
-                    getAirportInfo(stationId); // This will never throw a ReferenceError
-                });
-            }
+        // Bind the click event immediately inside the same function scope
+        const infoBtn = popupcontent.querySelector('#airport-info');
+        if (infoBtn) {
+            infoBtn.addEventListener('click', () => {
+                const stationId = infoBtn.getAttribute('ident');
+                getAirportInfo(stationId); // This will never throw a ReferenceError
+            });
         }
     }
-
+    
     /**
      * Create the html for a TAF popup element
      * @param {feature} Feature: the taf feature the user clicked on
@@ -1026,8 +1054,8 @@ document.addEventListener('DOMContentLoaded', async function () {
                 </div>
                 <div class="popup-footer">
                     <div class="popup-button-row" style="display: flex; flex-direction: row; justify-content: space-between; width: 100%;">
-                        <button class="custom-popup-closer" onclick="closePopup()" style="background:${bgcolor}; color:${fgcolor};">Station Info</button>
-                        <button class="custom-popup-closer" onclick="closePopup()" style="background:${bgcolor}; color:${fgcolor};">Close</button>
+                        <button class="custom-popup-button" onclick="closePopup()" style="background:${bgcolor}; color:${fgcolor};">Station Info</button>
+                        <button class="custom-popup-button" onclick="closePopup()" style="background:${bgcolor}; color:${fgcolor};">Close</button>
                     </div>
                     <textarea id="rawdata" class="rawdata">${rawData}</textarea><br>
                 </div>
@@ -1162,7 +1190,7 @@ document.addEventListener('DOMContentLoaded', async function () {
                             </table>
                         </div>
                         <div class="popup-footer">
-                            <button class="custom-popup-closer" onclick="closePopup()" style="background:${bgcolor}; color:${fgcolor};">Close</button>
+                            <button class="custom-popup-button" onclick="closePopup()" style="background:${bgcolor}; color:${fgcolor};">Close</button>
                             <textarea id="rawdata" class="rawdata">${rawData}</textarea><br>
                         </div>
                     </div>
@@ -1170,7 +1198,6 @@ document.addEventListener('DOMContentLoaded', async function () {
             </div>`;    
         const innerhtml = html + detailhtml;
         popupcontent.innerHTML = innerhtml;
-        console.log(innerhtml);
     }
 
     function getAirportInfo(id) {
@@ -1282,7 +1309,7 @@ document.addEventListener('DOMContentLoaded', async function () {
         
         html += `</div>`; // end of airport-popup-body
         html += `<hr>`;
-        html += `<button class="custom-popup-closer" onclick="closePopup()" style="background:${headerBackgroundColor}; color:${headerTextColor};">Close</button>`;
+        html += `<button class="custom-popup-button" onclick="closePopup()" style="background:${headerBackgroundColor}; color:${headerTextColor};">Close</button>`;
         html += `</div>`;
         
         popupcontent.innerHTML = html;
@@ -2369,6 +2396,7 @@ document.addEventListener('DOMContentLoaded', async function () {
      * @returns string with any weather description(s)
      */
     function decodeWxDescriptions(codevalue) {
+        if (codevalue === "") return codevalue;
         let outstr = null;
         let vals = codevalue.split(" ");
         let wak = null;
