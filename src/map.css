@@ -339,7 +339,7 @@ hr {
     flex-direction: column; 
     overflow: hidden;
 }
-.taftable {
+.popup-body-table {
     border: 2px;
     width: 400px;
     font-family: B612;
@@ -361,7 +361,7 @@ hr {
     border-radius: 8px;
     border-width: 2px;
 }
-.taftitlelabel {
+.popup-title-area {
     display: flex;
     align-items: center;      /* vertical centering */
     justify-content: center;  /* horizontal centering */
@@ -539,6 +539,7 @@ hr {
 .popup-button-row {
     display: flex; 
     flex-direction: row; 
+    align-items: flex-end;
     justify-content: space-between; 
     width: 100%;
 }
@@ -613,12 +614,12 @@ hr {
     font-size:small;
 }
 .windsvg {
-    position: absolute;
+    /* position: absolute;
     top: 55px;
-    right: 1px;
+    right: 1px; */
     height: 130px;
     width: 130px;
-    left: 231px;
+    /* left: 231px; */
 }
 /* Merged from template.css: .closeBtn style */
 .closeBtn {

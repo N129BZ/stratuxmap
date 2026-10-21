@@ -808,11 +808,6 @@ document.addEventListener('DOMContentLoaded', async function () {
         console.log('Selected radius:', selectedRadius, 'miles');
     });
 
-    //airportLayer.on('change:visible', checkAirportLayerVisibility);
-    // Initial checks
-    // checkAirportLayerVisibility();
-    
-    
     /**
      * Event to handle scaling of feature images
      */
@@ -915,19 +910,16 @@ document.addEventListener('DOMContentLoaded', async function () {
         const temp = convertCtoF(tempC ?? "") ?? "";
         const dewp = convertCtoF(dewpC ?? "") ?? "";
         const windir = metar.wind_dir_degrees ?? "";
-        const winspd = metar.wind_speed_kt ?? "";
-        const wingst = metar.wind_gust_kt ?? "";
+        const winspd = metar.wind_speed_kt ?? "0";
+        const wingst = metar.wind_gust_kt ?? "0";
         const altim = getAltimeterSetting(metar.altim_in_hg ?? "") ?? "";
         const vis = getDistanceUnits(metar.visibility_statute_mi ?? "") ?? "";
-        const wxcode = decodeWxDescriptions(metar.wx_string ?? "") ?? "";
-        const taflabelcssClass = "taflabel";
         const skycondition = metar.sky_condition;
         const skyconditions = decodeSkyCondition(skycondition ?? "") ?? "";
         const icingconditions = decodeIcingOrTurbulenceCondition(skycondition ?? "") ?? ""; 
         const btncolors = getCategoryColors(cat);
         const bgcolor = btncolors.bgcolor;
         const fgcolor = btncolors.fgcolor;
-        const css = `<span class="metarheader" style="background-color:${bgcolor}; color:${fgcolor}";>`;
         const rowPrefix = `<tr class="table-row-data">`
         const cellData = `<td style="width:100%;">`;
         const rowSuffix = `</td></tr>`;
@@ -952,38 +944,30 @@ document.addEventListener('DOMContentLoaded', async function () {
         if (ident != "undefined") {
             detailhtml = 
             `<div style="display:block;">
-                <div class="metar-popup-body"> 
+                <span class="popup-title-area" style="background-color:${bgcolor}; color:${fgcolor};">Metar - ${ident}</span>
+                <div class="popup-content">
                     <div class="table-scroll-container">
-                        <table class="taftable" id="metartable">
-                            <div class="table-scroll-container">
-                                ${rowPrefix}${cellData}Time: ${cellData}<b>${time}</b>${rowSuffix}
-                                ${rowPrefix}${cellData}Flight Category: ${cellData}<b>${cat}</b>${rowSuffix}
-                                ${rowPrefix}${cellData}Temperature: ${cellData}<b>${tempC} °C</b> (${temp})${rowSuffix}
-                                ${rowPrefix}${cellData}Dewpoint: ${cellData}<b>${dewpC} °C</b> (${dewp})${rowSuffix}
-                                ${rowPrefix}${cellData}Wind Direction: ${cellData}<b>${windir}°</b>${rowSuffix}
-                                ${rowPrefix}${cellData}Wind Speed: ${cellData}<b>${winspd}KT</b>${rowSuffix}
-                                ${rowPrefix}${cellData}Wind Gust: ${cellData}<b>${wingst} KT</b>${rowSuffix}
-                                ${rowPrefix}${cellData}Altimeter: ${cellData}<b>${altim} hg</b>${rowSuffix}
-                                ${rowPrefix}${cellData}Horizontal Visibility: ${cellData}<b>${vis}</b>${rowSuffix}
-                                ${rowPrefix}${cellData}Temp: ${cellData}<b>${tempC} °C</b>${rowSuffix}
-                                ${rowPrefix}${cellData}Dewpoint: ${cellData}<b>${dewpC}°C</b>${rowSuffix}
-                                ${rowPrefix}${cellData}Wind Direction: {cellData}<b>${windir}°</b>${rowSuffix}
-                                ${rowPrefix}${cellData}Wind Speed: ${cellData}<b>${winspd} KT</b>${rowSuffix}
-                                ${rowPrefix}${cellData}Wind Gust: {cellData}<b>${wingst} KT</b>${rowSuffix}
-                                ${rowPrefix}${cellData}Altimeter: ${cellData}<b>${altim} hg</b>${rowSuffix}
-                                ${rowPrefix}${cellData}Horizontal Visibility: ${cellData}<b>${vis}</b>${rowSuffix}
-                                ${skyHeader}Sky Conditions${rowSuffix}
-                                        ${skyconditions}
-                                ${skyHeader}Icing Conditions${rowSuffix}
-                                        ${icingconditions}
-                                <span class="windsvg">${svg}</span>
-                            </div>
+                        <table class="popup-body-table" id="metartable">
+                           ${rowPrefix}${cellData}Time: ${cellData}<b>${time}</b>${rowSuffix}
+                            ${rowPrefix}${cellData}Flight Category: ${cellData}<b>${cat}</b>${rowSuffix}
+                            ${rowPrefix}${cellData}Temperature: ${cellData}<b>${tempC} °C (${temp})</b>${rowSuffix}
+                            ${rowPrefix}${cellData}Dewpoint: ${cellData}<b>${dewpC} °C (${dewp})</b>${rowSuffix}
+                            ${rowPrefix}${cellData}Wind Direction: ${cellData}<b>${windir}°</b>${rowSuffix}
+                            ${rowPrefix}${cellData}Wind Speed: ${cellData}<b>${winspd} KT</b>${rowSuffix}
+                            ${rowPrefix}${cellData}Wind Gust: ${cellData}<b>${wingst} KT</b>${rowSuffix}
+                            ${rowPrefix}${cellData}Altimeter: ${cellData}<b>${altim} hg</b>${rowSuffix}
+                            ${rowPrefix}${cellData}Horizontal Visibility: ${cellData} <b>${vis}</b>${rowSuffix}
+                            ${skyHeader}Sky Conditions${rowSuffix}
+                                    ${skyconditions}
+                            ${skyHeader}Icing Conditions${rowSuffix}
+                                    ${icingconditions}
                         </table>
                     </div>    
                     <hr>
                     <div class="popup-footer">
                         <div class="popup-button-row" style="display: flex; flex-direction: row; justify-content: space-between; width: 100%;">
                             <button class="custom-popup-button" onclick="closePopup()" style="background:${bgcolor}; color:${fgcolor};">Station Info</button>
+                            <span class="windsvg">${svg}</span>
                             <button class="custom-popup-button" onclick="closePopup()" style="background:${bgcolor}; color:${fgcolor};">Close</button>
                         </div>
                         <textarea id="rawdata" class="rawdata">${rawData}</textarea><br>
@@ -1025,11 +1009,11 @@ document.addEventListener('DOMContentLoaded', async function () {
         let detailhtml = "";
         let innerhtml = 
            `<div style="display:block;">
-            <span class="taftitlelabel" style="background-color:${bgcolor}; color:${fgcolor};">Terminal Area Forecast - ${id}</span>
+            <span class="popup-title-area" style="background-color:${bgcolor}; color:${fgcolor};">Terminal Area Forecast - ${id}</span>
             <div class="popup-content">
                 <div class="taf">
                     <div class="table-scroll-container">
-                        <table class="taftable" id="taftable">`;
+                        <table class="popup-body-table" id="taftable">`;
                             for (const item in forecast) {
                                 let parsedForecast = "";
                                 const value = forecast[item];
@@ -1084,7 +1068,7 @@ document.addEventListener('DOMContentLoaded', async function () {
         let detailhtml = "";
         let html = 
            `<div style="display:block;">
-                <span class="pireptitlelabel" style="background-color:${bgcolor}; color:${fgcolor};">${popupFeature.report_type.toUpperCase()} FROM AIRCRAFT: ${popupFeature.aircraft_ref}</span>
+                <span class="popup-title-area" style="background-color:${bgcolor}; color:${fgcolor};">${popupFeature.report_type.toUpperCase()} FROM AIRCRAFT: ${popupFeature.aircraft_ref}</span>
                 <div class="popup-content">
                     <div class="pirep">
                         <div class="table-scroll-container">
@@ -1562,12 +1546,14 @@ document.addEventListener('DOMContentLoaded', async function () {
         // await the incoming metar...
         const metar = await metarPromise;
         const airportInfo = await stationInfoPromise;
+        
         // Validate required properties
         if (!metar || typeof metar.longitude !== 'number' || typeof metar.latitude !== 'number') {
             return;
         }
-
+        
         try {
+            const stationName = getFormattedAirportName(metar.station_id); 
             var popupSvg = "";
             var mapDotSvg = "";
             try {
@@ -1585,10 +1571,12 @@ document.addEventListener('DOMContentLoaded', async function () {
             });
 
             const metarFeature = new Feature({
+                ident: metar.station_id,
+                id: metar.station_id,
                 data: metar,
                 datatype: "metar",
                 geometry: new Point(fromLonLat([metar.longitude, metar.latitude])),
-                station_name: metar.station_name,
+                station_name: stationName,
                 station_info: airportInfo,
                 svgimage: popupSvg
             });
@@ -1596,12 +1584,6 @@ document.addEventListener('DOMContentLoaded', async function () {
             metarFeature.setStyle(new Style({
                 image: metarmarker
             }));
-            metarFeature.setId(metar.station_id);
-
-            // const oldFeature = metarVectorLayer.getSource().getFeatureById(metar.station_id);
-            // if (oldFeature) {
-            //     metarVectorLayer.getSource().removeFeature(oldFeature);
-            // }
             
             metarVectorLayer.getSource().addFeature(metarFeature);
             metarFeature.changed();
@@ -1644,6 +1626,7 @@ document.addEventListener('DOMContentLoaded', async function () {
         try {
             let tafFeature = new Feature({
                 ident: taf.station_id,
+                id: taf.station_id,
                 data: taf,
                 datatype: "taf",
                 geometry: new Point(fromLonLat([taf.longitude, taf.latitude]))
@@ -1658,11 +1641,7 @@ document.addEventListener('DOMContentLoaded', async function () {
                     scale: .2   
                 })
             }));
-            tafFeature.setId(taf.station_id);
-            // const oldFeature = tafVectorLayer.getSource().getFeatureById(taf.station_id);
-            // if (oldFeature) {
-            //     tafVectorLayer.getSource().removeFeature(oldFeature);
-            // }
+            
             tafVectorLayer.getSource().addFeature(tafFeature)
             tafFeature.changed();
             tafVectorLayer.changed();
@@ -1712,11 +1691,6 @@ document.addEventListener('DOMContentLoaded', async function () {
             pirepFeature.setStyle(new Style({
                 image: pirepmarker
             }));
-            
-            // const oldFeature = pirepVectorLayer.getSource().getFeatureById(id);
-            // if (oldFeature) {
-            //     pirepVectorLayer.getSource().removeFeature(oldFeature);
-            // }
             
             pirepVectorLayer.getSource().addFeature(pirepFeature);
             pirepFeature.changed();
@@ -2014,7 +1988,7 @@ document.addEventListener('DOMContentLoaded', async function () {
         tafFieldKeymap.set("temp_c", "Temperature °C");
         tafFieldKeymap.set("icing_type", "Icing Type");
         tafFieldKeymap.set("pirep_type", "Pirep Type");
-        tafFieldKeymap.set("altitude_ft_msl", "Altitude (FT MSL)");
+        tafFieldKeymap.set("altitude_ft_msl", "Altitude");
         tafFieldKeymap.set("receipt_time", "Receipt Time")
         tafFieldKeymap.set("observation_time", "Observation Time")
         tafFieldKeymap.set("latitude", "Latitude")
@@ -2026,39 +2000,39 @@ document.addEventListener('DOMContentLoaded', async function () {
         tafFieldKeymap.set("time_becoming", "Time Becoming");
         tafFieldKeymap.set("probability", "Probability");
         tafFieldKeymap.set("wind_dir_degrees", "Wind Direction");
-        tafFieldKeymap.set("wind_speed_kt", "Wind Speed (KT)");
+        tafFieldKeymap.set("wind_speed_kt", "Wind Speed");
         tafFieldKeymap.set("wind_gust_kt", "Wind Gust knots");
-        tafFieldKeymap.set("wind_shear_hgt_ft_agl", "Shear Height (FT AGL)");
+        tafFieldKeymap.set("wind_shear_hgt_ft_agl", "Shear Height");
         tafFieldKeymap.set("wind_shear_dir_degrees", "Shear Direction");
-        tafFieldKeymap.set("wind_shear_speed_kt", "Shear Speed (KT)");
+        tafFieldKeymap.set("wind_shear_speed_kt", "Shear Speed");
         tafFieldKeymap.set("altim_in_hg", "Altimeter (Hg)");
-        tafFieldKeymap.set("vert_vis_ft", "Vert. Visibility (FT)");
-        tafFieldKeymap.set("visibility_statute_mi", "Horiz. Visibility (SM)");
+        tafFieldKeymap.set("vert_vis_ft", "Vert. Visibility");
+        tafFieldKeymap.set("visibility_statute_mi", "Horiz. Visibility");
         tafFieldKeymap.set("wx_string", "Weather");
         tafFieldKeymap.set("sky_condition", "Sky Condition");
         tafFieldKeymap.set("icing_condition", "Icing Condition");
         tafFieldKeymap.set("turbulence_condition", "Turbulence Condition");
         tafFieldKeymap.set("sky_cover", "Sky Cover");
-        tafFieldKeymap.set("cloud_base_ft_agl", "Cloud Base (FT AGL)");
-        tafFieldKeymap.set("cloud_base_ft_msl", "Cloud Base (FT MSL)");
+        tafFieldKeymap.set("cloud_base_ft_agl", "Cloud Base");
+        tafFieldKeymap.set("cloud_base_ft_msl", "Cloud Base");
         tafFieldKeymap.set("cloud_base", "Cloud Base");
         // icing fieldnames
         tafFieldKeymap.set("icing_intensity", "Intensity");
-        tafFieldKeymap.set("icing_min_alt_ft_agl", "Min Altitude (FT AGL)");
-        tafFieldKeymap.set("icing_max_alt_ft_agl", "Max Altitude (FT AGL)");
-        tafFieldKeymap.set("icing_min_alt_ft_msl", "Min Altitude (FT MSL)");
-        tafFieldKeymap.set("icing_max_alt_ft_agl", "Max Altitude (FT MSL)");
+        tafFieldKeymap.set("icing_min_alt_ft_agl", "Min Altitude");
+        tafFieldKeymap.set("icing_max_alt_ft_agl", "Max Altitude");
+        tafFieldKeymap.set("icing_min_alt_ft_msl", "Min Altitude");
+        tafFieldKeymap.set("icing_max_alt_ft_agl", "Max Altitude ");
         tafFieldKeymap.set("icing_type", "Type");
-        tafFieldKeymap.set("icing_top_ft_msl", "Top (FT MSL)");
-        tafFieldKeymap.set("icing_base_ft_msl", "Base (FT MSL)");
+        tafFieldKeymap.set("icing_top_ft_msl", "Top");
+        tafFieldKeymap.set("icing_base_ft_msl", "Base");
         // turbulence fieldnames
         tafFieldKeymap.set("turbulence_intensity", "Intensity");
-        tafFieldKeymap.set("turbulence_min_alt_ft_agl", "Min Altitude (FT AGL)");
-        tafFieldKeymap.set("turbulence_max_alt_ft_agl", "Max Altitude (FT AGL)");
+        tafFieldKeymap.set("turbulence_min_alt_ft_agl", "Min Altitude");
+        tafFieldKeymap.set("turbulence_max_alt_ft_agl", "Max Altitude ");
         tafFieldKeymap.set("turbulence_freq", "Frequency");
         tafFieldKeymap.set("turbulence_type", "Turbulence Type");
-        tafFieldKeymap.set("turbulence_top_ft_msl", "Top (FT MSL)");
-        tafFieldKeymap.set("turbulence_base_ft_msl", "Base (FT MSL)");
+        tafFieldKeymap.set("turbulence_top_ft_msl", "Top");
+        tafFieldKeymap.set("turbulence_base_ft_msl", "Base");
         tafFieldKeymap.set("LLWS", "Low Level Wind Shear");
     }
 
