@@ -522,6 +522,7 @@ hr {
     font-family: B612;
     font-weight:normal;
     font-size: smaller;
+    border-bottom: 1px solid rgb(158, 155, 155);
     /* width: 100%; */
 }
 
@@ -534,6 +535,12 @@ hr {
     gap: 4px;
     padding-top: 4px;
     min-height: 110px;
+}
+.popup-button-row {
+    display: flex; 
+    flex-direction: row; 
+    justify-content: space-between; 
+    width: 100%;
 }
 .pireptable {
     overflow-x: hidden;
