@@ -2,7 +2,7 @@
 /***********************************************************************************
  * Converts a received websocket weather object to FAA pre-processed object format *
  ***********************************************************************************/
-import { attachAirportInfo } from './airportfunctions.js';
+import { getAirportInfo } from './airportfunctions.js';
 
 /**
  * Converts a Stratux METAR object to FAA METAR format
@@ -11,17 +11,17 @@ import { attachAirportInfo } from './airportfunctions.js';
  * @returns {Object} FAA-style METAR object
  */
 export async function parseWeatherMessage(weatherMessage, stationInfo) {
-    
+
     // if (weatherMessage.Type === "METAR" || weatherMessage.Type === "TAF") {
     //     if (!stationInfo) {
     //         stationInfo = await attachAirportInfo(weatherMessage.Location);
     //     }
     // }
-    
+
     // Make sure stratuxObject.Location is a string airport code, e.g. "KORD"
     const cleanedData = weatherMessage.Data.replace(/\s*\n\s*/g, ' ').trim();
     const forecast = await parseWeatherForecast(weatherMessage.Data);
-    
+
     // Time handling
     let timestamp = weatherMessage.Time;
     let loc_time = weatherMessage.LocaltimeReceived;
@@ -81,7 +81,7 @@ export async function parseWeatherMessage(weatherMessage, stationInfo) {
         visibility_statute_mi: visMiles,
         altim_in_hg: altimMatch ? (Number(altimMatch[1]) / 100).toFixed(2) : null,
         sky_condition,
-        flight_category: cond, 
+        flight_category: cond,
         metar_type,
         elevation_m: stationInfo?.elevation_m ?? null,
         forecast: forecast,

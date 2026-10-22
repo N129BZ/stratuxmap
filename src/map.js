@@ -11,24 +11,24 @@ import 'ol/ol.css';
 import 'ol-layerswitcher/dist/ol-layerswitcher.css';
 import { Map as OLMap, View } from 'ol';
 import TileLayer from 'ol/layer/Tile';
-import { TileWMS, XYZ } from 'ol/source';
+import { XYZ } from 'ol/source';
 import OSM from 'ol/source/OSM';
 import { fromLonLat, toLonLat, transformExtent } from 'ol/proj';
 import Feature from 'ol/Feature';
 import Point from 'ol/geom/Point';
-import LineString from 'ol/geom/LineString';
+//import LineString from 'ol/geom/LineString';
 import VectorLayer from 'ol/layer/Vector';
 import VectorSource from 'ol/source/Vector';
 import Style from 'ol/style/Style';
 import Icon from 'ol/style/Icon';
-import Stroke from 'ol/style/Stroke';
+//import Stroke from 'ol/style/Stroke';
 import Overlay from 'ol/Overlay';
 import { defaults as defaultControls, ScaleLine } from 'ol/control';
 import LayerSwitcher from 'ol-layerswitcher';
 import { saveMapState, restoreMapState } from './mapstatemanager.js';
 import { getAirportsInRadius, decodeRunwaySurface } from './airportfunctions.js';
-import { attachAirportInfo } from './airportfunctions.js';
-import { parseWeatherMessage } from './weathermessageparser.js';
+import { getAirportObject } from './airportfunctions.js';
+//import { parseWeatherMessage } from './weathermessageparser.js';
 
 export class FIFOCache {
     constructor(maxSize) {
@@ -82,10 +82,10 @@ const URL_GET_TILE = `${URL_SERVER}/tiles/{dbname}/{z}/{x}/{-y}`;
  * Set appsettings to default values, 
  * will be updated by server on connect.
  */
-let appsettings = ""; 
+let appsettings = "";
 let deg = 0;
 let alt = 0;
-let lng = 0;    
+let lng = 0;
 let lat = 0;
 let last_longitude = 0;
 let last_latitude = 0;
@@ -133,19 +133,19 @@ document.addEventListener('DOMContentLoaded', async function () {
         console.log("App settings loaded safely via async fetch:", appsettings);
     } catch (error) {
         console.error("CRITICAL CONFIGURATION ERROR:", error);
-        
+
         document.body.innerHTML = '';
-        
+
         const errorContainer = document.createElement('div');
         errorContainer.style.cssText = "font-family: sans-serif; padding: 40px; text-align: center; color: #721c24; background: #f8d7da; border: 1px solid #f5c6cb; margin: 50px auto; max-width: 600px; border-radius: 4px;";
-        
+
         errorContainer.innerHTML = `
             <h2>Critical Initialization Failure</h2>
             <p>The application could not load configuration profiles and has been halted.</p>
             <p style="font-family: monospace; background: #fff; padding: 10px; border: 1px solid #ddd; color: #333;">${error.message}</p>`;
-        
+
         document.body.appendChild(errorContainer);
-        
+
         throw new Error("Application halted due to settings loading failure.");
     }
 
@@ -191,17 +191,17 @@ document.addEventListener('DOMContentLoaded', async function () {
     tplcontainer = document.getElementById('tplcontainer');
     popup = document.getElementById('popup');
     popupcontent = document.getElementById('popup-content');
-    
+
     let socket = null;
 
     document.getElementById('radius-header').textContent = `Airport Search Radius\nDouble-click on any location`;
-    
+
     // Register stateReplay event listener BEFORE calling restoreMapState
     window.addEventListener('stateReplay', async function (e) {
-        try {    
+        try {
             const stateCache = e.detail.state;
             console.log("In window event listener for stateReplay");
-            
+
             if (!stateCache) return;
 
             if (typeof stateCache.zoom === 'number' &&
@@ -211,18 +211,18 @@ document.addEventListener('DOMContentLoaded', async function () {
                 typeof stateCache.viewposition[1] === 'number' &&
                 typeof stateCache.rotation === 'number' &&
                 typeof stateCache.selectedRadius === 'number') {
-                
+
                 map.getView().setZoom(stateCache.zoom);
                 map.getView().setCenter(stateCache.viewposition);
                 map.getView().setRotation(stateCache.rotation);
-                
+
                 // Set the selected radius in the Airport Layer dropdown
                 selectedRadius = stateCache.selectedRadius;
                 const radiusDropdown = document.getElementById('radius-dropdown');
                 if (radiusDropdown) {
                     radiusDropdown.value = selectedRadius.toString();
                 }
-                
+
                 // set the layer visibilities
                 if (Array.isArray(stateCache.layervisibility)) {
                     for (const layerState of stateCache.layervisibility) {
@@ -237,13 +237,13 @@ document.addEventListener('DOMContentLoaded', async function () {
                 console.log("Finished processing of Replay event");
             }
         }
-        finally {} 
+        finally { }
     });
 
     // Handle Back-Forward Cache (bfcache) Restoration
     window.addEventListener('pageshow', async (event) => {
         console.log(`pageshow triggered. Page restored from cache: ${event.persisted}`);
-        
+
         // If event.persisted is true, the browser froze the page and killed the socket.
         // We must force a reconnection.
         if (event.persisted || !socket) {
@@ -260,7 +260,7 @@ document.addEventListener('DOMContentLoaded', async function () {
         stateCache.viewposition = map.getView().getCenter();
         stateCache.rotation = map.getView().getRotation();
         stateCache.selectedRadius = selectedRadius;
-        
+
         stateCache.layervisibility = map.getLayers().getArray().map(layer => ({
             title: layer.get('title'),
             visible: typeof layer.getVisible === 'function' ? layer.getVisible() : undefined
@@ -275,7 +275,7 @@ document.addEventListener('DOMContentLoaded', async function () {
         let vs = document.visibilityState
         console.log('visibilitychange:', vs);
         try {
-            if (vs === 'hidden') {               
+            if (vs === 'hidden') {
                 disconnectWebSocket();
             }
             else if (vs === 'visible') {
@@ -291,7 +291,7 @@ document.addEventListener('DOMContentLoaded', async function () {
         if (socket) {
             console.log("Closing WebSocket cleanly...");
             // Remove listeners first so .onclose doesn't fire an accidental auto-reconnect
-            socket.onclose = null; 
+            socket.onclose = null;
             socket.close();
             socket = null;
         }
@@ -315,7 +315,7 @@ document.addEventListener('DOMContentLoaded', async function () {
     let icingCodeKeymap = new Map();
     let turbulenceCodeKeymap = new Map();
     let skyConditionKeymap = new Map();
-    
+
     /*******keymap loading ******/
     loadTafFieldKeymap();
     loadMetarFieldKeymap();
@@ -367,16 +367,16 @@ document.addEventListener('DOMContentLoaded', async function () {
                 // Iterate through the dynamically discovered array
                 for (const report of reportArray) {
                     let stationInfo = "";
-                    if (report.raw_text) { 
-                       const message = {
+                    if (report.raw_text) {
+                        const message = {
                             Type: arrayKey,
                             Location: report.station_id ? report.station_id : "",
                             Time: report.observation_time ? report.observation_time : "",
                             Data: report.raw_text,
                             LocaltimeReceived: new Date().toLocaleTimeString()
                         };
-                        
-                        if (arrayKey ) {
+
+                        if (arrayKey) {
                             switch (arrayKey) {
                                 case "METAR":
                                     await processMetar(report, stationInfo);
@@ -387,27 +387,27 @@ document.addEventListener('DOMContentLoaded', async function () {
                                 default:
                                     await processPirep(report);
                                     break;
-                            }  
+                            }
                         }
                     }
-                   index++;
+                    index++;
                 }
-            } 
+            }
             else {
                 console.log("No report array found in data.");
             }
         }
 
-        socket.onerror = function(evt){
+        socket.onerror = function (evt) {
             console.log("Websocket ERROR: " + evt.data);
         }
-        
-        socket.onopen = function(evt) {
+
+        socket.onopen = function (evt) {
             console.log("Websocket CONNECTED.");
             clearTimeout(reconnectTimeout);
         }
-        
-        socket.onclose = function(evt) {
+
+        socket.onclose = function (evt) {
             console.log("Websocket CLOSED.");
             if (document.visibilityState === 'visible') {
                 scheduleReconnect();
@@ -443,7 +443,7 @@ document.addEventListener('DOMContentLoaded', async function () {
 
     let osmTileLayer = new TileLayer({
         source: new OSM({
-            onTileLoadError: function(event) {} // Suppress annoying console 404 errors
+            onTileLoadError: function (event) { } // Suppress annoying console 404 errors
         }),
         visible: true,
         type: "none",
@@ -507,7 +507,7 @@ document.addEventListener('DOMContentLoaded', async function () {
             radiusSelector.style.display = 'none';
         }
     })
-    
+
     async function loadTileDatabases() {
         try {
 
@@ -519,7 +519,7 @@ document.addEventListener('DOMContentLoaded', async function () {
             if (dblist) {
                 const entries = Object.entries(dblist).reverse();
                 for (const [dbname, metadata] of entries) {
-                    
+
                     let zOrder = 10;
                     if (dbname === "terminal") {
                         zOrder = 12;
@@ -533,7 +533,7 @@ document.addEventListener('DOMContentLoaded', async function () {
                     let dburl = URL_GET_TILE.replace("{dbname}", dbname);
                     var layer = new TileLayer({
                         source: new XYZ({
-                            onTileLoadError: function(event) {}, // Suppress annoying console 404 errors
+                            onTileLoadError: function (event) { }, // Suppress annoying console 404 errors
                             url: dburl,
                             maxzoom: metadata && metadata.maxzoom ? metadata.maxzoom : undefined,
                             minzoom: metadata && metadata.minzoom ? metadata.minzoom : undefined,
@@ -576,6 +576,12 @@ document.addEventListener('DOMContentLoaded', async function () {
     }
     window.closePopup = closePopup;
 
+    // function showAirport() {
+    //     console.log("showAirportInfo pressed!!");
+    //     return false;
+    // }
+    // window.showAirport = showAirport;
+
     let currentDoubleClickLocation = null;
     let selectedRadius = 50; // Default radius in miles
 
@@ -590,13 +596,13 @@ document.addEventListener('DOMContentLoaded', async function () {
             // Use the existing getAirportsInRadius function
             const airports = await getAirportsInRadius(lon, lat, radiusMiles);
             console.log(`Found ${airports ? airports.length : 0} airports`);
-            
+
             if (airports && airports.length > 0) {
                 await displayAirportFeatures(airports);
             } else {
                 console.log('No airports found in the specified radius');
             }
-            
+
         } catch (error) {
             console.error('Error fetching airports:', error);
         }
@@ -610,15 +616,15 @@ document.addEventListener('DOMContentLoaded', async function () {
         let usastates = new Map();
         let isoregions = new Map();
         try {
-            for (let i=0; i< jsonobj.airports.length; i++) {
+            for (let i = 0; i < jsonobj.airports.length; i++) {
                 let airport = jsonobj.airports[i];
                 let lon = airport.lon;
                 let lat = airport.lat;
                 let isoregion = airport.isoregion;
                 let country = airport.country;
-                if (isoregion.search("US-") > -1) { 
+                if (isoregion.search("US-") > -1) {
                     usastates.set(country, country);
-                } 
+                }
                 else {
                     isoregions.set(country, country);
                 }
@@ -657,18 +663,18 @@ document.addEventListener('DOMContentLoaded', async function () {
                 option.text = country;
                 regionselect.appendChild(option);
             });
-            
+
             regionmap[Symbol.iterator] = function* () {
                 yield* [...this.entries()].sort((a, b) => a[1] - b[1]);
             }
-            isoregions.forEach((country, isoregion) => { 
+            isoregions.forEach((country, isoregion) => {
                 let option = document.createElement("option");
                 option.value = isoregion;
                 option.text = country;
                 regionselect.appendChild(option);
             });
         }
-        catch(err){
+        catch (err) {
             console.error(err);
         }
     }
@@ -676,7 +682,7 @@ document.addEventListener('DOMContentLoaded', async function () {
     async function displayAirportFeatures(airports) {
         // Use the existing airport layer
         airportLayer.getSource().clear();
-        
+
         // Add airport features
         const features = airports.map(airport => {
             // Handle different possible property names
@@ -692,7 +698,7 @@ document.addEventListener('DOMContentLoaded', async function () {
                 console.warn('Airport missing coordinates:', airport);
                 return null;
             }
-            
+
             let feature = new Feature({
                 ident: ident,
                 datatype: "airport",
@@ -702,15 +708,15 @@ document.addEventListener('DOMContentLoaded', async function () {
                 geometry: new Point(fromLonLat([longitude, latitude])),
                 fullData: airport  // Store complete airport object for popup
             });
-            
+
             // Check if this is a heliport or closed airport
             const isHeliport = (airport.type && airport.type.toLowerCase().includes('heliport')) ||
-                            (airport.name && airport.name.toLowerCase().includes('heliport'));
-            const isClosed = airport.closed === 'yes' || airport.closed === true || 
-                        (airport.type && airport.type.toLowerCase().includes('closed'));
+                (airport.name && airport.name.toLowerCase().includes('heliport'));
+            const isClosed = airport.closed === 'yes' || airport.closed === true ||
+                (airport.type && airport.type.toLowerCase().includes('closed'));
             const isSeaplane = (airport.type && airport.type.toLowerCase().includes('seaplane')) ||
-                            (airport.name && airport.name.toLowerCase().includes('seaplane'));
-            const hasTower = airport.frequencies && airport.frequencies.some(freq => 
+                (airport.name && airport.name.toLowerCase().includes('seaplane'));
+            const hasTower = airport.frequencies && airport.frequencies.some(freq =>
                 freq.description && freq.description.includes('TWR')
             );
             const hasTurfRunway = airport.runways && airport.runways.some(runway => {
@@ -718,8 +724,8 @@ document.addEventListener('DOMContentLoaded', async function () {
                 const surface = runway.surface.replace(/[\[\]]/g, '').toUpperCase();
                 return surface.includes('TURF') || surface.includes('DIRT') || surface.includes('GRASS');
             });
-            
-            
+
+
             if (isHeliport && isClosed) {
                 // Closed heliport: red circle with white H
                 airportSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 12 12">
@@ -743,7 +749,7 @@ document.addEventListener('DOMContentLoaded', async function () {
                 airportSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 12 12">
                     <circle cx="6" cy="6" r="5" fill="lightblue" stroke="black" stroke-width="1"/>
                     <text x="6" y="6" text-anchor="middle" dominant-baseline="central" font-family="Arial, sans-serif" font-size="7" font-weight="bold" fill="black">S</text>
-                </svg>`; 
+                </svg>`;
             } else {
                 if (hasTurfRunway) {
                     fillColor = 'green';  // Turf/grass runways = green
@@ -752,13 +758,13 @@ document.addEventListener('DOMContentLoaded', async function () {
                 } else {
                     fillColor = 'magenta'; // Uncontrolled = magenta
                 }
-                
+
                 // Create a colored SVG airport icon
                 airportSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 12 12">
                     <circle cx="6" cy="6" r="5" fill="${fillColor}" stroke="black" stroke-width="1"/>
                 </svg>`;
             }
-            
+
             // Style the airport marker with appropriate scale
             const scaleSize = getAirportScaleSize();
             feature.setStyle(new Style({
@@ -768,7 +774,7 @@ document.addEventListener('DOMContentLoaded', async function () {
                     anchor: [0.5, 0.5]
                 })
             }));
-            
+
             return feature;
 
         }).filter(feature => feature !== null); // Remove null features
@@ -778,9 +784,9 @@ document.addEventListener('DOMContentLoaded', async function () {
 
     // Add radius dropdown event listener
     const radiusDropdown = document.getElementById('radius-dropdown');
-    radiusDropdown.addEventListener('change', async function() {
+    radiusDropdown.addEventListener('change', async function () {
         const radius = this.value;
-        
+
         if (radius === 'clear') {
             Promise.resolve(clearAirportFeatures())
             selectedRadius = 0; // Set to 0 to indicate no search
@@ -788,17 +794,17 @@ document.addEventListener('DOMContentLoaded', async function () {
             this.value = ''; // Reset dropdown to default
             return;
         }
-        
+
         if (radius === '') {
             clearAirportFeatures();
             stateCache.selectedRadius = 50;
             return;
         }
-        
+
         // Store the selected radius
         const selectedRadius = parseInt(radius);
         stateCache.selectedRadius = selectedRadius;
-        
+
         // Only search for airports if a radius is selected (not 0/clear)
         if (selectedRadius > 0 && currentDoubleClickLocation) {
             let lonlat = [currentDoubleClickLocation.lon, currentDoubleClickLocation.lat];
@@ -831,7 +837,7 @@ document.addEventListener('DOMContentLoaded', async function () {
             if (feature) {
                 features.push(feature);
             }
-        }, {hitTolerance: htol});
+        }, { hitTolerance: htol });
 
         let handled = false;
         // Prioritize METAR, then TAF, then others
@@ -873,19 +879,19 @@ document.addEventListener('DOMContentLoaded', async function () {
     /**
      * Double-click/Double-tap event handler
      */
-    map.on('dblclick', async function(evt) {
+    map.on('dblclick', async function (evt) {
         const coordinate = evt.coordinate;
         const lonLat = toLonLat(coordinate);
-        
+
         // Store the clicked location for radius selector
         currentDoubleClickLocation = {
             lon: lonLat[0],
             lat: lonLat[1]
         };
-        
+
         // Clear previous airport features
         clearAirportFeatures();
-        
+
         const radius = parseInt(radiusDropdown.value);
 
         // Only search for airports if a radius is selected (not 0/clear)
@@ -916,7 +922,7 @@ document.addEventListener('DOMContentLoaded', async function () {
         const vis = getDistanceUnits(metar.visibility_statute_mi ?? "") ?? "";
         const skycondition = metar.sky_condition;
         const skyconditions = decodeSkyCondition(skycondition ?? "") ?? "";
-        const icingconditions = decodeIcingOrTurbulenceCondition(skycondition ?? "") ?? ""; 
+        const icingconditions = decodeIcingOrTurbulenceCondition(skycondition ?? "") ?? "";
         const btncolors = getCategoryColors(cat);
         const bgcolor = btncolors.bgcolor;
         const fgcolor = btncolors.fgcolor;
@@ -924,7 +930,7 @@ document.addEventListener('DOMContentLoaded', async function () {
         const cellData = `<td style="width:100%;">`;
         const rowSuffix = `</td></tr>`;
         const skyHeader = `<tr class="skyheader"><td colspan="2" style="display:block;width:99%;text-align:center;border:1px solid #000000;">`;
-        
+
         let detailhtml = "";
         let time = (function () {
             if (metar.observation_time) {
@@ -938,13 +944,14 @@ document.addEventListener('DOMContentLoaded', async function () {
             }
         })();
 
-        let name = feature.get('station_name') ?? "";   
-        name = name ? `${name}<br>` : "";
-        
+        const airport = feature.get('airport')
+        let stationName = feature.get('station_name');
+        stationName = stationName ? `${stationName}<br>` : "";
+
         if (ident != "undefined") {
-            detailhtml = 
-            `<div style="display:block;">
-                <span class="popup-title-area" style="background-color:${bgcolor}; color:${fgcolor};">Metar - ${ident}</span>
+            detailhtml =
+                `<div style="display:block;">
+                <span class="popup-title-area" style="background-color:${bgcolor}; color:${fgcolor};">${stationName}${ident}</span>
                 <div class="popup-content">
                     <div class="table-scroll-container">
                         <table class="popup-body-table" id="metartable">
@@ -963,10 +970,9 @@ document.addEventListener('DOMContentLoaded', async function () {
                                     ${icingconditions}
                         </table>
                     </div>    
-                    <hr>
                     <div class="popup-footer">
                         <div class="popup-button-row" style="display: flex; flex-direction: row; justify-content: space-between; width: 100%;">
-                            <button class="custom-popup-button" onclick="closePopup()" style="background:${bgcolor}; color:${fgcolor};">Station Info</button>
+                            <button class="custom-popup-button" id="airport-info" style="background:${bgcolor}; color:${fgcolor};">Airport Information</button>
                             <span class="windsvg">${svg}</span>
                             <button class="custom-popup-button" onclick="closePopup()" style="background:${bgcolor}; color:${fgcolor};">Close</button>
                         </div>
@@ -974,9 +980,9 @@ document.addEventListener('DOMContentLoaded', async function () {
                     </div>
                 </div>
             </div>`;
-         
+
         } // | End of if (ident != "undefined") block  
-            
+
         console.log(`METAR POPUP\n${detailhtml}`);
         popupcontent.innerHTML = detailhtml;
 
@@ -984,12 +990,12 @@ document.addEventListener('DOMContentLoaded', async function () {
         const infoBtn = popupcontent.querySelector('#airport-info');
         if (infoBtn) {
             infoBtn.addEventListener('click', () => {
-                const stationId = infoBtn.getAttribute('ident');
-                getAirportInfo(stationId); // This will never throw a ReferenceError
+                console.log(`AIRPORT POPUP\n${JSON.stringify(airport)}`);
+                displayAirportPopup(btncolors, airport);
             });
         }
     }
-    
+
     /**
      * Create the html for a TAF popup element
      * @param {feature} Feature: the taf feature the user clicked on
@@ -1007,32 +1013,32 @@ document.addEventListener('DOMContentLoaded', async function () {
         const forecast = popupFeature.forecast;
 
         let detailhtml = "";
-        let innerhtml = 
-           `<div style="display:block;">
+        let innerhtml =
+            `<div style="display:block;">
             <span class="popup-title-area" style="background-color:${bgcolor}; color:${fgcolor};">Terminal Area Forecast - ${id}</span>
             <div class="popup-content">
                 <div class="taf">
                     <div class="table-scroll-container">
                         <table class="popup-body-table" id="taftable">`;
-                            for (const item in forecast) {
-                                let parsedForecast = "";
-                                const value = forecast[item];
-                                if (typeof (value) === 'object') {
-                                    for (const subitem in value) {
-                                        const subvalue = value[subitem];
-                                        console.log(`Line 1046: ${subitem} = ${subvalue}`);
-                                        parsedForecast = parseForecastField(subitem, subvalue);
+        for (const item in forecast) {
+            let parsedForecast = "";
+            const value = forecast[item];
+            if (typeof (value) === 'object') {
+                for (const subitem in value) {
+                    const subvalue = value[subitem];
+                    console.log(`Line 1046: ${subitem} = ${subvalue}`);
+                    parsedForecast = parseForecastField(subitem, subvalue);
 
-                                        detailhtml += parsedForecast;
-                                    }
-                                }
-                                else {
-                                    console.log(`Line 1052: ${item} = ${value}`);
-                                    parsedForecast = parseForecastField(item, value);
-                                    detailhtml = parsedForecast;
-                                }
-                            }
-                            innerhtml += detailhtml + `
+                    detailhtml += parsedForecast;
+                }
+            }
+            else {
+                console.log(`Line 1052: ${item} = ${value}`);
+                parsedForecast = parseForecastField(item, value);
+                detailhtml = parsedForecast;
+            }
+        }
+        innerhtml += detailhtml + `
                         </table>
                     </div>
                 </div>
@@ -1066,111 +1072,111 @@ document.addEventListener('DOMContentLoaded', async function () {
         let rt = "";
         let ot = "";
         let detailhtml = "";
-        let html = 
-           `<div style="display:block;">
+        let html =
+            `<div style="display:block;">
                 <span class="popup-title-area" style="background-color:${bgcolor}; color:${fgcolor};">${popupFeature.report_type.toUpperCase()} FROM AIRCRAFT: ${popupFeature.aircraft_ref}</span>
                 <div class="popup-content">
                     <div class="pirep">
                         <div class="table-scroll-container">
                            <table class="pireptable" id="pireptable">`;
-                                for (const item in popupFeature) {
-                                    const value = popupFeature[item];
-                                    const fieldname = getFieldDescription(item);
-                                    switch (item) {
-                                        case "receipt_time":
-                                            rt = value;
-                                            if (appsettings.uselocaltime) {
-                                                rt = getLocalTime(value);
-                                            }
-                                            detailhtml += `${rowPrefix}${cellData}${fieldname}: ${cellData}<b>${rt}</b>${rowSuffix}`;
-                                            break;
-                                        case "observation_time":
-                                            ot = value;
-                                            if (appsettings.uselocaltime) {
-                                                ot = getLocalTime(value);
-                                            }
-                                            detailhtml += `${rowPrefix}${cellData}${fieldname}: ${cellData}<b>${ot}</b>${rowSuffix}`;
-                                            break;
-                                        case "latitude":
-                                            detailhtml += `${rowPrefix}${cellData}${fieldname}: ${cellData}<b>${value}°</b>${rowSuffix}`;
-                                            break;
-                                        case "longitude":
-                                            detailhtml += `${rowPrefix}${cellData}${fieldname}: ${cellData}<b>${value}°</b>${rowSuffix}`;
-                                            break;
-                                        case "altitude_ft_msl":
-                                            detailhtml += `${rowPrefix}${cellData}${fieldname}: ${cellData}<b>${value}</b>${rowSuffix}`;
-                                            break;
-                                        case "temp_c":
-                                            detailhtml += `${rowPrefix}${cellData}${fieldname}: ${cellData}<b>${value}°</b>${rowSuffix}`;
-                                            break;
-                                        case "dewpoint_c":
-                                            detailhtml += `${rowPrefix}${cellData}${fieldname}: ${cellData}<b>${value}°</b>${rowSuffix}`;
-                                            break;
-                                        case "time_becoming":
-                                            detailhtml += `${rowPrefix}${cellData}${fieldname}: ${cellData}<b>${value}</b>${rowSuffix}`;
-                                            break;
-                                        case "probability":
-                                            detailhtml +=`${rowPrefix}${cellData}${fieldname}: ${cellData}<b>${value}</b>${rowSuffix}`;
-                                            break;
-                                        case "wind_speed_kt":
-                                            detailhtml += `${rowPrefix}${cellData}${fieldname}: ${cellData}<b>${value}</b>${rowSuffix}`;
-                                            break;
-                                        case "wind_gust_kt":
-                                            detailhtml += `${rowPrefix}${cellData}${fieldname}: ${cellData}<b>${value}</b>${rowSuffix}`;
-                                            break;
-                                        case "wind_dir_degrees":
-                                            detailhtml += `${rowPrefix}${cellData}${fieldname}: ${cellData}<b>${value}°</b>${rowSuffix}`;
-                                            break;
-                                        case "wind_shear_dir_degrees":
-                                            detailhtml += `${rowPrefix}${cellData}${fieldname}: ${cellData}<b>${value}°</b>${rowSuffix}`;
-                                            break;
-                                        case "wind_shear_hgt_ft_agl":
-                                            detailhtml += `${rowPrefix}${cellData}${fieldname}: ${cellData}<b>${value}</b>${rowSuffix}`;
-                                            break;
-                                        case "wind_shear_speed_kt":
-                                            detailhtml += `${rowPrefix}${cellData}${fieldname}: ${cellData}<b>${value}</b>${rowSuffix}`;
-                                            break;
-                                        case "vert_vis_ft":
-                                            detailhtml += `${rowPrefix}${cellData}${fieldname}: ${cellData}<b>${value}</b>${rowSuffix}`;
-                                            break;
-                                        case "visibility_statute_mi":
-                                            detailhtml += `${rowPrefix}${cellData}${fieldname}: ${cellData}<b>${value}</b>${rowSuffix}`;
-                                            break;
-                                        case "sky_condition":
-                                            detailhtml += `${skyHeader}${fieldname}${rowSuffix}
+        for (const item in popupFeature) {
+            const value = popupFeature[item];
+            const fieldname = getFieldDescription(item);
+            switch (item) {
+                case "receipt_time":
+                    rt = value;
+                    if (appsettings.uselocaltime) {
+                        rt = getLocalTime(value);
+                    }
+                    detailhtml += `${rowPrefix}${cellData}${fieldname}: ${cellData}<b>${rt}</b>${rowSuffix}`;
+                    break;
+                case "observation_time":
+                    ot = value;
+                    if (appsettings.uselocaltime) {
+                        ot = getLocalTime(value);
+                    }
+                    detailhtml += `${rowPrefix}${cellData}${fieldname}: ${cellData}<b>${ot}</b>${rowSuffix}`;
+                    break;
+                case "latitude":
+                    detailhtml += `${rowPrefix}${cellData}${fieldname}: ${cellData}<b>${value}°</b>${rowSuffix}`;
+                    break;
+                case "longitude":
+                    detailhtml += `${rowPrefix}${cellData}${fieldname}: ${cellData}<b>${value}°</b>${rowSuffix}`;
+                    break;
+                case "altitude_ft_msl":
+                    detailhtml += `${rowPrefix}${cellData}${fieldname}: ${cellData}<b>${value}</b>${rowSuffix}`;
+                    break;
+                case "temp_c":
+                    detailhtml += `${rowPrefix}${cellData}${fieldname}: ${cellData}<b>${value}°</b>${rowSuffix}`;
+                    break;
+                case "dewpoint_c":
+                    detailhtml += `${rowPrefix}${cellData}${fieldname}: ${cellData}<b>${value}°</b>${rowSuffix}`;
+                    break;
+                case "time_becoming":
+                    detailhtml += `${rowPrefix}${cellData}${fieldname}: ${cellData}<b>${value}</b>${rowSuffix}`;
+                    break;
+                case "probability":
+                    detailhtml += `${rowPrefix}${cellData}${fieldname}: ${cellData}<b>${value}</b>${rowSuffix}`;
+                    break;
+                case "wind_speed_kt":
+                    detailhtml += `${rowPrefix}${cellData}${fieldname}: ${cellData}<b>${value}</b>${rowSuffix}`;
+                    break;
+                case "wind_gust_kt":
+                    detailhtml += `${rowPrefix}${cellData}${fieldname}: ${cellData}<b>${value}</b>${rowSuffix}`;
+                    break;
+                case "wind_dir_degrees":
+                    detailhtml += `${rowPrefix}${cellData}${fieldname}: ${cellData}<b>${value}°</b>${rowSuffix}`;
+                    break;
+                case "wind_shear_dir_degrees":
+                    detailhtml += `${rowPrefix}${cellData}${fieldname}: ${cellData}<b>${value}°</b>${rowSuffix}`;
+                    break;
+                case "wind_shear_hgt_ft_agl":
+                    detailhtml += `${rowPrefix}${cellData}${fieldname}: ${cellData}<b>${value}</b>${rowSuffix}`;
+                    break;
+                case "wind_shear_speed_kt":
+                    detailhtml += `${rowPrefix}${cellData}${fieldname}: ${cellData}<b>${value}</b>${rowSuffix}`;
+                    break;
+                case "vert_vis_ft":
+                    detailhtml += `${rowPrefix}${cellData}${fieldname}: ${cellData}<b>${value}</b>${rowSuffix}`;
+                    break;
+                case "visibility_statute_mi":
+                    detailhtml += `${rowPrefix}${cellData}${fieldname}: ${cellData}<b>${value}</b>${rowSuffix}`;
+                    break;
+                case "sky_condition":
+                    detailhtml += `${skyHeader}${fieldname}${rowSuffix}
                                                            ${decodeSkyCondition(value)}`;
-                                            break;
-                                        case "turbulence_intensity":
-                                            detailhtml += `${rowPrefix}${cellData}${fieldname}: ${cellData}<b>${value}</b>${rowSuffix}`;
-                                            break;
-                                        case "turbulence_condition":
-                                            detailhtml += `${skyHeader}${fieldname}${rowSuffix}
+                    break;
+                case "turbulence_intensity":
+                    detailhtml += `${rowPrefix}${cellData}${fieldname}: ${cellData}<b>${value}</b>${rowSuffix}`;
+                    break;
+                case "turbulence_condition":
+                    detailhtml += `${skyHeader}${fieldname}${rowSuffix}
                                                            ${decodeIcingOrTurbulenceCondition(value)}`;
-                                            break;
-                                        case "icing_condition":
-                                            detailhtml += `${skyHeader}${fieldname}${rowSuffix}
+                    break;
+                case "icing_condition":
+                    detailhtml += `${skyHeader}${fieldname}${rowSuffix}
                                                            ${decodeIcingOrTurbulenceCondition(value)}`;
-                                            break;
-                                        case "temperature":
-                                            detailhtml += `${skyHeader}Weather<hr>${rowSuffix}`;
-                                            break;
-                                        case "altim_in_hg":
-                                            detailhtml += `${rowPrefix}${cellData}${fieldname}: ${cellData}<b>${getInchesOfMercury(value)}</b>${rowSuffix}`;
-                                            break;
-                                        case "wx_string":
-                                            detailhtml += `${rowPrefix}${cellData}${fieldname}: ${cellData}<b>${decodeWxDescriptions(value)}</b>${rowSuffix}`;
-                                            break;
-                                        case "change_indicator":
-                                            detailhtml +=`${rowPrefix}${cellData}${fieldname}: ${cellData}<b>${getSkyConditionDescription(value)}</b>${rowSuffix}`; ;
-                                            break;
-                                        case "pirep_type":
-                                        case "aircraft_ref":
-                                        case "raw_text":
-                                        default:
-                                            break;
-                                    }
-                                }
-                                detailhtml += `
+                    break;
+                case "temperature":
+                    detailhtml += `${skyHeader}Weather<hr>${rowSuffix}`;
+                    break;
+                case "altim_in_hg":
+                    detailhtml += `${rowPrefix}${cellData}${fieldname}: ${cellData}<b>${getInchesOfMercury(value)}</b>${rowSuffix}`;
+                    break;
+                case "wx_string":
+                    detailhtml += `${rowPrefix}${cellData}${fieldname}: ${cellData}<b>${decodeWxDescriptions(value)}</b>${rowSuffix}`;
+                    break;
+                case "change_indicator":
+                    detailhtml += `${rowPrefix}${cellData}${fieldname}: ${cellData}<b>${getSkyConditionDescription(value)}</b>${rowSuffix}`;;
+                    break;
+                case "pirep_type":
+                case "aircraft_ref":
+                case "raw_text":
+                default:
+                    break;
+            }
+        }
+        detailhtml += `
                             </table>
                         </div>
                         <div class="popup-footer">
@@ -1179,66 +1185,61 @@ document.addEventListener('DOMContentLoaded', async function () {
                         </div>
                     </div>
                 </div>
-            </div>`;    
+            </div>`;
         const innerhtml = html + detailhtml;
         popupcontent.innerHTML = innerhtml;
     }
 
-    function getAirportInfo(id) {
-        
-    }
-
-    function displayAirportPopup(feature) {
+    function displayAirportPopup(btncolors, fullAirportData) {
         // Get airport data from the feature
-        const airport = feature.getProperties();
-        const ident = airport.ident;
-        const name = airport.name;
-        const type = airport.type;
-        const elevation = airport.elevation_ft;
-        let headerBackgroundColor, headerTextColor;
+        const ident = fullAirportData.ident;
+        const name = fullAirportData.name;
+        const type = fullAirportData.type;
+        const elevation = fullAirportData.elevation_ft;
+        const frequencies = JSON.parse(fullAirportData.frequencies);
+        const runways = JSON.parse(fullAirportData.runways);
+        const hasRunways = runways.length > 0;
+        const hasFrequencies = frequencies.length > 0;
+        const hasTower = frequencies.some(freq => freq && freq.description && freq.description.includes('TWR'));
+        const bgcolor = btncolors.bgcolor;
+        const fgcolor = btncolors.fgcolor;
 
-        // Get full airport data with frequencies and runways
-        const fullAirportData = airport.fullData || airport;
-        
         // Determine header color based on airport type and characteristics (same as icon logic)
-        const isHeliport = type && type.toLowerCase().includes('heliport');
-        const isSeaplane = type && type.toLowerCase().includes('seaplane');
-        const isClosed = fullAirportData.closed === 'yes' || fullAirportData.closed === true || 
-                        (type && type.toLowerCase().includes('closed'));
-        const hasTower = fullAirportData.frequencies && fullAirportData.frequencies.some(freq => 
-                freq.description && freq.description.includes('TWR')
-        );
-        const hasTurfRunway = fullAirportData.runways && fullAirportData.runways.some(runway => {
-            if (!runway.surface) return false;
-            const surface = runway.surface.replace(/[\[\]]/g, '').toUpperCase();
-            return surface === 'TURF' || surface === 'GRASS';
-        });
-        
-        if (isClosed) {
-            headerBackgroundColor = 'red';
-            headerTextColor = 'white';
-        } else if (isHeliport) {
-            headerBackgroundColor = 'white';
-            headerTextColor = 'black';
-        } else if (isSeaplane) {
-            headerBackgroundColor = 'lightblue';
-            headerTextColor = 'black';
-        } else if (hasTurfRunway) {
-            headerBackgroundColor = 'green';
-            headerTextColor = 'white';
-        } else if (hasTower) {
-            headerBackgroundColor = 'blue';
-            headerTextColor = 'white';
-        } else {
-            headerBackgroundColor = 'magenta';
-            headerTextColor = 'white';
-        }
-        
+        // const isHeliport = type && type.toLowerCase().includes('heliport');
+        // const isSeaplane = type && type.toLowerCase().includes('seaplane');
+        // const isClosed = fullAirportData.closed === 'yes' 
+        //         || fullAirportData.closed === true 
+        //         || (type && type.toLowerCase().includes('closed'));
+        // const hasTurfRunway = hasRunways && runways.some(runway => {
+        //         if (!runway.surface) return false;
+        //         const surface = runway.surface.replace(/[\[\]]/g, '').toUpperCase();
+        //         return surface === 'TURF' || surface === 'GRASS';
+        // });
+        // if (isClosed) {
+        //     headerBackgroundColor = 'red';
+        //     headerTextColor = 'white';
+        // } else if (isHeliport) {
+        //     headerBackgroundColor = 'white';
+        //     headerTextColor = 'black';
+        // } else if (isSeaplane) {
+        //     headerBackgroundColor = 'lightblue';
+        //     headerTextColor = 'black';
+        // } else if (hasTurfRunway) {
+        //     headerBackgroundColor = 'green';
+        //     headerTextColor = 'white';
+        // } else if (hasTower) {
+        //     headerBackgroundColor = 'blue';
+        //     headerTextColor = 'white';
+        // } else {
+        //     headerBackgroundColor = 'magenta';
+        //     headerTextColor = 'white';
+        // }
+
         let html = `<div class="featurepopup" id="featurepopup">`;
-        html += `<span class="airportheader" style="background-color:${headerBackgroundColor}; color:${headerTextColor}; border: 1px solid black;">`;
+        html += `<span class="airportheader" style="background-color:${bgcolor}; color:${fgcolor}; border: 1px solid black;">`;
         html += `${name}<br>${ident} - ${type.replace('_', ' ').toUpperCase()}</span><br>`;
         html += `<div class="airport-popup-body">`;
-        
+
         // Basic airport information
         html += `<div class="airport-basic-info">`;
         html += `<strong>Airport Information</strong><br>`;
@@ -1259,13 +1260,13 @@ document.addEventListener('DOMContentLoaded', async function () {
         }
         html += `</table>`;
         html += `</div><br>`;
-        
+
         // Frequencies section
-        if (fullAirportData.frequencies && fullAirportData.frequencies.length > 0) {
+        if (hasFrequencies) {
             html += `<div class="airport-frequencies">`;
             html += `<strong>Frequencies</strong><br>`;
             html += `<table style="width: 100%; border-collapse: collapse; margin-top: 5px;">`;
-            fullAirportData.frequencies.forEach(freq => {
+            frequencies.forEach(freq => {
                 html += `<tr style="border-bottom: 1px solid #ddd;">`;
                 html += `<td style="text-align: left; padding: 2px 10px 2px 0; vertical-align: top;">${freq.description}</td>`;
                 html += `<td style="text-align: left; padding: 2px 0; vertical-align: top;"><b>${freq.frequency}</b></td>`;
@@ -1274,12 +1275,12 @@ document.addEventListener('DOMContentLoaded', async function () {
             html += `</table>`;
             html += `</div><br>`;
         }
-        
+
         // Runways section
-        if (fullAirportData.runways && fullAirportData.runways.length > 0) {
+        if (hasRunways) {
             html += `<div class="airport-runways">`;
             html += `<strong>Runways</strong><br>`;
-            fullAirportData.runways.forEach(runway => {
+            runways.forEach(runway => {
                 html += `Runway ${runway.le_ident}/${runway.he_ident}: `;
                 html += `<b>${runway.length_ft ? runway.length_ft + ' ft' : ''}</b>`;
                 if (runway.surface) {
@@ -1290,12 +1291,12 @@ document.addEventListener('DOMContentLoaded', async function () {
             });
             html += `</div><br>`;
         }
-        
+
         html += `</div>`; // end of airport-popup-body
         html += `<hr>`;
-        html += `<button class="custom-popup-button" onclick="closePopup()" style="background:${headerBackgroundColor}; color:${headerTextColor};">Close</button>`;
+        html += `<button class="custom-popup-button" onclick="closePopup()" style="background:${bgcolor}; color:${fgcolor};">Close</button>`;
         html += `</div>`;
-        
+
         popupcontent.innerHTML = html;
     }
 
@@ -1346,7 +1347,7 @@ document.addEventListener('DOMContentLoaded', async function () {
                 case "visibility_statute_mi":
                     detailhtml = `${rowPrefix}${cellData}${fieldname}: ${cellData}<b>${fieldvalue}</b>${rowSuffix}`;
                     break;
-                case "change_indicator": 
+                case "change_indicator":
                     formattedValue = getWeatherAcronymDescription(fieldvalue);
                     detailhtml = `${rowPrefix}${cellData}${fieldname}: ${cellData}<b>${formattedValue}</b>${rowSuffix}`;
                     break;
@@ -1415,7 +1416,7 @@ document.addEventListener('DOMContentLoaded', async function () {
         let output = "";
         let fieldname = "";
         let fieldvalue = "";
-        
+
         //let values = Object.values(condition);
         for (const item in condition) {
             const value = condition[item];
@@ -1470,7 +1471,7 @@ document.addEventListener('DOMContentLoaded', async function () {
         }
         return output;
     }
-    
+
     /**
      * Parse an icing or turbulence condition field value, 
      * which could be an object or a string and return html
@@ -1478,13 +1479,13 @@ document.addEventListener('DOMContentLoaded', async function () {
      * @param {object} fieldvalue 
      * @returns html string
      */
-    function  parseConditionField(rawfieldname, fieldvalue) {
+    function parseConditionField(rawfieldname, fieldvalue) {
         const rowPrefix = `<tr class="table-row-data">`;
         const cellData = `<td style="width:100%;">`;
         const rowSuffix = `</td></tr>`;
         const fieldname = getFieldDescription(rawfieldname);
         let textvalue = "";
-        
+
         switch (fieldvalue) {
             case "NEGclr":
                 textvalue = "Negative Clear";
@@ -1499,7 +1500,7 @@ document.addEventListener('DOMContentLoaded', async function () {
                 textvalue = "Intermittent";
                 break;
             case "TRC":
-                textvalue ="Trace";
+                textvalue = "Trace";
                 break;
             case "TRC-LGT":
                 textvalue = "Trace to Light";
@@ -1511,7 +1512,7 @@ document.addEventListener('DOMContentLoaded', async function () {
                 textvalue = "Smooth to Light";
                 break;
             case "LGT-MOD":
-                textvalue = "Light to Moderate"; 
+                textvalue = "Light to Moderate";
                 break;
             case "MOD":
                 textvalue = "Moderate";
@@ -1542,18 +1543,17 @@ document.addEventListener('DOMContentLoaded', async function () {
      * Place metar features on the map. color-coded to the conditions
      * @param {object} metar object: JSON object with metar data
      */
-    async function processMetar(metarPromise, stationInfoPromise) {
+    async function processMetar(metarObject) {
         // await the incoming metar...
-        const metar = await metarPromise;
-        const airportInfo = await stationInfoPromise;
-        
+        const metar = await metarObject;
+        const airportObject = await getAirportObject(metar.station_id);
         // Validate required properties
         if (!metar || typeof metar.longitude !== 'number' || typeof metar.latitude !== 'number') {
             return;
         }
-        
+
         try {
-            const stationName = getFormattedAirportName(metar.station_id); 
+            
             var popupSvg = "";
             var mapDotSvg = "";
             try {
@@ -1576,15 +1576,15 @@ document.addEventListener('DOMContentLoaded', async function () {
                 data: metar,
                 datatype: "metar",
                 geometry: new Point(fromLonLat([metar.longitude, metar.latitude])),
-                station_name: stationName,
-                station_info: airportInfo,
+                airport: airportObject,
+                station_name: airportObject.name,
                 svgimage: popupSvg
             });
 
             metarFeature.setStyle(new Style({
                 image: metarmarker
             }));
-            
+
             metarVectorLayer.getSource().addFeature(metarFeature);
             metarFeature.changed();
             metarVectorLayer.changed();
@@ -1598,9 +1598,11 @@ document.addEventListener('DOMContentLoaded', async function () {
      * Place taf feature objects on the map
      * @param {object} taf: JSON object
      */
-    async function processTaf(tafPromise) {
+    async function processTaf(tafObject) {
         // await the incoming Promise
-        const taf = await tafPromise; 
+        const taf = await tafObject;
+        const airportObject = await getAirportObject(tafObject.station_id);
+
         // Validate required properties
         if (!taf || typeof taf.longitude !== 'number' || typeof taf.latitude !== 'number') {
             return;
@@ -1622,12 +1624,14 @@ document.addEventListener('DOMContentLoaded', async function () {
         font-size:14.2894px;font-family:sans-serif;-inkscape-font-specification:&quot;sans-serif, Bold&quot;;font-variant-ligatures:normal;
         font-variant-caps:normal;font-variant-numeric:normal;font-variant-east-asian:normal;fill:${fgcolor};
         fill-opacity:1;stroke-width:.357233">TAF</tspan></text></g></svg>`
-        
+
         try {
             let tafFeature = new Feature({
-                ident: taf.station_id,
-                id: taf.station_id,
-                data: taf,
+                ident: tafObject.station_id,
+                id: tafObject.station_id,
+                data: tafObject,
+                airport: airportObject,
+                station_name: airportObject.name,
                 datatype: "taf",
                 geometry: new Point(fromLonLat([taf.longitude, taf.latitude]))
             });
@@ -1638,10 +1642,10 @@ document.addEventListener('DOMContentLoaded', async function () {
                     offset: [0, 0],
                     opacity: 1,
                     size: [126, 90],
-                    scale: .2   
+                    scale: .2
                 })
             }));
-            
+
             tafVectorLayer.getSource().addFeature(tafFeature)
             tafFeature.changed();
             tafVectorLayer.changed();
@@ -1669,7 +1673,7 @@ document.addEventListener('DOMContentLoaded', async function () {
             const id = pirep.aircraft_ref ? pirep.aircraft_ref : pirep.station_id;
             const geometry = new Point(fromLonLat([pirep.longitude, pirep.latitude]));
             const heading = pirep.wind_dir_degrees > 0 ? pirep.wind_dir_degrees * 0.0174533 : 0;
-         
+
             const pirepFeature = new Feature({
                 ident: id,
                 id: id,
@@ -1691,13 +1695,13 @@ document.addEventListener('DOMContentLoaded', async function () {
             pirepFeature.setStyle(new Style({
                 image: pirepmarker
             }));
-            
+
             pirepVectorLayer.getSource().addFeature(pirepFeature);
             pirepFeature.changed();
             pirepVectorLayer.changed();
         }
         catch (err) {
-           console.error(`Error in processPirep: ${err}`);
+            console.error(`Error in processPirep: ${err}`);
         }
     }
 
@@ -1970,7 +1974,7 @@ document.addEventListener('DOMContentLoaded', async function () {
      * @param {string} fieldname 
      * @returns string, readable description of fieldname 
      */
-    function getFieldDescription(fieldname) { 
+    function getFieldDescription(fieldname) {
         if (!Number.isInteger(fieldname)) {
             //console.log(tafFieldKeymap);
             const testval = tafFieldKeymap.get(fieldname);
@@ -2199,7 +2203,7 @@ document.addEventListener('DOMContentLoaded', async function () {
         skyConditionKeymap.set("PROB", "Probability");
         skyConditionKeymap.set("CB", "Cumulo-Nimbus");
         skyConditionKeymap.set("IMC", "Instrument meteorological conditions"),
-        skyConditionKeymap.set("IMPR", "Improving");
+            skyConditionKeymap.set("IMPR", "Improving");
         skyConditionKeymap.set("INC", "In Clouds");
         skyConditionKeymap.set("INS", "Inches");
         skyConditionKeymap.set("INTER", "Intermittent");
@@ -3155,7 +3159,7 @@ document.addEventListener('DOMContentLoaded', async function () {
         const dp = cToF(weatherItem.dewpoint);
         const pressure = weatherItem.altimeter;
         const vis = milePrettyPrint((_a = weatherItem.visibility) !== null && _a !== void 0 ? _a : -1);
-        
+
         return {
             visiblity: vis,
             temp: temp,
@@ -3240,6 +3244,7 @@ document.addEventListener('DOMContentLoaded', async function () {
         var STA = (_d = metar.station) !== null && _d !== void 0 ? _d : "";
         var ALT = (_e = metar.pressure) !== null && _e !== void 0 ? _e : "";
         return `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 500 500"> ` +
+        //return `<svg xmlns="http://www.w3.org/2000/svg" width="95" height="50" viewBox="0 0 500 500"> ` +
             `<style> ` +
             `.txt{ font-size: 47.5px; font-family: sans-serif; } ` +
             `.tmp{ fill: red } ` +

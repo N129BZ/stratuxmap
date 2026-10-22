@@ -1,14 +1,13 @@
-export async function attachAirportInfo(station) {
+export async function getAirportObject(stationId) {
     try {
-        const response = await fetch(`/airport?id=${station}`);
+        const response = await fetch(`/airport?id=${stationId}`);
         if (!response.ok) {
             return {};
         }
         const resp = response.json();
-        return resp; 
+        return resp;
     }
-    catch (error) 
-    {
+    catch (error) {
         return {};
     }
 }
@@ -16,38 +15,37 @@ export async function attachAirportInfo(station) {
 export async function getAirportsInRadius(lon, lat, radiusMiles) {
     try {
         const bounds = await getBoundingBox(lon, lat, radiusMiles);
-        
+
         const response = await fetch(`/airportlist?minLat=${bounds.minLat}&maxLat=${bounds.maxLat}&minLon=${bounds.minLon}&maxLon=${bounds.maxLon}`);
         if (!response.ok) {
             console.log(`Bad Response: ${response.status} ${response.statusText}`);
             return [];
         }
-        
+
         const airports = response.json();
 
         console.log(`Found ${airports.length} airports`);
-        return airports; 
+        return airports;
     }
-    catch (error) 
-    {
+    catch (error) {
         console.log("Error in getAirportsInRadius:", error);
         return [];
     }
 }
 
 async function getBoundingBox(centerLon, centerLat, radiusMiles) {
-        const earthRadiusMiles = 3959;
-        const radiusRadians = radiusMiles / earthRadiusMiles;
-        const latRad = centerLat * (Math.PI / 180);
-        
-        const minLat = centerLat - (radiusRadians * 180 / Math.PI);
-        const maxLat = centerLat + (radiusRadians * 180 / Math.PI);
-        
-        const deltaLon = Math.asin(Math.sin(radiusRadians) / Math.cos(latRad)) * 180 / Math.PI;
-        const minLon = centerLon - deltaLon;
-        const maxLon = centerLon + deltaLon;
-        
-        return { minLat, maxLat, minLon, maxLon };
+    const earthRadiusMiles = 3959;
+    const radiusRadians = radiusMiles / earthRadiusMiles;
+    const latRad = centerLat * (Math.PI / 180);
+
+    const minLat = centerLat - (radiusRadians * 180 / Math.PI);
+    const maxLat = centerLat + (radiusRadians * 180 / Math.PI);
+
+    const deltaLon = Math.asin(Math.sin(radiusRadians) / Math.cos(latRad)) * 180 / Math.PI;
+    const minLon = centerLon - deltaLon;
+    const maxLon = centerLon + deltaLon;
+
+    return { minLat, maxLat, minLon, maxLon };
 }
 
 /**
@@ -57,13 +55,13 @@ async function getBoundingBox(centerLon, centerLat, radiusMiles) {
  */
 export function decodeRunwaySurface(surfaceCode) {
     if (!surfaceCode) return '';
-    
+
     // Remove brackets if present and convert to uppercase
     const code = surfaceCode.replace(/[\[\]]/g, '').toUpperCase();
-    
+
     const surfaceMap = {
         'CON': 'CONCRETE',
-        'ASP': 'ASPHALT', 
+        'ASP': 'ASPHALT',
         'CONC': 'CONCRETE',
         'ASPH': 'ASPHALT',
         'GRASS': 'GRASS',
@@ -83,6 +81,6 @@ export function decodeRunwaySurface(surfaceCode) {
         'ALU': 'ALUMINUM',
         'METAL': 'METAL'
     };
-    
+
     return surfaceMap[code] || code; // Return mapped value or original code if not found
 }
