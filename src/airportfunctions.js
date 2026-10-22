@@ -62,6 +62,7 @@ export function decodeRunwaySurface(surfaceCode) {
     const surfaceMap = {
         'CON': 'CONCRETE',
         'ASP': 'ASPHALT',
+        'ASPH-G': 'ASPHALT-GROOVED',
         'CONC': 'CONCRETE',
         'ASPH': 'ASPHALT',
         'GRASS': 'GRASS',

@@ -575,13 +575,7 @@ document.addEventListener('DOMContentLoaded', async function () {
         return false;
     }
     window.closePopup = closePopup;
-
-    // function showAirport() {
-    //     console.log("showAirportInfo pressed!!");
-    //     return false;
-    // }
-    // window.showAirport = showAirport;
-
+    
     let currentDoubleClickLocation = null;
     let selectedRadius = 50; // Default radius in miles
 
@@ -900,9 +894,6 @@ document.addEventListener('DOMContentLoaded', async function () {
     function displayMetarPopup(feature) {
         const metar = feature.get("data");
         const rawData = metar.raw_text;
-        const iceregex = /\b(FZ(RA|DZ|UP|FG|BR))|(?<=RMK\b.*)I[136]\d{3}\b/g;
-        const icingMatches = rawData.match(iceregex);
-        console.log("ICING MATCHES:", icingMatches);
         const ident = metar.station_id;
         const svg = feature.get("svgimage");
         const cat = metar.flight_category ?? "VFR";
@@ -917,7 +908,6 @@ document.addEventListener('DOMContentLoaded', async function () {
         const vis = getDistanceUnits(metar.visibility_statute_mi ?? "") ?? "";
         const skycondition = metar.sky_condition;
         const skyconditions = decodeSkyCondition(skycondition ?? "") ?? "";
-        const icingconditions = decodeIcingOrTurbulenceCondition(skycondition ?? "") ?? "";
         const btncolors = getCategoryColors(cat);
         const bgcolor = btncolors.bgcolor;
         const fgcolor = btncolors.fgcolor;
@@ -939,7 +929,7 @@ document.addEventListener('DOMContentLoaded', async function () {
             }
         })();
 
-        const airport = feature.get('airport')
+        //const airport = feature.get('airport')
         let stationName = feature.get('station_name');
         stationName = stationName ? `${stationName}<br>` : "";
 
@@ -984,8 +974,8 @@ document.addEventListener('DOMContentLoaded', async function () {
             const infoBtn = popupcontent.querySelector('#airport-info');
             if (infoBtn) {
                 infoBtn.addEventListener('click', () => {
-                    console.log(`AIRPORT POPUP\n${JSON.stringify(airport)}`);
-                    displayAirportPopup(btncolors, airport, detailhtml);
+                    const airport = feature.get('airport');
+                    displayAirportPopup(btncolors, airport, displayMetarPopup, feature);
                 });
             }
         }
@@ -1185,7 +1175,7 @@ document.addEventListener('DOMContentLoaded', async function () {
         popupcontent.innerHTML = innerhtml;
     }
 
-    function displayAirportPopup(btncolors, fullAirportData, previousPopupContent) {
+    function displayAirportPopup(btncolors, fullAirportData, callbackFunction, feature) {
         // Get airport data from the feature
         const ident = fullAirportData.ident;
         const name = fullAirportData.name;
@@ -1283,7 +1273,7 @@ document.addEventListener('DOMContentLoaded', async function () {
         const backBtn = popupcontent.querySelector('#go-back');
         if (backBtn) {
             backBtn.addEventListener('click', () => {
-                popupcontent.innerHTML = previousPopupContent;
+                callbackFunction(feature);
             });
         }
     }
