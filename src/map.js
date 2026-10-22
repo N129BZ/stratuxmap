@@ -861,14 +861,6 @@ document.addEventListener('DOMContentLoaded', async function () {
                     popupoverlay.setPosition(evt.coordinate);
                     handled = true;
                 }
-                else {
-                    const airportFeature = features.find(f => f.get('datatype') === 'airport');
-                    if (airportFeature) {
-                        displayAirportPopup(airportFeature);
-                        popupoverlay.setPosition(evt.coordinate);
-                        handled = true;
-                    }
-                }
             }
         }
         if (!handled) {
@@ -908,6 +900,9 @@ document.addEventListener('DOMContentLoaded', async function () {
     function displayMetarPopup(feature) {
         const metar = feature.get("data");
         const rawData = metar.raw_text;
+        const iceregex = /\b(FZ(RA|DZ|UP|FG|BR))|(?<=RMK\b.*)I[136]\d{3}\b/g;
+        const icingMatches = rawData.match(iceregex);
+        console.log("ICING MATCHES:", icingMatches);
         const ident = metar.station_id;
         const svg = feature.get("svgimage");
         const cat = metar.flight_category ?? "VFR";
@@ -964,35 +959,35 @@ document.addEventListener('DOMContentLoaded', async function () {
                             ${rowPrefix}${cellData}Wind Gust: ${cellData}<b>${wingst} KT</b>${rowSuffix}
                             ${rowPrefix}${cellData}Altimeter: ${cellData}<b>${altim} hg</b>${rowSuffix}
                             ${rowPrefix}${cellData}Horizontal Visibility: ${cellData} <b>${vis}</b>${rowSuffix}
-                            ${skyHeader}Sky Conditions${rowSuffix}
-                                    ${skyconditions}
-                            ${skyHeader}Icing Conditions${rowSuffix}
-                                    ${icingconditions}
+                            ${skyHeader}Sky Conditions${rowSuffix} ${skyconditions}
                         </table>
                     </div>    
                     <div class="popup-footer">
-                        <div class="popup-button-row" style="display: flex; flex-direction: row; justify-content: space-between; width: 100%;">
-                            <button class="custom-popup-button" id="airport-info" style="background:${bgcolor}; color:${fgcolor};">Airport Information</button>
-                            <span class="windsvg">${svg}</span>
+                        <div class="popup-button-row" style="display: flex; flex-direction: row; justify-content: space-between; width: 100%;">`;
+                            if (stationName) {
+                                detailhtml += `<button class="custom-popup-button" id="airport-info" style="background:${bgcolor}; color:${fgcolor};">Airport Information</button>`;
+                            }
+                            detailhtml += `<span class="windsvg">${svg}</span>
                             <button class="custom-popup-button" onclick="closePopup()" style="background:${bgcolor}; color:${fgcolor};">Close</button>
                         </div>
                         <textarea id="rawdata" class="rawdata">${rawData}</textarea><br>
                     </div>
                 </div>
             </div>`;
+        } 
 
-        } // | End of if (ident != "undefined") block  
-
-        console.log(`METAR POPUP\n${detailhtml}`);
+        //console.log(`METAR POPUP\n${detailhtml}`);
         popupcontent.innerHTML = detailhtml;
 
-        // Bind the click event immediately inside the same function scope
-        const infoBtn = popupcontent.querySelector('#airport-info');
-        if (infoBtn) {
-            infoBtn.addEventListener('click', () => {
-                console.log(`AIRPORT POPUP\n${JSON.stringify(airport)}`);
-                displayAirportPopup(btncolors, airport);
-            });
+        if (stationName) {
+            // Bind the click event immediately inside the same function scope
+            const infoBtn = popupcontent.querySelector('#airport-info');
+            if (infoBtn) {
+                infoBtn.addEventListener('click', () => {
+                    console.log(`AIRPORT POPUP\n${JSON.stringify(airport)}`);
+                    displayAirportPopup(btncolors, airport, detailhtml);
+                });
+            }
         }
     }
 
@@ -1190,50 +1185,14 @@ document.addEventListener('DOMContentLoaded', async function () {
         popupcontent.innerHTML = innerhtml;
     }
 
-    function displayAirportPopup(btncolors, fullAirportData) {
+    function displayAirportPopup(btncolors, fullAirportData, previousPopupContent) {
         // Get airport data from the feature
         const ident = fullAirportData.ident;
         const name = fullAirportData.name;
         const type = fullAirportData.type;
         const elevation = fullAirportData.elevation_ft;
-        const frequencies = JSON.parse(fullAirportData.frequencies);
-        const runways = JSON.parse(fullAirportData.runways);
-        const hasRunways = runways.length > 0;
-        const hasFrequencies = frequencies.length > 0;
-        const hasTower = frequencies.some(freq => freq && freq.description && freq.description.includes('TWR'));
         const bgcolor = btncolors.bgcolor;
         const fgcolor = btncolors.fgcolor;
-
-        // Determine header color based on airport type and characteristics (same as icon logic)
-        // const isHeliport = type && type.toLowerCase().includes('heliport');
-        // const isSeaplane = type && type.toLowerCase().includes('seaplane');
-        // const isClosed = fullAirportData.closed === 'yes' 
-        //         || fullAirportData.closed === true 
-        //         || (type && type.toLowerCase().includes('closed'));
-        // const hasTurfRunway = hasRunways && runways.some(runway => {
-        //         if (!runway.surface) return false;
-        //         const surface = runway.surface.replace(/[\[\]]/g, '').toUpperCase();
-        //         return surface === 'TURF' || surface === 'GRASS';
-        // });
-        // if (isClosed) {
-        //     headerBackgroundColor = 'red';
-        //     headerTextColor = 'white';
-        // } else if (isHeliport) {
-        //     headerBackgroundColor = 'white';
-        //     headerTextColor = 'black';
-        // } else if (isSeaplane) {
-        //     headerBackgroundColor = 'lightblue';
-        //     headerTextColor = 'black';
-        // } else if (hasTurfRunway) {
-        //     headerBackgroundColor = 'green';
-        //     headerTextColor = 'white';
-        // } else if (hasTower) {
-        //     headerBackgroundColor = 'blue';
-        //     headerTextColor = 'white';
-        // } else {
-        //     headerBackgroundColor = 'magenta';
-        //     headerTextColor = 'white';
-        // }
 
         let html = `<div class="featurepopup" id="featurepopup">`;
         html += `<span class="airportheader" style="background-color:${bgcolor}; color:${fgcolor}; border: 1px solid black;">`;
@@ -1261,43 +1220,72 @@ document.addEventListener('DOMContentLoaded', async function () {
         html += `</table>`;
         html += `</div><br>`;
 
-        // Frequencies section
-        if (hasFrequencies) {
-            html += `<div class="airport-frequencies">`;
-            html += `<strong>Frequencies</strong><br>`;
-            html += `<table style="width: 100%; border-collapse: collapse; margin-top: 5px;">`;
-            frequencies.forEach(freq => {
-                html += `<tr style="border-bottom: 1px solid #ddd;">`;
-                html += `<td style="text-align: left; padding: 2px 10px 2px 0; vertical-align: top;">${freq.description}</td>`;
-                html += `<td style="text-align: left; padding: 2px 0; vertical-align: top;"><b>${freq.frequency}</b></td>`;
-                html += `</tr>`;
-            });
-            html += `</table>`;
-            html += `</div><br>`;
-        }
-
-        // Runways section
-        if (hasRunways) {
-            html += `<div class="airport-runways">`;
-            html += `<strong>Runways</strong><br>`;
-            runways.forEach(runway => {
-                html += `Runway ${runway.le_ident}/${runway.he_ident}: `;
-                html += `<b>${runway.length_ft ? runway.length_ft + ' ft' : ''}</b>`;
-                if (runway.surface) {
-                    const decodedSurface = decodeRunwaySurface(runway.surface);
-                    html += ` (${decodedSurface})`;
+        try {
+            const frequencies = JSON.parse(fullAirportData.frequencies || "[]") || [];
+            const runways     = JSON.parse(fullAirportData.runways || "[]")     || [];
+            const hasFrequencies = frequencies.length > 0;
+            const hasRunways = runways.length > 0;
+            
+            // Frequencies section
+            if (hasFrequencies) {
+                html += `<div class="airport-frequencies">`;
+                html += `<strong>Frequencies</strong><br>`;
+                html += `<table style="width: 100%; border-collapse: collapse; margin-top: 5px;">`;
+                for (const freq of frequencies) {
+                    html += `<tr style="border-bottom: 1px solid #ddd;">`;
+                    html += `<td style="text-align: left; padding: 2px 10px 2px 0; vertical-align: top;">${freq.description}</td>`;
+                    html += `<td style="text-align: left; padding: 2px 0; vertical-align: top;"><b>${freq.frequency}</b></td>`;
+                    html += `</tr>`;
                 }
-                html += `<br>`;
-            });
-            html += `</div><br>`;
-        }
+                html += `</table>`;
+                html += `</div><br>`;
+            }
 
+            // Runways section
+            if (hasRunways) {
+                html += `<div class="airport-runways">`;
+                html += `<strong>Runways</strong><br>`;
+                html += `<table style="width: 100%; border-collapse: collapse; margin-top: 5px;">`;
+                for (const runway of runways) {
+                    html += `<tr style="border-bottom: 1px solid #ddd;">`; 
+                    html += `<td style="text-align: left; padding: 2px 0; vertical-align: top;"><b>${runway.le_ident}/${runway.he_ident}</b></td>`;
+                    let rwhtml = ""; 
+                    if (runway.length > 0 && runway.width > 0) {
+                        rwhtml += `<td style="text-align: left; padding: 2px 0; vertical-align: top;">`;
+                        rwhtml += `<b>${runway.length} ft x ${runway.width} ft </b>`;
+                    }
+                    if (runway.surface.length > 0) {
+                        const decodedSurface = decodeRunwaySurface(runway.surface);
+                        rwhtml += `<td><b>${decodedSurface}</b></td>`;
+                    }
+                    if (rwhtml.length > 0) {
+                        html += `${rwhtml}</td>`;
+                    }
+                    html += `</tr>`;
+                }
+            }
+        } catch (err) {
+            console.error("Error processing airport frequencies or runways:", err);
+        }
+        html += `</table>`;
+        html += `</div>`;
         html += `</div>`; // end of airport-popup-body
         html += `<hr>`;
+        html += `<div class="popup-button-row" style="display: flex; flex-direction: row; justify-content: space-between; width: 100%;">`;
+        html += `<button class="custom-popup-button" id="go-back" onclick="goBack()" style="background:${bgcolor}; color:${fgcolor};">Back</button>`;
         html += `<button class="custom-popup-button" onclick="closePopup()" style="background:${bgcolor}; color:${fgcolor};">Close</button>`;
+        html += `</div>`;
         html += `</div>`;
 
         popupcontent.innerHTML = html;
+
+        // Bind the click event immediately inside the same function scope
+        const backBtn = popupcontent.querySelector('#go-back');
+        if (backBtn) {
+            backBtn.addEventListener('click', () => {
+                popupcontent.innerHTML = previousPopupContent;
+            });
+        }
     }
 
     /**
