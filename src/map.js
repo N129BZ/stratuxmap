@@ -27,6 +27,7 @@ import { saveMapState, restoreMapState } from './mapstatemanager.js';
 import { getAirportsInRadius, decodeRunwaySurface } from './airportfunctions.js';
 import { getAirportObject } from './airportfunctions.js';
 import { getCurrentTafFlightCategoryColors } from './tafparsingutility.js';
+import { createGeometry } from 'ol/format/Feature.js';
 
 export class FIFOCache {
     constructor(maxSize) {
@@ -987,7 +988,8 @@ document.addEventListener('DOMContentLoaded', async function () {
     async function displayTafPopup(feature) { 
         const taf = feature.get("data");
         const bgcolor = feature.get("bgcolor");
-        const fgcolor = feature.get("fgcolor");  
+        const fgcolor = feature.get("fgcolor"); 
+        const category = feature.get("category"); 
         const ident = taf.station_id; 
         const rawData = taf.raw_text; 
         
@@ -1001,7 +1003,9 @@ document.addEventListener('DOMContentLoaded', async function () {
         let detailhtml = ""; 
         let innerhtml = `
             <div style="display:block;"> 
-                <span class="popup-title-area" style="background-color:${bgcolor}; color:${fgcolor};">Terminal Area Forecast - ${ident}</span> 
+                <span class="popup-title-area" 
+                      style="background-color:${bgcolor}; color:${fgcolor};">
+                      Terminal Area Forecast - ${ident}<br>Current Flight Status: ${category}</span> 
                 <div class="popup-content"> 
                     <div class="taf"> 
                         <div class="table-scroll-container"> 
@@ -1015,14 +1019,12 @@ document.addEventListener('DOMContentLoaded', async function () {
             if (value && typeof value === 'object') { 
                 for (const subitem in value) { 
                     const subvalue = value[subitem]; 
-                    console.log(`Line 1046: ${subitem} = ${subvalue}`); 
                     parsedForecast = parseForecastField(subitem, subvalue); 
                     detailhtml += parsedForecast; 
                 } 
             } else { 
-                console.log(`Line 1052: ${item} = ${value}`); 
                 parsedForecast = parseForecastField(item, value); 
-                detailhtml += parsedForecast; // Fixed: Changed '=' to '+='
+                detailhtml += parsedForecast; 
             } 
         } 
 
@@ -1055,7 +1057,7 @@ document.addEventListener('DOMContentLoaded', async function () {
             if (infoBtn) { 
                 const parameters = { 
                     "type": "TAF", 
-                    "colors": { bgcolor, fgcolor }, 
+                    "colors": { bgcolor, fgcolor, createGeometry }, 
                     "station_name": stationName, 
                     "ident": ident, 
                     "airport": airport 
@@ -1193,7 +1195,9 @@ document.addEventListener('DOMContentLoaded', async function () {
                             </table>
                         </div>
                         <div class="popup-footer">
-                            <button class="custom-popup-button" onclick="closePopup()" style="background:${bgcolor}; color:${fgcolor};">Close</button>
+                            <div class="popup-button-row" style="display: flex; flex-direction: row; justify-content: space-between; width: 100%;">
+                                <button class="custom-popup-button" onclick="closePopup()" style="margin-left:auto; background:${bgcolor}; color:${fgcolor};">Close</button>
+                            </div>
                             <textarea id="rawdata" class="rawdata">${rawData}</textarea><br>
                         </div>
                     </div>
@@ -1201,6 +1205,7 @@ document.addEventListener('DOMContentLoaded', async function () {
             </div>`;
         const innerhtml = html + detailhtml;
         popupcontent.innerHTML = innerhtml;
+        //console.log(`PIREP\n${innerhtml}`);
     }
 
     async function displayAirportPopup(parameterJson, callbackFunction, feature) {
@@ -1616,6 +1621,8 @@ document.addEventListener('DOMContentLoaded', async function () {
         const fc = await getCurrentTafFlightCategoryColors(rawText);
         const bgcolor = fc.bgcolor;
         const fgcolor = fc.fgcolor;
+        const category = fc.category;
+
         const svgimg = `<svg xmlns="http://www.w3.org/2000/svg" width="157.5" height="112.5" viewBox="0 0 33.526 23.62">
         <g transform="translate(-.143 -.036)">
         <path d="M32.995 11.846A16.095 11.149 0 0 1 16.96 22.995 16.095 11.149 0 0 1 .805 11.928 16.095 11.149 0 0 1 16.72.698a16.095 11.149 0 0 1 16.272 10.983l-16.093.165z" 
@@ -1630,7 +1637,7 @@ document.addEventListener('DOMContentLoaded', async function () {
         font-size:14.2894px;font-family:sans-serif;-inkscape-font-specification:&quot;sans-serif, Bold&quot;;font-variant-ligatures:normal;
         font-variant-caps:normal;font-variant-numeric:normal;font-variant-east-asian:normal;fill:${fgcolor};
         fill-opacity:1;stroke-width:.357233">TAF</tspan></text></g></svg>`
-        console.log(`SVG:\n}${svgimg}`);
+        //console.log(`SVG:\n}${svgimg}`);
         try {
             const tafFeature = new Feature({
                 ident: taf.station_id,
@@ -1638,6 +1645,7 @@ document.addEventListener('DOMContentLoaded', async function () {
                 data: taf,
                 bgcolor: bgcolor,
                 fgcolor: fgcolor,
+                category: category,
                 datatype: "TAF",
                 geometry: new Point(fromLonLat([taf.longitude, taf.latitude]))
             });

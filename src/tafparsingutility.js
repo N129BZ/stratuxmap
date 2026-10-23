@@ -96,16 +96,16 @@ export async function getCurrentTafFlightCategoryColors(rawTafText) {
     const fc = calculateMetrics(currentActiveLineText);
     switch (fc) {
         case "IFR":
-            return { bgcolor: "#ff0000", fgcolor: "#ffffff" };
+            return { category: "IFR", bgcolor: "#ff0000", fgcolor: "#ffffff" };
         case "LIFR":
-            return { bgcolor: "#ff00ff", fgcolor: "#ffffff" };
+            return { category: "LIFR", bgcolor: "#ff00ff", fgcolor: "#ffffff" };
         case "MVFR":
-            return { bgcolor: "#0000cd", fgcolor: "#ffffff" };
+            return { category: "MVFR", bgcolor: "#0000cd", fgcolor: "#ffffff" };
         case "pirep":
-            return { bgcolor: "#98294c", fgcolor: "#ffffff" };
+            return { category: "NA", bgcolor: "#98294c", fgcolor: "#ffffff" };
         case "VFR":
         default:
-            return { bgcolor: "#12f23c", fgcolor: "#000000" };
+            return { category: "VFR", bgcolor: "#12f23c", fgcolor: "#000000" };
     }
 }
 
