@@ -246,7 +246,6 @@ document.addEventListener('DOMContentLoaded', async function () {
         // If event.persisted is true, the browser froze the page and killed the socket.
         // We must force a reconnection.
         if (event.persisted || !socket) {
-            await restoreMapState();
             await startListening();;
         }
     });
@@ -275,10 +274,11 @@ document.addEventListener('DOMContentLoaded', async function () {
         console.log('visibilitychange:', vs);
         try {
             if (vs === 'hidden') {
-                disconnectWebSocket();
+                await disconnectWebSocket();
             }
             else if (vs === 'visible') {
                 console.log("visibilitychange event, restoring map state...");
+                await restoreMapState();
             }
         }
         catch (error) {
@@ -451,18 +451,6 @@ document.addEventListener('DOMContentLoaded', async function () {
     });
     map.addLayer(osmTileLayer);
 
-
-    const pirepVectorLayer = new VectorLayer({
-        source: new VectorSource(),
-        title: "Pireps",
-        visible: false,
-        zindex: 99,
-        canvasWillReadFrequently: true,
-        updateWhileAnimating: false,
-        updateWhileInteracting: false
-    });
-    map.addLayer(pirepVectorLayer);
-
     const metarVectorLayer = new VectorLayer({
         source: new VectorSource(),
         title: "Metars",
@@ -478,17 +466,28 @@ document.addEventListener('DOMContentLoaded', async function () {
         source: new VectorSource(),
         title: "TAFs",
         visible: false,
-        zIndex: 88,
+        zIndex: 99,
         canvasWillReadFrequently: true,
         updateWhileAnimating: false,
         updateWhileInteracting: false
     });
     map.addLayer(tafVectorLayer);
 
+    const pirepVectorLayer = new VectorLayer({
+        source: new VectorSource(),
+        title: "Pireps",
+        visible: false,
+        zindex: 99,
+        canvasWillReadFrequently: true,
+        updateWhileAnimating: false,
+        updateWhileInteracting: false
+    });
+    map.addLayer(pirepVectorLayer);
+
     const airportLayer = new VectorLayer({
         title: 'Airports',
         source: new VectorSource(),
-        zIndex: 100,
+        zIndex: 99,
         visible: false,
         canvasWillReadFrequently: true,
         updateWhileAnimating: false,
@@ -527,7 +526,7 @@ document.addEventListener('DOMContentLoaded', async function () {
                     let title = metadata.description ? metadata.description.replace(" Chart", "") : dbname;
                     if (title === "osm.mbtiles") title = "OSM Offline";
                     //let layertype = metadata.type === "baselayer" ? "base" : metadata.type;
-                    let layertype = ""; //metadata.type === "baselayer" ? "base" : metadata.type;
+                    let layertype = ""; //metadata.type;
 
                     let dburl = URL_GET_TILE.replace("{dbname}", dbname);
                     var layer = new TileLayer({
@@ -1073,9 +1072,9 @@ document.addEventListener('DOMContentLoaded', async function () {
      * Create the html for a PIREP popup element
      * @param {object} feature: the pirep the user clicked on
      */
-    function displayPirepPopup(feature) {
-        const popupFeature = feature.get("data");
-        const rawData = feature.get("raw_text");
+    async function displayPirepPopup(feature) {
+        const pirep = feature.get("data");
+        const rawData = pirep.raw_text;
         const rowPrefix = `<tr class="table-row-data">`
         const cellData = `<td style="width:100%;">`;
         const rowSuffix = `</td></tr>`;
@@ -1089,13 +1088,13 @@ document.addEventListener('DOMContentLoaded', async function () {
         let detailhtml = "";
         let html =
             `<div style="display:block;">
-                <span class="popup-title-area" style="background-color:${bgcolor}; color:${fgcolor};">${popupFeature.report_type.toUpperCase()} FROM AIRCRAFT: ${popupFeature.aircraft_ref}</span>
+                <span class="popup-title-area" style="background-color:${bgcolor}; color:${fgcolor};">${pirep.report_type.toUpperCase()} FROM AIRCRAFT: ${pirep.aircraft_ref}</span>
                 <div class="popup-content">
                     <div class="pirep">
                         <div class="table-scroll-container">
                            <table class="pireptable" id="pireptable">`;
-        for (const item in popupFeature) {
-            const value = popupFeature[item];
+        for (const item in pirep) {
+            const value = pirep[item];
             const fieldname = getFieldDescription(item);
             switch (item) {
                 case "receipt_time":
@@ -1673,9 +1672,9 @@ document.addEventListener('DOMContentLoaded', async function () {
      * Place pirep features on the map
      * @param {object} pirep: JSON object with LOTS of pireps 
      */
-    async function processPirep(pirepPromise) {
+    async function processPirep(pirepObject) {
         // await the pirepPromise
-        const pirep = await pirepPromise;
+        const pirep = await pirepObject;
 
         // Validate required properties
         if (!pirep || typeof pirep.longitude !== 'number' || typeof pirep.latitude !== 'number') {
@@ -1685,7 +1684,6 @@ document.addEventListener('DOMContentLoaded', async function () {
         try {
             // generate a "pseudo-heading" to use if wind dir is absent
             const id = pirep.aircraft_ref ? pirep.aircraft_ref : pirep.station_id;
-            const geometry = new Point(fromLonLat([pirep.longitude, pirep.latitude]));
             const heading = pirep.wind_dir_degrees > 0 ? pirep.wind_dir_degrees * 0.0174533 : 0;
 
             const pirepFeature = new Feature({
@@ -1693,21 +1691,18 @@ document.addEventListener('DOMContentLoaded', async function () {
                 id: id,
                 data: pirep,
                 datatype: "PIREP",
-                geometry: geometry,
-                raw_text: pirep.raw_text
+                geometry: new Point(fromLonLat([pirep.longitude, pirep.latitude]))
             });
 
-            const pirepmarker = new Icon({
-                crossOrigin: 'anonymous',
-                src: '/images/pirep.png',
-                offset: [0, 0],
-                opacity: 1,
-                scale: .05,
-                rotation: heading
-            });
-
-            pirepFeature.setStyle(new Style({
-                image: pirepmarker
+            pirepFeature.setStyle(new Style({ 
+                image: new Icon({
+                    crossOrigin: 'anonymous',
+                    src: '/images/pirep.png',
+                    offset: [0, 0],
+                    opacity: 1,
+                    scale: .05,
+                    rotation: heading
+                })
             }));
 
             pirepVectorLayer.getSource().addFeature(pirepFeature);

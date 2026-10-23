@@ -1,6 +1,4 @@
-
-
-import { stateCache, FIFOCache } from './map.js';
+import { stateCache } from './map.js';
 
 
 export async function saveMapState() {
