@@ -16,19 +16,17 @@ import OSM from 'ol/source/OSM';
 import { fromLonLat, toLonLat, transformExtent } from 'ol/proj';
 import Feature from 'ol/Feature';
 import Point from 'ol/geom/Point';
-//import LineString from 'ol/geom/LineString';
 import VectorLayer from 'ol/layer/Vector';
 import VectorSource from 'ol/source/Vector';
 import Style from 'ol/style/Style';
 import Icon from 'ol/style/Icon';
-//import Stroke from 'ol/style/Stroke';
 import Overlay from 'ol/Overlay';
 import { defaults as defaultControls, ScaleLine } from 'ol/control';
 import LayerSwitcher from 'ol-layerswitcher';
 import { saveMapState, restoreMapState } from './mapstatemanager.js';
 import { getAirportsInRadius, decodeRunwaySurface } from './airportfunctions.js';
 import { getAirportObject } from './airportfunctions.js';
-//import { parseWeatherMessage } from './weathermessageparser.js';
+import { getCurrentTafFlightCategoryColors } from './tafparsingutility.js';
 
 export class FIFOCache {
     constructor(maxSize) {
@@ -379,10 +377,10 @@ document.addEventListener('DOMContentLoaded', async function () {
                         if (arrayKey) {
                             switch (arrayKey) {
                                 case "METAR":
-                                    await processMetar(report, stationInfo);
+                                    await processMetar(report);
                                     break;
                                 case "TAF":
-                                    await processTaf(report, stationInfo);
+                                    await processTaf(report);
                                     break;
                                 default:
                                     await processPirep(report);
@@ -835,21 +833,21 @@ document.addEventListener('DOMContentLoaded', async function () {
 
         let handled = false;
         // Prioritize METAR, then TAF, then others
-        const metarFeature = features.find(f => f.get('datatype') === 'metar');
+        const metarFeature = features.find(f => f.get('datatype') === 'METAR');
         if (metarFeature) {
             displayMetarPopup(metarFeature);
             popupoverlay.setPosition(evt.coordinate);
             handled = true;
         }
         else {
-            const tafFeature = features.find(f => f.get('datatype') === 'taf');
+            const tafFeature = features.find(f => f.get('datatype') === 'TAF');
             if (tafFeature) {
                 displayTafPopup(tafFeature);
                 popupoverlay.setPosition(evt.coordinate);
                 handled = true;
             }
             else {
-                const pirepFeature = features.find(f => f.get('datatype') === 'pirep');
+                const pirepFeature = features.find(f => f.get('datatype') === 'PIREP');
                 if (pirepFeature) {
                     displayPirepPopup(pirepFeature);
                     popupoverlay.setPosition(evt.coordinate);
@@ -891,7 +889,7 @@ document.addEventListener('DOMContentLoaded', async function () {
      * Create the html for a METAR popup element
      * @param {feature} Feature: the metar feature the user clicked on 
      */
-    function displayMetarPopup(feature) {
+    async function displayMetarPopup(feature) {
         const metar = feature.get("data");
         const rawData = metar.raw_text;
         const ident = metar.station_id;
@@ -916,6 +914,9 @@ document.addEventListener('DOMContentLoaded', async function () {
         const rowSuffix = `</td></tr>`;
         const skyHeader = `<tr class="skyheader"><td colspan="2" style="display:block;width:99%;text-align:center;border:1px solid #000000;">`;
 
+        const airport = await getAirportObject(ident);
+        const stationName = `${String(airport.name).split("/")[0]}<br>${ident}`;
+        
         let detailhtml = "";
         let time = (function () {
             if (metar.observation_time) {
@@ -929,14 +930,12 @@ document.addEventListener('DOMContentLoaded', async function () {
             }
         })();
 
-        //const airport = feature.get('airport')
-        let stationName = feature.get('station_name');
-        stationName = stationName ? `${stationName}<br>` : "";
+        
 
         if (ident != "undefined") {
             detailhtml =
                 `<div style="display:block;">
-                <span class="popup-title-area" style="background-color:${bgcolor}; color:${fgcolor};">${stationName}${ident}</span>
+                <span class="popup-title-area" style="background-color:${bgcolor}; color:${fgcolor};">${stationName}</span>
                 <div class="popup-content">
                     <div class="table-scroll-container">
                         <table class="popup-body-table" id="metartable">
@@ -973,9 +972,9 @@ document.addEventListener('DOMContentLoaded', async function () {
             // Bind the click event immediately inside the same function scope
             const infoBtn = popupcontent.querySelector('#airport-info');
             if (infoBtn) {
+                const parameters = { "type": "METAR", "colors": {bgcolor, fgcolor}, "station_name": stationName, "ident": ident, "airport": airport };
                 infoBtn.addEventListener('click', () => {
-                    const airport = feature.get('airport');
-                    displayAirportPopup(btncolors, airport, displayMetarPopup, feature);
+                    displayAirportPopup(parameters, displayMetarPopup, feature);
                 });
             }
         }
@@ -985,58 +984,87 @@ document.addEventListener('DOMContentLoaded', async function () {
      * Create the html for a TAF popup element
      * @param {feature} Feature: the taf feature the user clicked on
      */
-    function displayTafPopup(feature) {
-        // const rowPrefix = `<tr class="table-row-data"><td style="width:100%;">`;
-        // const rowSuffix = `</td></tr>`;
-        // const skyHeader = `<tr class="skyheader"><td style="display:block;width:99%;text-align:center;border:1px solid #000000;">`;
-        const popupFeature = feature.get("data");
-        const id = feature.get("ident");
-        const rawData = popupFeature.raw_text;
-        const btncolors = getCategoryColors(popupFeature.flight_category);
-        const bgcolor = btncolors.bgcolor;
-        const fgcolor = btncolors.fgcolor;
-        const forecast = popupFeature.forecast;
+    async function displayTafPopup(feature) { 
+        const taf = feature.get("data");
+        const bgcolor = feature.get("bgcolor");
+        const fgcolor = feature.get("fgcolor");  
+        const ident = taf.station_id; 
+        const rawData = taf.raw_text; 
+        
+        
+        const forecast = taf.forecast; 
+        
+        const airport = await getAirportObject(ident); 
+        const stationNames = String(airport.name).split("/"); 
+        const stationName = stationNames[0] ? `${stationNames[0]}<br>${ident}` : ident;
 
-        let detailhtml = "";
-        let innerhtml =
-            `<div style="display:block;">
-            <span class="popup-title-area" style="background-color:${bgcolor}; color:${fgcolor};">Terminal Area Forecast - ${id}</span>
-            <div class="popup-content">
-                <div class="taf">
-                    <div class="table-scroll-container">
-                        <table class="popup-body-table" id="taftable">`;
-        for (const item in forecast) {
-            let parsedForecast = "";
-            const value = forecast[item];
-            if (typeof (value) === 'object') {
-                for (const subitem in value) {
-                    const subvalue = value[subitem];
-                    console.log(`Line 1046: ${subitem} = ${subvalue}`);
-                    parsedForecast = parseForecastField(subitem, subvalue);
+        let detailhtml = ""; 
+        let innerhtml = `
+            <div style="display:block;"> 
+                <span class="popup-title-area" style="background-color:${bgcolor}; color:${fgcolor};">Terminal Area Forecast - ${ident}</span> 
+                <div class="popup-content"> 
+                    <div class="taf"> 
+                        <div class="table-scroll-container"> 
+                            <table class="popup-body-table" id="taftable">`; 
 
-                    detailhtml += parsedForecast;
-                }
-            }
-            else {
-                console.log(`Line 1052: ${item} = ${value}`);
-                parsedForecast = parseForecastField(item, value);
-                detailhtml = parsedForecast;
-            }
-        }
-        innerhtml += detailhtml + `
-                        </table>
-                    </div>
+        // Safe iteration over the forecast fields
+        for (const item in forecast) { 
+            let parsedForecast = ""; 
+            const value = forecast[item]; 
+            
+            if (value && typeof value === 'object') { 
+                for (const subitem in value) { 
+                    const subvalue = value[subitem]; 
+                    console.log(`Line 1046: ${subitem} = ${subvalue}`); 
+                    parsedForecast = parseForecastField(subitem, subvalue); 
+                    detailhtml += parsedForecast; 
+                } 
+            } else { 
+                console.log(`Line 1052: ${item} = ${value}`); 
+                parsedForecast = parseForecastField(item, value); 
+                detailhtml += parsedForecast; // Fixed: Changed '=' to '+='
+            } 
+        } 
+
+        detailhtml += `
+                            </table> 
+                        </div> 
+                    </div> 
+                    <div class="popup-footer"> 
+                        <div class="popup-button-row" style="display: flex; flex-direction: row; justify-content: space-between; width: 100%;">`; 
+
+        if (stationName) { 
+            detailhtml += `<button class="custom-popup-button" id="airport-info" style="background:${bgcolor}; color:${fgcolor};">Station Information</button>`; 
+        } 
+
+        detailhtml += `
+                            <button class="custom-popup-button" onclick="closePopup()" style="background:${bgcolor}; color:${fgcolor};">Close</button> 
+                        </div> 
+                        <textarea id="rawdata" class="rawdata">${rawData}</textarea><br> 
+                    </div> 
                 </div>
-                <div class="popup-footer">
-                    <div class="popup-button-row" style="display: flex; flex-direction: row; justify-content: space-between; width: 100%;">
-                        <button class="custom-popup-button" onclick="closePopup()" style="background:${bgcolor}; color:${fgcolor};">Station Info</button>
-                        <button class="custom-popup-button" onclick="closePopup()" style="background:${bgcolor}; color:${fgcolor};">Close</button>
-                    </div>
-                    <textarea id="rawdata" class="rawdata">${rawData}</textarea><br>
-                </div>
-            </div>`;
-        console.log(innerhtml);
-        popupcontent.innerHTML = innerhtml;
+            </div>`; 
+
+        // Corrected Sequence: Inject HTML into the container first
+        innerhtml = innerhtml + detailhtml; 
+        popupcontent.innerHTML = innerhtml; 
+
+        // Corrected Sequence: Query and attach listeners now that elements exist in DOM
+        if (stationName) { 
+            const infoBtn = popupcontent.querySelector('#airport-info'); 
+            if (infoBtn) { 
+                const parameters = { 
+                    "type": "TAF", 
+                    "colors": { bgcolor, fgcolor }, 
+                    "station_name": stationName, 
+                    "ident": ident, 
+                    "airport": airport 
+                }; 
+                infoBtn.addEventListener('click', async () => { 
+                    await displayAirportPopup(parameters, displayTafPopup, feature); 
+                }); 
+            } 
+        } 
     }
 
     /**
@@ -1175,19 +1203,26 @@ document.addEventListener('DOMContentLoaded', async function () {
         popupcontent.innerHTML = innerhtml;
     }
 
-    function displayAirportPopup(btncolors, fullAirportData, callbackFunction, feature) {
-        // Get airport data from the feature
-        const ident = fullAirportData.ident;
-        const name = fullAirportData.name;
-        const type = fullAirportData.type;
-        const elevation = fullAirportData.elevation_ft;
-        const bgcolor = btncolors.bgcolor;
-        const fgcolor = btncolors.fgcolor;
+    async function displayAirportPopup(parameterJson, callbackFunction, feature) {
+        // parameterJson = { type: "METAR", colors: { bgcolor, fgcolor }, station_name: stationName, airport: airport };
+        const callertype = parameterJson.type;
+        const bgcolor = parameterJson.colors.bgcolor; 
+        const fgcolor = parameterJson.colors.fgcolor;
+        const name = parameterJson.station_name;
+        const ident = parameterJson.ident;
+        const airport = parameterJson.airport
 
+        const type = airport.type;
+        const frequencies = JSON.parse(airport.frequencies || "[]") || [];
+        const runways     = JSON.parse(airport.runways || "[]")     || [];
+        const hasFrequencies = frequencies.length > 0;
+        const hasRunways = runways.length > 0;
+        
         let html = `<div class="featurepopup" id="featurepopup">`;
-        html += `<span class="airportheader" style="background-color:${bgcolor}; color:${fgcolor}; border: 1px solid black;">`;
-        html += `${name}<br>${ident} - ${type.replace('_', ' ').toUpperCase()}</span><br>`;
-        html += `<div class="airport-popup-body">`;
+        html += `<span class="airportheader" 
+                        style="background-color:${bgcolor}; color:${fgcolor}; border: 1px solid black;">
+                        ${name}</span><br>`;
+                `<div class="airport-popup-body">`;
 
         // Basic airport information
         html += `<div class="airport-basic-info">`;
@@ -1201,21 +1236,16 @@ document.addEventListener('DOMContentLoaded', async function () {
         html += `<td style="text-align: left; padding: 2px 10px 2px 0; vertical-align: top;">Type:</td>`;
         html += `<td style="text-align: left; padding: 2px 0; vertical-align: top;"><b>${type.replace('_', ' ').toUpperCase()}</b></td>`;
         html += `</tr>`;
-        if (elevation) {
+        if (airport.elevation) {
             html += `<tr style="border-bottom: 1px solid #ddd;">`;
             html += `<td style="text-align: left; padding: 2px 10px 2px 0; vertical-align: top;">Elevation:</td>`;
-            html += `<td style="text-align: left; padding: 2px 0; vertical-align: top;"><b>${elevation} ft MSL</b></td>`;
+            html += `<td style="text-align: left; padding: 2px 0; vertical-align: top;"><b>${airport.elevation} ft MSL</b></td>`;
             html += `</tr>`;
         }
         html += `</table>`;
         html += `</div><br>`;
-
+        
         try {
-            const frequencies = JSON.parse(fullAirportData.frequencies || "[]") || [];
-            const runways     = JSON.parse(fullAirportData.runways || "[]")     || [];
-            const hasFrequencies = frequencies.length > 0;
-            const hasRunways = runways.length > 0;
-            
             // Frequencies section
             if (hasFrequencies) {
                 html += `<div class="airport-frequencies">`;
@@ -1262,7 +1292,7 @@ document.addEventListener('DOMContentLoaded', async function () {
         html += `</div>`; // end of airport-popup-body
         html += `<hr>`;
         html += `<div class="popup-button-row" style="display: flex; flex-direction: row; justify-content: space-between; width: 100%;">`;
-        html += `<button class="custom-popup-button" id="go-back" onclick="goBack()" style="background:${bgcolor}; color:${fgcolor};">Back</button>`;
+        html += `<button class="custom-popup-button" id="go-back" style="background:${bgcolor}; color:${fgcolor};">Back to ${callertype}</button>`;
         html += `<button class="custom-popup-button" onclick="closePopup()" style="background:${bgcolor}; color:${fgcolor};">Close</button>`;
         html += `</div>`;
         html += `</div>`;
@@ -1272,8 +1302,8 @@ document.addEventListener('DOMContentLoaded', async function () {
         // Bind the click event immediately inside the same function scope
         const backBtn = popupcontent.querySelector('#go-back');
         if (backBtn) {
-            backBtn.addEventListener('click', () => {
-                callbackFunction(feature);
+            backBtn.addEventListener('click', async () => {
+                await callbackFunction(feature);
             });
         }
     }
@@ -1524,7 +1554,7 @@ document.addEventListener('DOMContentLoaded', async function () {
     async function processMetar(metarObject) {
         // await the incoming metar...
         const metar = await metarObject;
-        const airportObject = await getAirportObject(metar.station_id);
+        
         // Validate required properties
         if (!metar || typeof metar.longitude !== 'number' || typeof metar.latitude !== 'number') {
             return;
@@ -1552,10 +1582,8 @@ document.addEventListener('DOMContentLoaded', async function () {
                 ident: metar.station_id,
                 id: metar.station_id,
                 data: metar,
-                datatype: "metar",
+                datatype: "METAR",
                 geometry: new Point(fromLonLat([metar.longitude, metar.latitude])),
-                airport: airportObject,
-                station_name: airportObject.name,
                 svgimage: popupSvg
             });
 
@@ -1579,16 +1607,16 @@ document.addEventListener('DOMContentLoaded', async function () {
     async function processTaf(tafObject) {
         // await the incoming Promise
         const taf = await tafObject;
-        const airportObject = await getAirportObject(tafObject.station_id);
-
+        
         // Validate required properties
         if (!taf || typeof taf.longitude !== 'number' || typeof taf.latitude !== 'number') {
             return;
         }
-        let catcolors = getCategoryColors(taf.flight_category);
-        let bgcolor = catcolors.bgcolor;
-        let fgcolor = catcolors.fgcolor;
-        let svgimg = `<svg xmlns="http://www.w3.org/2000/svg" width="126.713" height="89.273" viewBox="0 0 33.526 23.62">
+        const rawText = taf.raw_text;
+        const fc = await getCurrentTafFlightCategoryColors(rawText);
+        const bgcolor = fc.bgcolor;
+        const fgcolor = fc.fgcolor;
+        const svgimg = `<svg xmlns="http://www.w3.org/2000/svg" width="157.5" height="112.5" viewBox="0 0 33.526 23.62">
         <g transform="translate(-.143 -.036)">
         <path d="M32.995 11.846A16.095 11.149 0 0 1 16.96 22.995 16.095 11.149 0 0 1 .805 11.928 16.095 11.149 0 0 1 16.72.698a16.095 11.149 0 0 1 16.272 10.983l-16.093.165z" 
         style="fill:${bgcolor};fill-opacity:1;stroke:#000;stroke-width:1.32292;stroke-miterlimit:4;stroke-dasharray:none;stroke-opacity:1"/>
@@ -1602,15 +1630,15 @@ document.addEventListener('DOMContentLoaded', async function () {
         font-size:14.2894px;font-family:sans-serif;-inkscape-font-specification:&quot;sans-serif, Bold&quot;;font-variant-ligatures:normal;
         font-variant-caps:normal;font-variant-numeric:normal;font-variant-east-asian:normal;fill:${fgcolor};
         fill-opacity:1;stroke-width:.357233">TAF</tspan></text></g></svg>`
-
+        console.log(`SVG:\n}${svgimg}`);
         try {
-            let tafFeature = new Feature({
-                ident: tafObject.station_id,
-                id: tafObject.station_id,
-                data: tafObject,
-                airport: airportObject,
-                station_name: airportObject.name,
-                datatype: "taf",
+            const tafFeature = new Feature({
+                ident: taf.station_id,
+                id: taf.station_id,
+                data: taf,
+                bgcolor: bgcolor,
+                fgcolor: fgcolor,
+                datatype: "TAF",
                 geometry: new Point(fromLonLat([taf.longitude, taf.latitude]))
             });
             tafFeature.setStyle(new Style({
@@ -1619,7 +1647,7 @@ document.addEventListener('DOMContentLoaded', async function () {
                     src: `data:image/svg+xml;utf8,${encodeURIComponent(svgimg)}`,
                     offset: [0, 0],
                     opacity: 1,
-                    size: [126, 90],
+                    size: [157.5, 112.5],
                     scale: .2
                 })
             }));
@@ -1656,7 +1684,7 @@ document.addEventListener('DOMContentLoaded', async function () {
                 ident: id,
                 id: id,
                 data: pirep,
-                datatype: "pirep",
+                datatype: "PIREP",
                 geometry: geometry,
                 raw_text: pirep.raw_text
             });
