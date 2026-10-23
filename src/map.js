@@ -1005,7 +1005,7 @@ document.addEventListener('DOMContentLoaded', async function () {
             <div style="display:block;"> 
                 <span class="popup-title-area" 
                       style="background-color:${bgcolor}; color:${fgcolor};">
-                      Terminal Area Forecast - ${ident}<br>Current Flight Status: ${category}</span> 
+                      Terminal Area Forecast - ${ident}<br>Current Flight Status - ${category}</span> 
                 <div class="popup-content"> 
                     <div class="taf"> 
                         <div class="table-scroll-container"> 
