@@ -24,8 +24,7 @@ import Overlay from 'ol/Overlay';
 import { defaults as defaultControls, ScaleLine } from 'ol/control';
 import LayerSwitcher from 'ol-layerswitcher';
 import { saveMapState, restoreMapState } from './mapstatemanager.js';
-import { getAirportsInRadius, decodeRunwaySurface } from './airportfunctions.js';
-import { getAirportObject } from './airportfunctions.js';
+import { getAirportsInRadius, decodeRunwaySurface, getAirportObject } from './airportfunctions.js';
 import { getCurrentTafFlightCategoryColors } from './tafparsingutility.js';
 import { createGeometry } from 'ol/format/Feature.js';
 
@@ -101,27 +100,12 @@ const isMobile = /Mobi|Android|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i
  * global variables
  */
 let currentZoom = 9.0;
-let tplcontainer = {};
 let DistanceUnits = {};
 let distanceunit = "";
-let popup = {};
-let popupcontent = {};
-let airportRadiusSelector = {};
 
 const { promise, resolve, reject } = Promise.withResolvers();
 
-/**
- * These objects are used by the XMLParser to convert XML to JSON.
- * The alwaysArray object makes the parser translate sky_condition 
- * XML attributes as an array of values... which is good.
- */
-const alwaysArray = [
-    "response.data.METAR.sky_condition",
-    "response.data.PIREP.sky_condition"
-];
-
 document.addEventListener('DOMContentLoaded', async function () {
-
     // Fetch settings asynchronously BEFORE anything else inside the DOM load lifecycle
     try {
         const response = await fetch(`${URL_SERVER}/appsettings`);
@@ -129,7 +113,6 @@ document.addEventListener('DOMContentLoaded', async function () {
             throw new Error(`Server responded with status: ${response.status}`);
         }
         appsettings = await response.json();
-        console.log("App settings loaded safely via async fetch:", appsettings);
     } catch (error) {
         console.error("CRITICAL CONFIGURATION ERROR:", error);
 
@@ -147,7 +130,6 @@ document.addEventListener('DOMContentLoaded', async function () {
 
         throw new Error("Application halted due to settings loading failure.");
     }
-
 
     /**************** BEGINNING OF SVG GENERATION CLASSES *****************/
     class WeatherProcessItem {
@@ -187,20 +169,19 @@ document.addEventListener('DOMContentLoaded', async function () {
     /**************** END OF SVG GENERATION CLASSES *****************/
 
     // DOM is ready for map.html
-    tplcontainer = document.getElementById('tplcontainer');
-    popup = document.getElementById('popup');
-    popupcontent = document.getElementById('popup-content');
-
+    const popup = document.getElementById('popup');
+    const popupcontent = document.getElementById('popup-content');
+    const radiusSelector = document.getElementById('airport-radius-selector');
+    let map = null;
     let socket = null;
 
-    document.getElementById('radius-header').textContent = `Airport Search Radius\nDouble-click on any location`;
+    document.getElementById('radius-header').textContent = `Airport Search Radius\nDouble-click on any map location`;
 
     // Register stateReplay event listener BEFORE calling restoreMapState
     window.addEventListener('stateReplay', async function (e) {
         try {
             const stateCache = e.detail.state;
-            console.log("In window event listener for stateReplay");
-
+            
             if (!stateCache) return;
 
             if (typeof stateCache.zoom === 'number' &&
@@ -232,8 +213,6 @@ document.addEventListener('DOMContentLoaded', async function () {
                         }
                     }
                 }
-
-                console.log("Finished processing of Replay event");
             }
         }
         finally { }
@@ -241,8 +220,6 @@ document.addEventListener('DOMContentLoaded', async function () {
 
     // Handle Back-Forward Cache (bfcache) Restoration
     window.addEventListener('pageshow', async (event) => {
-        console.log(`pageshow triggered. Page restored from cache: ${event.persisted}`);
-
         // If event.persisted is true, the browser froze the page and killed the socket.
         // We must force a reconnection.
         if (event.persisted || !socket) {
@@ -252,7 +229,6 @@ document.addEventListener('DOMContentLoaded', async function () {
 
     // Handle Page Unload / Freezing into bfcache
     window.addEventListener('pagehide', async (event) => {
-        console.log(`pagehide triggered. Entering cache: ${event.persisted}`);
         // Cleanly close the connection before the page goes into memory sleep
         stateCache.zoom = map.getView().getZoom();
         stateCache.viewposition = map.getView().getCenter();
@@ -264,16 +240,18 @@ document.addEventListener('DOMContentLoaded', async function () {
             visible: typeof layer.getVisible === 'function' ? layer.getVisible() : undefined
         }))
         console.log("SAVING MAP STATE!")
-        await saveMapState();
+        const view = map.getView();
+        await saveMapState(view);
         await disconnectWebSocket();
     });
 
 
     document.addEventListener('visibilitychange', async function () {
         let vs = document.visibilityState
-        console.log('visibilitychange:', vs);
         try {
             if (vs === 'hidden') {
+                const view = map.getView();
+                await saveMapState(view)
                 await disconnectWebSocket();
             }
             else if (vs === 'visible') {
@@ -288,8 +266,6 @@ document.addEventListener('DOMContentLoaded', async function () {
 
     async function disconnectWebSocket() {
         if (socket) {
-            console.log("Closing WebSocket cleanly...");
-            // Remove listeners first so .onclose doesn't fire an accidental auto-reconnect
             socket.onclose = null;
             socket.close();
             socket = null;
@@ -339,12 +315,11 @@ document.addEventListener('DOMContentLoaded', async function () {
             console.log("WebSocket already open or connecting. Skipping.");
             return;
         }
-        const URL_WEBSOCKET = `ws://${URL_LOCATION}:${appsettings.wsport}`;
+        const URL_WEBSOCKET = `${URL_SERVER}${appsettings.wsroute}`;
         socket = new WebSocket(URL_WEBSOCKET);
         socket.onmessage = async (evt) => {
             const message = JSON.parse(evt.data);
-            console.log(message);
-
+            
             // Find the key name that holds the array (skipping non-array properties)
             const arrayKey = Object.keys(message).find(key => Array.isArray(message[key]));
 
@@ -426,7 +401,7 @@ document.addEventListener('DOMContentLoaded', async function () {
         minWidth: 140
     });
 
-    const map = new OLMap({
+    map = new OLMap({
         target: 'map',
         view: new View({
             center: chicagoCoords,
@@ -477,14 +452,14 @@ document.addEventListener('DOMContentLoaded', async function () {
         source: new VectorSource(),
         title: "Pireps",
         visible: false,
-        zindex: 99,
+        zIndex: 100,
         canvasWillReadFrequently: true,
         updateWhileAnimating: false,
         updateWhileInteracting: false
     });
     map.addLayer(pirepVectorLayer);
 
-    const airportLayer = new VectorLayer({
+    const airportVectorLayer = new VectorLayer({
         title: 'Airports',
         source: new VectorSource(),
         zIndex: 99,
@@ -493,16 +468,17 @@ document.addEventListener('DOMContentLoaded', async function () {
         updateWhileAnimating: false,
         updateWhileInteracting: false
     });
-    map.addLayer(airportLayer);
+    map.addLayer(airportVectorLayer);
 
-    // Airport Radius Selector functionality
-    const radiusSelector = document.getElementById('airport-radius-selector');
-    airportLayer.on('change:visible', () => {
-        if (airportLayer.getVisible()) {
+    airportVectorLayer.on('change:visible', async() => {
+        const colorLegend = await getAirportLegend();
+        if (airportVectorLayer.getVisible()) {
             radiusSelector.style.display = 'block';
+            colorLegend.style.display = 'block';
         }
         else {
             radiusSelector.style.display = 'none';
+            colorLegend.style.display = 'none';
         }
     })
 
@@ -542,7 +518,7 @@ document.addEventListener('DOMContentLoaded', async function () {
                         type: layertype,
                         visible: false,
                         extent: extent,
-                        zIndex: zOrder
+                        zIndex: 4
                     });
                     if (dbname === "osm" || dbname === "osm.mbtiles") {
                         map.getLayers().insertAt(1, layer);
@@ -573,13 +549,13 @@ document.addEventListener('DOMContentLoaded', async function () {
         return false;
     }
     window.closePopup = closePopup;
-    
+
     let currentDoubleClickLocation = null;
     let selectedRadius = 50; // Default radius in miles
 
     // Function to clear airport features
     function clearAirportFeatures() {
-        Promise.resolve(airportLayer.getSource().clear());
+        Promise.resolve(airportVectorLayer.getSource().clear());
     }
 
     // // Function to find and display airports within radius
@@ -587,8 +563,7 @@ document.addEventListener('DOMContentLoaded', async function () {
         try {
             // Use the existing getAirportsInRadius function
             const airports = await getAirportsInRadius(lon, lat, radiusMiles);
-            console.log(`Found ${airports ? airports.length : 0} airports`);
-
+            
             if (airports && airports.length > 0) {
                 await displayAirportFeatures(airports);
             } else {
@@ -670,11 +645,108 @@ document.addEventListener('DOMContentLoaded', async function () {
             console.error(err);
         }
     }
-    // Function to display airport features on map
-    async function displayAirportFeatures(airports) {
-        // Use the existing airport layer
-        airportLayer.getSource().clear();
 
+    /**
+     * This function returns an object that contains airport feature svg images
+     */
+    async function getAirportSvgs() {  
+        const airportSvgs = {
+            current: "",
+            closed: "",
+            closedheliport: "",
+            heliport: "",
+            seaport: "",
+            turf: "",
+            uncontrolled: "",
+            towered: ""
+        }; 
+        airportSvgs.closedheliport = `<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 12 12">
+                                            <circle cx="6" cy="6" r="5" fill="red" stroke="black" stroke-width="1"/>
+                                            <text x="6" y="6" text-anchor="middle" dominant-baseline="central" font-family="Arial, sans-serif" font-size="7" font-weight="bold" fill="white">H</text>
+                                        </svg>`;
+
+        airportSvgs.closed = `<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 12 12">
+                                    <circle cx="6" cy="6" r="5" fill="red" stroke="black" stroke-width="1"/>
+                                    <text x="6" y="6" text-anchor="middle" dominant-baseline="central" font-family="Arial, sans-serif" font-size="8" font-weight="bold" fill="white">✕</text>
+                                </svg>`;
+
+        airportSvgs.heliport = `<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 12 12">
+                                    <circle cx="6" cy="6" r="5" fill="white" stroke="black" stroke-width="1"/>
+                                    <text x="6" y="6" text-anchor="middle" dominant-baseline="central" font-family="Arial, sans-serif" font-size="7" font-weight="bold" fill="black">H</text>
+                                </svg>`;
+
+        airportSvgs.seaport = `<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 12 12">
+                                    <circle cx="6" cy="6" r="5" fill="lightblue" stroke="black" stroke-width="1"/>
+                                    <text x="6" y="6" text-anchor="middle" dominant-baseline="central" font-family="Arial, sans-serif" font-size="7" font-weight="bold" fill="black">S</text>
+                                </svg>`;
+
+        airportSvgs.turf = `<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 12 12">
+                                <circle cx="6" cy="6" r="5" fill="green" stroke="black" stroke-width="1"/>
+                            </svg>`;
+
+        airportSvgs.towered = `<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 12 12">
+                                <circle cx="6" cy="6" r="5" fill="blue" stroke="black" stroke-width="1"/>
+                                </svg>`;
+
+        airportSvgs.uncontrolled = `<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 12 12">
+                                        <circle cx="6" cy="6" r="5" fill="magenta" stroke="black" stroke-width="1"/>
+                                    </svg>`;
+        airportSvgs.current = "";
+        return airportSvgs;
+    }
+
+    async function getAirportLegend() {
+        const airportSvgs = await getAirportSvgs();
+        const closedhtml = `<tr><td style="padding:6px 8px; border-bottom: 1px solid #e0e0e0;">Closed</td>
+                <td style="text-align:right; padding:6px 8px; border-bottom: 1px solid #e0e0e0;">
+                <img src='data:image/svg+xml;utf8,${encodeURIComponent(String(airportSvgs.closed).replace(`width="12" height="12"`, `width="20" height="20"`))}'>
+                </td></tr>`; 
+        const helihtml = `<tr><td style="padding:6px 8px; border-bottom: 1px solid #e0e0e0;">Heliport</td>
+                <td style="text-align:right; padding:6px 8px; border-bottom: 1px solid #e0e0e0;">
+                <img src='data:image/svg+xml;utf8,${encodeURIComponent(String(airportSvgs.heliport).replace(`width="12" height="12"`, `width="20" height="20"`))}'>
+                </td></tr>`;
+
+        let detailhtml = `<table style="width: 100%; border-collapse: collapse;">
+                            <tr><td colspan="2" class="radius-header" style="text-align:center">Airport Marker Legend</td></tr>`;
+        if (appsettings.getClosedAirports) {
+            detailhtml += closedhtml;    
+        }
+        if (appsettings.getHeliports) {
+            detailhtml += helihtml;   
+        }
+            detailhtml +=  `<tr><td style="padding:6px 8px; border-bottom: 1px solid #e0e0e0;">Seaport</td>
+                <td style="text-align:right; padding:6px 8px; border-bottom: 1px solid #e0e0e0;">
+                <img src='data:image/svg+xml;utf8,${encodeURIComponent(String(airportSvgs.seaport).replace(`width="12" height="12"`, `width="20" height="20"`))}'>
+                </td></tr>
+            <tr><td style="padding:6px 8px; border-bottom: 1px solid #e0e0e0;">Turf</td><td style="text-align:right; padding:6px 8px; border-bottom: 1px solid #e0e0e0;">
+                <img src='data:image/svg+xml;utf8,${encodeURIComponent(String(airportSvgs.turf).replace(`width="12" height="12"`, `width="20" height="20"`))}'>
+                </td></tr>
+            <tr><td style="padding:6px 8px; border-bottom: 1px solid #e0e0e0;">Uncontrolled</td><td style="text-align:right; padding:6px 8px; border-bottom: 1px solid #e0e0e0;">
+                <img src='data:image/svg+xml;utf8,${encodeURIComponent(String(airportSvgs.uncontrolled).replace(`width="12" height="12"`, `width="20" height="20"`))}'>
+                </td></tr>
+            <tr><td style="padding:6px 8px; border-bottom: 1px solid #e0e0e0;">Towered</td><td style="text-align:right; padding:6px 8px; border-bottom: 1px solid #e0e0e0;">
+                <img src='data:image/svg+xml;utf8,${encodeURIComponent(String(airportSvgs.towered).replace(`width="12" height="12"`, `width="20" height="20"`))}'>
+                </td></tr>
+        </table`;
+        
+        const colorLegend = document.getElementById('airport-color-legend');
+        colorLegend.innerHTML = detailhtml;  
+        return colorLegend;                      
+    }
+
+    /**
+     * Populate the airport legend object and 
+     * display airport features on the map
+     * @param {*} airports 
+     */
+    async function displayAirportFeatures(airportsPromise) {
+        const airports = await airportsPromise;
+        
+        // Use the existing airport layer
+        airportVectorLayer.getSource().clear();
+
+        const airportSvgs = await getAirportSvgs();
+        
         // Add airport features
         const features = airports.map(airport => {
             // Handle different possible property names
@@ -682,24 +754,14 @@ document.addEventListener('DOMContentLoaded', async function () {
             const latitude = airport.latitude_deg || airport.lat;
             const name = airport.name || airport.station_name || airport.ident;
             const ident = airport.ident || airport.id;
-            let fillColor;
-            let airportSvg;
-            let skipFeature = false;
 
             if (!longitude || !latitude) {
                 console.warn('Airport missing coordinates:', airport);
                 return null;
             }
 
-            let feature = new Feature({
-                ident: ident,
-                datatype: "airport",
-                name: name,  // Use 'name' instead of 'station_name' for popup compatibility
-                type: airport.type || 'airport',  // Add type field
-                elevation_ft: airport.elevation_ft,  // Add elevation field
-                geometry: new Point(fromLonLat([longitude, latitude])),
-                fullData: airport  // Store complete airport object for popup
-            });
+            const frequencies = JSON.parse(airport.frequencies);
+            const runways = JSON.parse(airport.runways);
 
             // Check if this is a heliport or closed airport
             const isHeliport = (airport.type && airport.type.toLowerCase().includes('heliport')) ||
@@ -708,62 +770,64 @@ document.addEventListener('DOMContentLoaded', async function () {
                 (airport.type && airport.type.toLowerCase().includes('closed'));
             const isSeaplane = (airport.type && airport.type.toLowerCase().includes('seaplane')) ||
                 (airport.name && airport.name.toLowerCase().includes('seaplane'));
-            const hasTower = airport.frequencies && airport.frequencies.some(freq =>
-                freq.description && freq.description.includes('TWR')
-            );
-            const hasTurfRunway = airport.runways && airport.runways.some(runway => {
+            const hasTower = frequencies && frequencies.some(freq =>
+                freq.description && freq.description.includes('TWR'));
+            const hasTurfRunway = runways && runways.some(runway => {
                 if (!runway.surface) return false;
                 const surface = runway.surface.replace(/[\[\]]/g, '').toUpperCase();
-                return surface.includes('TURF') || surface.includes('DIRT') || surface.includes('GRASS');
+                return surface.includes('TURF') || 
+                       surface.includes('DIRT') || 
+                       surface.includes('GRASS') || 
+                       surface.includes('GRS') || 
+                       surface.includes('GVL') || 
+                       surface.includes('GRAVEL');
             });
 
+            
+            let bgcolor;
+            let fgcolor = "white";
 
-            if (isHeliport && isClosed) {
-                // Closed heliport: red circle with white H
-                airportSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 12 12">
-                    <circle cx="6" cy="6" r="5" fill="red" stroke="black" stroke-width="1"/>
-                    <text x="6" y="6" text-anchor="middle" dominant-baseline="central" font-family="Arial, sans-serif" font-size="7" font-weight="bold" fill="white">H</text>
-                </svg>`;
-            } else if (isClosed) {
-                // Closed airport: red circle with white X
-                airportSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 12 12">
-                    <circle cx="6" cy="6" r="5" fill="red" stroke="black" stroke-width="1"/>
-                    <text x="6" y="6" text-anchor="middle" dominant-baseline="central" font-family="Arial, sans-serif" font-size="8" font-weight="bold" fill="white">✕</text>
-                </svg>`;
-            } else if (appsettings.showHeliports && isHeliport) {
-                // Heliport: white circle with black "H"
-                airportSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 12 12">
-                    <circle cx="6" cy="6" r="5" fill="white" stroke="black" stroke-width="1"/>
-                    <text x="6" y="6" text-anchor="middle" dominant-baseline="central" font-family="Arial, sans-serif" font-size="7" font-weight="bold" fill="black">H</text>
-                </svg>`;
+            if (appsettings.getClosedAirports && isClosed) {
+                bgcolor = "red";
+                airportSvgs.current = airportSvgs.closed;
+            } else if (appsettings.getHeliports && isHeliport && !isClosed) {
+                bgcolor = "white";
+                fgcolor = "black";
+                airportSvgs.current = airportSvgs.heliport;
             } else if (isSeaplane) {
-                // Seaplane base: light blue circle with black "S"
-                airportSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 12 12">
-                    <circle cx="6" cy="6" r="5" fill="lightblue" stroke="black" stroke-width="1"/>
-                    <text x="6" y="6" text-anchor="middle" dominant-baseline="central" font-family="Arial, sans-serif" font-size="7" font-weight="bold" fill="black">S</text>
-                </svg>`;
+                bgcolor = "lightblue";
+                fgcolor = "black";
+                airportSvgs.current = airportSvgs.seaport;
+            } else if (hasTurfRunway) {
+                bgcolor = "green";
+                airportSvgs.current = airportSvgs.turf;
+            } else if (hasTower) {
+                bgcolor = "blue";
+                airportSvgs.current = airportSvgs.towered;
             } else {
-                if (hasTurfRunway) {
-                    fillColor = 'green';  // Turf/grass runways = green
-                } else if (hasTower) {
-                    fillColor = 'blue';   // Tower controlled = blue
-                } else {
-                    fillColor = 'magenta'; // Uncontrolled = magenta
-                }
-
-                // Create a colored SVG airport icon
-                airportSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 12 12">
-                    <circle cx="6" cy="6" r="5" fill="${fillColor}" stroke="black" stroke-width="1"/>
-                </svg>`;
+                bgcolor = "magenta";
+                airportSvgs.current = airportSvgs.uncontrolled;
             }
+            
+            let feature = new Feature({
+                ident: ident,
+                datatype: "AIRPORT",
+                name: name,  // Use 'name' instead of 'station_name' for popup compatibility
+                bgcolor: bgcolor,
+                fgcolor: fgcolor,
+                datatype: "AIRPORT", 
+                elevation_ft: airport.elevation_ft,  // Add elevation field
+                geometry: new Point(fromLonLat([longitude, latitude])),
+                airport: airport  // Store complete airport object for popup
+            });
 
             // Style the airport marker with appropriate scale
             const scaleSize = getAirportScaleSize();
             feature.setStyle(new Style({
                 image: new Icon({
-                    src: `data:image/svg+xml;utf8,${encodeURIComponent(airportSvg)}`,
+                    src: `data:image/svg+xml;utf8,${encodeURIComponent(airportSvgs.current)}`,
                     scale: scaleSize,
-                    anchor: [0.5, 0.5]
+                    anchor: [0.5, 0.5],
                 })
             }));
 
@@ -771,7 +835,7 @@ document.addEventListener('DOMContentLoaded', async function () {
 
         }).filter(feature => feature !== null); // Remove null features
 
-        airportLayer.getSource().addFeatures(features);
+        airportVectorLayer.getSource().addFeatures(features);
     }
 
     // Add radius dropdown event listener
@@ -821,7 +885,7 @@ document.addEventListener('DOMContentLoaded', async function () {
     /**
      * Event to view Metar/TAF popup & closure
      */
-    map.on('click', (evt) => {
+    map.on('click', async(evt) => {
         let features = [];
         let htol = isMobile ? appsettings.smallScreenHitTolerance : 1;
 
@@ -835,23 +899,44 @@ document.addEventListener('DOMContentLoaded', async function () {
         // Prioritize METAR, then TAF, then others
         const metarFeature = features.find(f => f.get('datatype') === 'METAR');
         if (metarFeature) {
-            displayMetarPopup(metarFeature);
+            await displayMetarPopup(metarFeature);
             popupoverlay.setPosition(evt.coordinate);
             handled = true;
         }
         else {
             const tafFeature = features.find(f => f.get('datatype') === 'TAF');
             if (tafFeature) {
-                displayTafPopup(tafFeature);
+                await displayTafPopup(tafFeature);
                 popupoverlay.setPosition(evt.coordinate);
                 handled = true;
             }
             else {
                 const pirepFeature = features.find(f => f.get('datatype') === 'PIREP');
                 if (pirepFeature) {
-                    displayPirepPopup(pirepFeature);
+                    await displayPirepPopup(pirepFeature);
                     popupoverlay.setPosition(evt.coordinate);
                     handled = true;
+                }
+                else {
+                    const airportFeature = features.find(f => f.get('datatype') === 'AIRPORT');
+                    if(airportFeature) {
+                        const ident = airportFeature.get("ident");
+                        const station_name = airportFeature.get("name");
+                        const bgcolor = airportFeature.get("bgcolor");
+                        const fgcolor = airportFeature.get("fgcolor");
+                        const airport = airportFeature.get("airport");
+                        const parameters = {
+                            "type": "AIRPORT",
+                            "colors": { bgcolor, fgcolor },
+                            "station_name": station_name,
+                            "ident": ident,
+                            "airport": airport,
+                            "hasCallback": false
+                        };
+                        await displayAirportPopup(parameters);
+                        popupoverlay.setPosition(evt.coordinate);
+                        handled = true;
+                    }
                 }
             }
         }
@@ -890,6 +975,7 @@ document.addEventListener('DOMContentLoaded', async function () {
      * @param {feature} Feature: the metar feature the user clicked on 
      */
     async function displayMetarPopup(feature) {
+        const isValidNumber = (val) => (typeof val === 'number' && !Number.isNaN(val)) ? val : "";
         const metar = feature.get("data");
         const rawData = metar.raw_text;
         const ident = metar.station_id;
@@ -897,13 +983,13 @@ document.addEventListener('DOMContentLoaded', async function () {
         const cat = metar.flight_category ?? "VFR";
         const tempC = metar.temp_c;
         const dewpC = metar.dewpoint_c;
-        const temp = convertCtoF(tempC ?? "") ?? "";
-        const dewp = convertCtoF(dewpC ?? "") ?? "";
+        const temp = isValidNumber(tempC) ? convertCtoF(tempC) : "N/A";
+        const dewp = isValidNumber(dewpC) ? convertCtoF(dewpC) : "N/A";
         const windir = metar.wind_dir_degrees ?? "";
         const winspd = metar.wind_speed_kt ?? "0";
         const wingst = metar.wind_gust_kt ?? "0";
-        const altim = getAltimeterSetting(metar.altim_in_hg ?? "") ?? "";
-        const vis = getDistanceUnits(metar.visibility_statute_mi ?? "") ?? "";
+        const altim = isValidNumber(metar.altim_in_hg) ? getAltimeterSetting(metar.altim_in_hg) + " hg": "N/A";
+        const vis = isValidNumber(metar.visibility_statute_mi) ? getDistanceUnits(metar.visibility_statute_mi) : "N/A";
         const skycondition = metar.sky_condition;
         const skyconditions = decodeSkyCondition(skycondition ?? "") ?? "";
         const btncolors = getCategoryColors(cat);
@@ -912,11 +998,11 @@ document.addEventListener('DOMContentLoaded', async function () {
         const rowPrefix = `<tr class="table-row-data">`
         const cellData = `<td style="width:100%;">`;
         const rowSuffix = `</td></tr>`;
-        const skyHeader = `<tr class="skyheader"><td colspan="2" style="display:block;width:99%;text-align:center;border:1px solid #000000;">`;
+        const skyHeader = `<tr><td class="skyheader colspan="2" style="display:block;width:99%;text-align:center;border:1px solid #000000;">`;
 
         const airport = await getAirportObject(ident);
-        const stationName = `${String(airport.name).split("/")[0]}<br>${ident}`;
-        
+        const stationName = airport.name !== undefined ? `${String(airport.name).split("/")[0]}<br>${ident}` : ident;
+
         let detailhtml = "";
         let time = (function () {
             if (metar.observation_time) {
@@ -930,7 +1016,7 @@ document.addEventListener('DOMContentLoaded', async function () {
             }
         })();
 
-        
+
 
         if (ident != "undefined") {
             detailhtml =
@@ -946,35 +1032,40 @@ document.addEventListener('DOMContentLoaded', async function () {
                             ${rowPrefix}${cellData}Wind Direction: ${cellData}<b>${windir}°</b>${rowSuffix}
                             ${rowPrefix}${cellData}Wind Speed: ${cellData}<b>${winspd} KT</b>${rowSuffix}
                             ${rowPrefix}${cellData}Wind Gust: ${cellData}<b>${wingst} KT</b>${rowSuffix}
-                            ${rowPrefix}${cellData}Altimeter: ${cellData}<b>${altim} hg</b>${rowSuffix}
+                            ${rowPrefix}${cellData}Altimeter: ${cellData}<b>${altim}</b>${rowSuffix}
                             ${rowPrefix}${cellData}Horizontal Visibility: ${cellData} <b>${vis}</b>${rowSuffix}
                             ${skyHeader}Sky Conditions${rowSuffix} ${skyconditions}
                         </table>
                     </div>    
                     <div class="popup-footer">
                         <div class="popup-button-row" style="display: flex; flex-direction: row; justify-content: space-between; width: 100%;">`;
-                            if (stationName) {
-                                detailhtml += `<button class="custom-popup-button" id="airport-info" style="background:${bgcolor}; color:${fgcolor};">Airport Information</button>`;
-                            }
-                            detailhtml += `<span class="windsvg">${svg}</span>
+            if (stationName) {
+                detailhtml += `<button class="custom-popup-button" id="airport-info" style="background:${bgcolor}; color:${fgcolor};">Airport Information</button>`;
+            }
+            detailhtml += `<span class="windsvg">${svg}</span>
                             <button class="custom-popup-button" onclick="closePopup()" style="background:${bgcolor}; color:${fgcolor};">Close</button>
                         </div>
                         <textarea id="rawdata" class="rawdata">${rawData}</textarea><br>
                     </div>
                 </div>
             </div>`;
-        } 
+        }
 
-        //console.log(`METAR POPUP\n${detailhtml}`);
         popupcontent.innerHTML = detailhtml;
 
         if (stationName) {
             // Bind the click event immediately inside the same function scope
             const infoBtn = popupcontent.querySelector('#airport-info');
             if (infoBtn) {
-                const parameters = { "type": "METAR", "colors": {bgcolor, fgcolor}, "station_name": stationName, "ident": ident, "airport": airport };
-                infoBtn.addEventListener('click', () => {
-                    displayAirportPopup(parameters, displayMetarPopup, feature);
+                const parameters = 
+                    { "type": "METAR", 
+                      "colors": { bgcolor, fgcolor }, 
+                      "station_name": stationName, 
+                      "ident": ident, 
+                      "airport": airport,
+                      "hasCallback": true };
+                infoBtn.addEventListener('click', async () => {
+                    await displayAirportPopup(parameters, displayMetarPopup, feature);
                 });
             }
         }
@@ -984,59 +1075,59 @@ document.addEventListener('DOMContentLoaded', async function () {
      * Create the html for a TAF popup element
      * @param {feature} Feature: the taf feature the user clicked on
      */
-    async function displayTafPopup(feature) { 
+    async function displayTafPopup(feature) {
         const taf = feature.get("data");
         const bgcolor = feature.get("bgcolor");
-        const fgcolor = feature.get("fgcolor"); 
-        const category = feature.get("category"); 
-        const ident = taf.station_id; 
-        const rawData = taf.raw_text; 
-        
-        
-        const forecast = taf.forecast; 
-        
-        const airport = await getAirportObject(ident); 
-        const stationNames = String(airport.name).split("/"); 
+        const fgcolor = feature.get("fgcolor");
+        const category = feature.get("category");
+        const ident = taf.station_id;
+        const rawData = taf.raw_text;
+
+
+        const forecast = taf.forecast;
+
+        const airport = await getAirportObject(ident);
+        const stationNames = String(airport.name).split("/");
         const stationName = stationNames[0] ? `${stationNames[0]}<br>${ident}` : ident;
 
-        let detailhtml = ""; 
+        let detailhtml = "";
         let innerhtml = `
             <div style="display:block;"> 
                 <span class="popup-title-area" 
                       style="background-color:${bgcolor}; color:${fgcolor};">
-                      Terminal Area Forecast - ${ident}<br>Current Flight Status - ${category}</span> 
+                      Terminal Area Forecast - ${ident}<br>${category}</span> 
                 <div class="popup-content"> 
                     <div class="taf"> 
                         <div class="table-scroll-container"> 
-                            <table class="popup-body-table" id="taftable">`; 
+                            <table class="popup-body-table" id="taftable">`;
 
         // Safe iteration over the forecast fields
-        for (const item in forecast) { 
-            let parsedForecast = ""; 
-            const value = forecast[item]; 
-            
-            if (value && typeof value === 'object') { 
-                for (const subitem in value) { 
-                    const subvalue = value[subitem]; 
-                    parsedForecast = parseForecastField(subitem, subvalue); 
-                    detailhtml += parsedForecast; 
-                } 
-            } else { 
-                parsedForecast = parseForecastField(item, value); 
-                detailhtml += parsedForecast; 
-            } 
-        } 
+        for (const item in forecast) {
+            let parsedForecast = "";
+            const value = forecast[item];
+
+            if (value && typeof value === 'object') {
+                for (const subitem in value) {
+                    const subvalue = value[subitem];
+                    parsedForecast = parseForecastField(subitem, subvalue);
+                    detailhtml += parsedForecast;
+                }
+            } else {
+                parsedForecast = parseForecastField(item, value);
+                detailhtml += parsedForecast;
+            }
+        }
 
         detailhtml += `
                             </table> 
                         </div> 
                     </div> 
                     <div class="popup-footer"> 
-                        <div class="popup-button-row" style="display: flex; flex-direction: row; justify-content: space-between; width: 100%;">`; 
+                        <div class="popup-button-row" style="display: flex; flex-direction: row; justify-content: space-between; width: 100%;">`;
 
-        if (stationName) { 
-            detailhtml += `<button class="custom-popup-button" id="airport-info" style="background:${bgcolor}; color:${fgcolor};">Station Information</button>`; 
-        } 
+        if (stationName) {
+            detailhtml += `<button class="custom-popup-button" id="airport-info" style="background:${bgcolor}; color:${fgcolor};">Station Information</button>`;
+        }
 
         detailhtml += `
                             <button class="custom-popup-button" onclick="closePopup()" style="background:${bgcolor}; color:${fgcolor};">Close</button> 
@@ -1044,28 +1135,29 @@ document.addEventListener('DOMContentLoaded', async function () {
                         <textarea id="rawdata" class="rawdata">${rawData}</textarea><br> 
                     </div> 
                 </div>
-            </div>`; 
+            </div>`;
 
         // Corrected Sequence: Inject HTML into the container first
-        innerhtml = innerhtml + detailhtml; 
-        popupcontent.innerHTML = innerhtml; 
+        innerhtml = innerhtml + detailhtml;
+        popupcontent.innerHTML = innerhtml;
 
         // Corrected Sequence: Query and attach listeners now that elements exist in DOM
-        if (stationName) { 
-            const infoBtn = popupcontent.querySelector('#airport-info'); 
-            if (infoBtn) { 
-                const parameters = { 
-                    "type": "TAF", 
-                    "colors": { bgcolor, fgcolor, createGeometry }, 
-                    "station_name": stationName, 
-                    "ident": ident, 
-                    "airport": airport 
-                }; 
-                infoBtn.addEventListener('click', async () => { 
-                    await displayAirportPopup(parameters, displayTafPopup, feature); 
-                }); 
-            } 
-        } 
+        if (stationName) {
+            const infoBtn = popupcontent.querySelector('#airport-info');
+            if (infoBtn) {
+                const parameters = {
+                    "type": "TAF",
+                    "colors": { bgcolor, fgcolor, createGeometry },
+                    "station_name": stationName,
+                    "ident": ident,
+                    "airport": airport,
+                    "hasCallback": true
+                };
+                infoBtn.addEventListener('click', async () => {
+                    await displayAirportPopup(parameters, displayTafPopup, feature);
+                });
+            }
+        }
     }
 
     /**
@@ -1082,7 +1174,7 @@ document.addEventListener('DOMContentLoaded', async function () {
         const btncolors = getCategoryColors("pirep");
         const bgcolor = btncolors.bgcolor;
         const fgcolor = btncolors.fgcolor;
-
+        
         let rt = "";
         let ot = "";
         let detailhtml = "";
@@ -1112,10 +1204,10 @@ document.addEventListener('DOMContentLoaded', async function () {
                     detailhtml += `${rowPrefix}${cellData}${fieldname}: ${cellData}<b>${ot}</b>${rowSuffix}`;
                     break;
                 case "latitude":
-                    detailhtml += `${rowPrefix}${cellData}${fieldname}: ${cellData}<b>${value}°</b>${rowSuffix}`;
+                    detailhtml += `${rowPrefix}${cellData}${fieldname}: ${cellData}<b>${value}</b>${rowSuffix}`;
                     break;
                 case "longitude":
-                    detailhtml += `${rowPrefix}${cellData}${fieldname}: ${cellData}<b>${value}°</b>${rowSuffix}`;
+                    detailhtml += `${rowPrefix}${cellData}${fieldname}: ${cellData}<b>${value}</b>${rowSuffix}`;
                     break;
                 case "altitude_ft_msl":
                     detailhtml += `${rowPrefix}${cellData}${fieldname}: ${cellData}<b>${value}</b>${rowSuffix}`;
@@ -1204,111 +1296,114 @@ document.addEventListener('DOMContentLoaded', async function () {
             </div>`;
         const innerhtml = html + detailhtml;
         popupcontent.innerHTML = innerhtml;
-        //console.log(`PIREP\n${innerhtml}`);
     }
 
     async function displayAirportPopup(parameterJson, callbackFunction, feature) {
-        // parameterJson = { type: "METAR", colors: { bgcolor, fgcolor }, station_name: stationName, airport: airport };
+        // parameterJson = { type: "METAR", colors: { bgcolor, fgcolor }, station_name: stationName, airport: airport hasCallback: true};
         const callertype = parameterJson.type;
-        const bgcolor = parameterJson.colors.bgcolor; 
+        const bgcolor = parameterJson.colors.bgcolor;
         const fgcolor = parameterJson.colors.fgcolor;
         const name = parameterJson.station_name;
         const ident = parameterJson.ident;
         const airport = parameterJson.airport
 
-        const type = airport.type;
+        const type = airport.type ? airport.type : "UNKNOWN";
         const frequencies = JSON.parse(airport.frequencies || "[]") || [];
-        const runways     = JSON.parse(airport.runways || "[]")     || [];
+        const runways = JSON.parse(airport.runways || "[]") || [];
         const hasFrequencies = frequencies.length > 0;
         const hasRunways = runways.length > 0;
-        
+
         let html = `<div class="featurepopup" id="featurepopup">`;
-        html += `<span class="airportheader" 
-                        style="background-color:${bgcolor}; color:${fgcolor}; border: 1px solid black;">
-                        ${name}</span><br>`;
-                `<div class="airport-popup-body">`;
+            html +=    `<span class="airportheader" 
+                            style="background-color:${bgcolor}; color:${fgcolor}; border: 1px solid black;">${name}</span><br>`;
+                       `<div class="airport-popup-body">`;
 
         // Basic airport information
-        html += `<div class="airport-basic-info">`;
-        html += `<strong>Airport Information</strong><br>`;
+        html += `<div class="airport-basic-info">`; // 3rd unclosed <div> element
         html += `<table style="width: 100%; border-collapse: collapse; margin-top: 5px;">`;
+        html += `<tr class="airport-subarea"><td colspan="3" class="airport-subarea">Airport Information</td></tr>`;
         html += `<tr style="border-bottom: 1px solid #ddd;">`;
-        html += `<td style="text-align: left; padding: 2px 10px 2px 0; vertical-align: top;">Identifier:</td>`;
-        html += `<td style="text-align: left; padding: 2px 0; vertical-align: top;"><b>${ident}</b></td>`;
+        html +=     `<td colspan="1"  style="text-align: left; padding: 2px 10px 2px 0; vertical-align: top;">IDENTIFIER:</td>`;
+        html +=     `<td colspan="2" style="text-align: left; padding: 2px 0; vertical-align: top;"><b>${ident}</b></td>`;
         html += `</tr>`;
         html += `<tr style="border-bottom: 1px solid #ddd;">`;
-        html += `<td style="text-align: left; padding: 2px 10px 2px 0; vertical-align: top;">Type:</td>`;
-        html += `<td style="text-align: left; padding: 2px 0; vertical-align: top;"><b>${type.replace('_', ' ').toUpperCase()}</b></td>`;
+        html +=     `<td colspan="1" style="text-align: left; padding: 2px 10px 2px 0; vertical-align: top;">TYPE:</td>`;
+        html +=     `<td colspan="2" style="text-align: left; padding: 2px 0; vertical-align: top;"><b>${String(type).replace('_', ' ').toUpperCase()}</b></td>`;
         html += `</tr>`;
         if (airport.elevation) {
             html += `<tr style="border-bottom: 1px solid #ddd;">`;
-            html += `<td style="text-align: left; padding: 2px 10px 2px 0; vertical-align: top;">Elevation:</td>`;
-            html += `<td style="text-align: left; padding: 2px 0; vertical-align: top;"><b>${airport.elevation} ft MSL</b></td>`;
+            html +=     `<td colspan="1" style="text-align: left; padding: 2px 0; vertical-align: top;">ELEVATION:</td>`;
+            html +=     `<td colspan="2" style="text-align: left; padding: 2px 0; vertical-align: top;"><b>${airport.elevation} ft MSL</b></td>`;
             html += `</tr>`;
         }
-        html += `</table>`;
-        html += `</div><br>`;
+        html += `<tr><td colspan="3" style="height: 12px;"></td></tr>`; // end of airport info
+
+        let frhtml = "";
+        let rwhtml = "";
         
-        try {
+        try {    
             // Frequencies section
             if (hasFrequencies) {
-                html += `<div class="airport-frequencies">`;
-                html += `<strong>Frequencies</strong><br>`;
-                html += `<table style="width: 100%; border-collapse: collapse; margin-top: 5px;">`;
-                for (const freq of frequencies) {
-                    html += `<tr style="border-bottom: 1px solid #ddd;">`;
-                    html += `<td style="text-align: left; padding: 2px 10px 2px 0; vertical-align: top;">${freq.description}</td>`;
-                    html += `<td style="text-align: left; padding: 2px 0; vertical-align: top;"><b>${freq.frequency}</b></td>`;
-                    html += `</tr>`;
-                }
-                html += `</table>`;
-                html += `</div><br>`;
+                frhtml +=     `<tr class="airport-subarea"><td colspan="3" class="airport-subarea">Frequencies</td></tr>`;
+                                for (const freq of frequencies) { 
+                frhtml +=         `<tr style="border-bottom: 1px solid #ddd;">`;
+                                    if (freq.description && freq.frequency) {
+                                        frhtml += `<td colspan="1" class="airport-table-item">${freq.description}</td>`;
+                                        frhtml += `<td colspan="2" class="airport-table-item"><b>${freq.frequency}</b></td>`;    
+                                    }
+                                    else {
+                                        frhtml += `<td colspan="3" class="airport-table-item"></td>`;
+                                    }
+                        frhtml += `</tr>`;
+                                }
+                frhtml += `<tr><td colspan="3" style="height: 12px;"></td></tr>`;
             }
 
             // Runways section
             if (hasRunways) {
-                html += `<div class="airport-runways">`;
-                html += `<strong>Runways</strong><br>`;
-                html += `<table style="width: 100%; border-collapse: collapse; margin-top: 5px;">`;
+                rwhtml +=     `<tr class="airport-subarea"><td colspan="3" class="airport-subarea">Runways</td></tr>`;
                 for (const runway of runways) {
-                    html += `<tr style="border-bottom: 1px solid #ddd;">`; 
-                    html += `<td style="text-align: left; padding: 2px 0; vertical-align: top;"><b>${runway.le_ident}/${runway.he_ident}</b></td>`;
-                    let rwhtml = ""; 
-                    if (runway.length > 0 && runway.width > 0) {
-                        rwhtml += `<td style="text-align: left; padding: 2px 0; vertical-align: top;">`;
-                        rwhtml += `<b>${runway.length} ft x ${runway.width} ft </b>`;
-                    }
-                    if (runway.surface.length > 0) {
-                        const decodedSurface = decodeRunwaySurface(runway.surface);
-                        rwhtml += `<td><b>${decodedSurface}</b></td>`;
-                    }
-                    if (rwhtml.length > 0) {
-                        html += `${rwhtml}</td>`;
-                    }
-                    html += `</tr>`;
+                    rwhtml += `<tr style="border-bottom: 1px solid #ddd;">`;
+                    rwhtml +=     `<td class="airport-table-item"><b>${runway.le_ident}/${runway.he_ident}</b></td>`;
+                    rwhtml +=     `<td class="airport-table-item">`;
+                                        if (runway.length > 0 && runway.width > 0) {
+                                            rwhtml += `<b>${runway.length} ft x ${runway.width} ft</b>`;
+                                        }
+                    rwhtml +=     `</td>`;
+                    rwhtml +=     `<td class="airport-table-item">`;
+                                        if (runway.surface.length > 0) {
+                                            const decodedSurface = decodeRunwaySurface(runway.surface);
+                                            rwhtml += `<b>${decodedSurface}</b>`;
+                                        }
+                    rwhtml +=     `</td>`;
+                    rwhtml +=  `</tr>`
                 }
             }
         } catch (err) {
             console.error("Error processing airport frequencies or runways:", err);
         }
+        html += `${frhtml}${rwhtml}`;
         html += `</table>`;
-        html += `</div>`;
-        html += `</div>`; // end of airport-popup-body
-        html += `<hr>`;
+        html += `</div></div>`; // closes 2 opened <div> elements
         html += `<div class="popup-button-row" style="display: flex; flex-direction: row; justify-content: space-between; width: 100%;">`;
-        html += `<button class="custom-popup-button" id="go-back" style="background:${bgcolor}; color:${fgcolor};">Back to ${callertype}</button>`;
+        if (parameterJson.hasCallback) {
+            html += `<button class="custom-popup-button" id="go-back" style="background:${bgcolor}; color:${fgcolor};">Back to ${callertype}</button>`;
+        }
         html += `<button class="custom-popup-button" onclick="closePopup()" style="background:${bgcolor}; color:${fgcolor};">Close</button>`;
-        html += `</div>`;
-        html += `</div>`;
+        html += `</div>`; // closes button-popup-row 
+        //html += `</div>`; // closes the 3rd <div> element
 
         popupcontent.innerHTML = html;
+        console.log(`AIRPORT\n${html}`);
 
         // Bind the click event immediately inside the same function scope
-        const backBtn = popupcontent.querySelector('#go-back');
-        if (backBtn) {
-            backBtn.addEventListener('click', async () => {
-                await callbackFunction(feature);
-            });
+        if (parameterJson.hasCallback) {
+            const backBtn = popupcontent.querySelector('#go-back');
+            if (backBtn) {
+                backBtn.addEventListener('click', async () => {
+                    await callbackFunction(feature);
+                });
+            }
         }
     }
 
@@ -1544,6 +1639,9 @@ document.addEventListener('DOMContentLoaded', async function () {
             case "SEV":
                 textvalue = "Severe";
                 break;
+            case "OCNL":
+                textvalue = "Occasional";
+                break;
             default:
                 textvalue = fieldvalue;
                 break;
@@ -1558,14 +1656,14 @@ document.addEventListener('DOMContentLoaded', async function () {
     async function processMetar(metarObject) {
         // await the incoming metar...
         const metar = await metarObject;
-        
+
         // Validate required properties
         if (!metar || typeof metar.longitude !== 'number' || typeof metar.latitude !== 'number') {
             return;
         }
 
         try {
-            
+
             var popupSvg = "";
             var mapDotSvg = "";
             try {
@@ -1611,7 +1709,7 @@ document.addEventListener('DOMContentLoaded', async function () {
     async function processTaf(tafObject) {
         // await the incoming Promise
         const taf = await tafObject;
-        
+
         // Validate required properties
         if (!taf || typeof taf.longitude !== 'number' || typeof taf.latitude !== 'number') {
             return;
@@ -1636,7 +1734,7 @@ document.addEventListener('DOMContentLoaded', async function () {
         font-size:14.2894px;font-family:sans-serif;-inkscape-font-specification:&quot;sans-serif, Bold&quot;;font-variant-ligatures:normal;
         font-variant-caps:normal;font-variant-numeric:normal;font-variant-east-asian:normal;fill:${fgcolor};
         fill-opacity:1;stroke-width:.357233">TAF</tspan></text></g></svg>`
-        //console.log(`SVG:\n}${svgimg}`);
+        
         try {
             const tafFeature = new Feature({
                 ident: taf.station_id,
@@ -1675,34 +1773,60 @@ document.addEventListener('DOMContentLoaded', async function () {
     async function processPirep(pirepObject) {
         // await the pirepPromise
         const pirep = await pirepObject;
+        
+        const pseudoHeadingRadians = (lat, lon) => {
+            const absLat = Math.abs(lat);
+            let baseHeading;
+            let varianceRange;
+
+            if (absLat <= 30) {
+                // Equatorial / Subtropical bands: Easterly flow
+                baseHeading = 90; 
+                varianceRange = 20; 
+            } else {
+                // Mid-latitudes and Polar bands (both North & South): Westerly flow
+                baseHeading = 270; 
+                varianceRange = 30; 
+            }
+
+            // Use longitude to create a smooth, natural wave pattern variance (-15° to +15°)
+            const radLon = lon * (Math.PI / 180);
+            const waveVariance = Math.sin(radLon * 2) * (varianceRange / 2);
+            const degrees = Math.floor((baseHeading + waveVariance + 360) % 360);
+            
+            // Final heading normalized within 0-359 degrees, in radians
+            return degrees * 0.0174533;
+        };
 
         // Validate required properties
         if (!pirep || typeof pirep.longitude !== 'number' || typeof pirep.latitude !== 'number') {
-            //console.warn('processPirep: Missing longitude/latitude in pirep object', pirep);
             return;
         }
         try {
-            // generate a "pseudo-heading" to use if wind dir is absent
             const id = pirep.aircraft_ref ? pirep.aircraft_ref : pirep.station_id;
-            const heading = pirep.wind_dir_degrees > 0 ? pirep.wind_dir_degrees * 0.0174533 : 0;
-
+            const heading = pseudoHeadingRadians(pirep.latitude, pirep.longitude);
+            
             const pirepFeature = new Feature({
                 ident: id,
                 id: id,
                 data: pirep,
                 datatype: "PIREP",
-                geometry: new Point(fromLonLat([pirep.longitude, pirep.latitude]))
+                geometry: new Point(fromLonLat([pirep.longitude, pirep.latitude])),
+                zIndex: 9999
             });
 
-            pirepFeature.setStyle(new Style({ 
-                image: new Icon({
-                    crossOrigin: 'anonymous',
-                    src: '/images/pirep.png',
-                    offset: [0, 0],
-                    opacity: 1,
-                    scale: .05,
-                    rotation: heading
-                })
+            const pirepsvg = `<svg xmlns="http://www.w3.org/2000/svg" version="1.0" width="650" height="700"><path d="m293.301 160.266.23 66.375-69.156 56.187V255.86h-23.094v46.532l-70.796 59.528-108.11 92.41-7.781 35.78 191.375-104.25 87.125-23.343 1.562 154.03 17.094 73.126-90.906 68.625v29.406l104.312-22.156 104 22.094v-29.407L338.25 589.61l17.094-73.125 1.562-154.03 87.125 23.343 191.375 104.25-7.781-35.781-107.164-91.403-71.742-60.535v-46.531h-23.094v26.969l-70.933-56.188.007-66.375c0-27.014.991-111.224-29.418-147.906-29.396 41.87-30.385 96.99-31.98 147.969z" style="opacity:1;color:#000;fill:#98294c;fill-opacity:1;fill-rule:nonzero;stroke:#000;stroke-width:4;stroke-linecap:round;stroke-linejoin:miter;marker:none;marker-start:none;marker-mid:none;marker-end:none;stroke-miterlimit:4;stroke-dasharray:none;stroke-dashoffset:0;stroke-opacity:1;visibility:visible;display:inline;overflow:visible"/></svg>`;
+            const pirepIcon = new Icon({
+                crossOrigin: 'anonymous',
+                src: `data:image/svg+xml;utf8,${encodeURIComponent(pirepsvg)}`,
+                offset: [0, 0],
+                opacity: 1,
+                scale: .05,
+                rotation: heading
+            });
+
+            pirepFeature.setStyle(new Style({
+                image: pirepIcon 
             }));
 
             pirepVectorLayer.getSource().addFeature(pirepFeature);
@@ -1746,6 +1870,14 @@ document.addEventListener('DOMContentLoaded', async function () {
                 let style = features[i].getStyle();
                 if (style && style.getImage()) {
                     style.getImage().setScale(newscale * .12);
+                    features[i].setStyle(style); // update the feature's style
+                }
+            }
+            features = airportVectorLayer.getSource().getFeatures();
+            for (let i = 0; i < features.length; i++) {
+                let style = features[i].getStyle();
+                if (style && style.getImage()) {
+                    style.getImage().setScale(newscale);
                     features[i].setStyle(style); // update the feature's style
                 }
             }
@@ -1822,14 +1954,14 @@ document.addEventListener('DOMContentLoaded', async function () {
         return scale;
     }
 
-    /**
-     * This allows a clicked feature to raise an event
-     */
-    let select = null;
-    function selectStyle(feature) {
-        console.log(`FEATURE: ${feature}`);
-        return selected;
-    }
+    // /**
+    //  * This allows a clicked feature to raise an event
+    //  */
+    // let select = null;
+    // function selectStyle(feature) {
+    //     console.log(`FEATURE: ${feature}`);
+    //     return selected;
+    // }
 
     /**
      * Convert statute miles to desired unit 
@@ -1985,7 +2117,6 @@ document.addEventListener('DOMContentLoaded', async function () {
      */
     function getFieldDescription(fieldname) {
         if (!Number.isInteger(fieldname)) {
-            //console.log(tafFieldKeymap);
             const testval = tafFieldKeymap.get(fieldname);
             if (testval !== undefined && testval !== "") {
                 return testval;
@@ -2116,6 +2247,7 @@ document.addEventListener('DOMContentLoaded', async function () {
      */
     function loadWeatherAcronymKeymap() {
         weatherAcronymKeymap.set("FM", "From");
+        weatherAcronymKeymap.set("OCNL", "Occasional");
         weatherAcronymKeymap.set("TEMPO", "Temporary");
         weatherAcronymKeymap.set("BECMG", "Becoming");
         weatherAcronymKeymap.set("PROB", "Probability");
@@ -2212,7 +2344,7 @@ document.addEventListener('DOMContentLoaded', async function () {
         skyConditionKeymap.set("PROB", "Probability");
         skyConditionKeymap.set("CB", "Cumulo-Nimbus");
         skyConditionKeymap.set("IMC", "Instrument meteorological conditions"),
-            skyConditionKeymap.set("IMPR", "Improving");
+        skyConditionKeymap.set("IMPR", "Improving");
         skyConditionKeymap.set("INC", "In Clouds");
         skyConditionKeymap.set("INS", "Inches");
         skyConditionKeymap.set("INTER", "Intermittent");
@@ -2972,7 +3104,6 @@ document.addEventListener('DOMContentLoaded', async function () {
             return d;
         }
         else {
-            //console.log("Failed to parse Date");
             return null;
         }
     }
@@ -3225,7 +3356,6 @@ document.addEventListener('DOMContentLoaded', async function () {
             if (prevailingCoverage != null) {
                 var curr = prevailingCoverage.abbreviation != null ? CLOUDS[prevailingCoverage.abbreviation].rank : undefined;
                 var rank = cloud.abbreviation != null ? CLOUDS[cloud.abbreviation].rank : undefined;
-                //console.log("cur: " + curr + ", rank: " + rank);
                 if (rank != null) {
                     if (rank > curr) {
                         prevailingCoverage = cloud;
@@ -3253,7 +3383,7 @@ document.addEventListener('DOMContentLoaded', async function () {
         var STA = (_d = metar.station) !== null && _d !== void 0 ? _d : "";
         var ALT = (_e = metar.pressure) !== null && _e !== void 0 ? _e : "";
         return `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 500 500"> ` +
-        //return `<svg xmlns="http://www.w3.org/2000/svg" width="95" height="50" viewBox="0 0 500 500"> ` +
+            //return `<svg xmlns="http://www.w3.org/2000/svg" width="95" height="50" viewBox="0 0 500 500"> ` +
             `<style> ` +
             `.txt{ font-size: 47.5px; font-family: sans-serif; } ` +
             `.tmp{ fill: red } ` +
@@ -3327,5 +3457,5 @@ document.addEventListener('DOMContentLoaded', async function () {
     console.log("Line 3216: DOMContentLoaded"); //, restoring map state.");
 
     await loadTileDatabases();
-    //await restoreMapState();
+    await restoreMapState();
 });

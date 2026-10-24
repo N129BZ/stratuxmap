@@ -19,7 +19,6 @@
         <table class="tplbody" id="tplbody">${weatherdata}</table>
         <div class="tplfooter" id="tplfooter">
           <textarea class="tplrawtext" id="tplrawtext" rows="2">${rawtext}</textarea>
-          <button class="backbutton" onclick="Back()">Airport Information</button>
           <button class="tplbutton" onclick="closePopup()">Close</button>
         </div>
       </div>
@@ -36,8 +35,9 @@
       <option value="50">50 mile radius</option>
       <option value="100">100 mile radius</option>
       <option value="250">250 mile radius</option>
-      <option value="500">500 mile radius</option>
+      <!-- <option value="500">500 mile radius</option> -->
     </select>
   </div>
+  <div class="airport-color-legend" id="airport-color-legend"></div>
 </body>
 </html>

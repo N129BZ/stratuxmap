@@ -400,13 +400,32 @@ hr {
     background-color:lavender;
     color:#000000;
     font-family: B612;
-    /* font-style: italic; */
     font-weight:bold;
     font-size: medium;
-    display:inline-block;
+    display: block;
     overflow: hidden;
     text-align:center;
-    width: 370px;
+    width: 99%;
+    border: 1px solid black;
+}
+.airport-subarea {
+    background-color:lavender;
+    color:#000000;
+    font-family: B612;
+    font-weight: bold;
+    font-size: medium;
+    overflow: hidden;
+    text-align: center;
+    width: 99%;
+    border: 1px solid black;
+}
+.airport-table-item {
+    font-family: B612;
+    font-size: small;
+    background-color:white;
+    color:#000000;
+    padding: 2px 10px 2px 0; 
+    vertical-align: top;
 }
 .tafwxlabel {
     background-color:lightyellow;
@@ -649,7 +668,20 @@ hr {
     font-family: B612;
     display: none;
 }
-
+.airport-color-legend {
+    position: absolute;
+    bottom: 20px;
+    right: 20px;
+    background-color: white;
+    border: 2px solid #333;
+    border-radius: 8px;
+    box-shadow: 0 4px 8px rgba(0,0,0,0.3);
+    z-index: 1500;
+    min-width: 200px;
+    font-family: B612;
+    text-align: left;
+    display: none;
+}
 .radius-header {
     background-color: #00008b;
     color: white;

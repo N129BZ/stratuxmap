@@ -22,9 +22,8 @@ export async function getAirportsInRadius(lon, lat, radiusMiles) {
             return [];
         }
 
-        const airports = response.json();
+        const airports = await response.json();
 
-        console.log(`Found ${airports.length} airports`);
         return airports;
     }
     catch (error) {

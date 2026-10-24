@@ -1,8 +1,15 @@
 import { stateCache } from './map.js';
+import { toLonLat } from 'ol/proj.js';
 
-
-export async function saveMapState() {
+export async function saveMapState(view) {
     try {
+        await view;
+        const internalCenter = view.getCenter();
+        if (internalCenter) {
+            // Transform coordinates from EPSG:3857 (Web Mercator) to EPSG:4326 (Lat/Lon)
+            stateCache.viewposition = toLonLat(internalCenter, view.getProjection());
+        }     
+        
         // Serialize messages Map to array
         let messagesArray = [];
         if (stateCache.messages && stateCache.messages.map && typeof stateCache.messages.map.forEach === 'function') {
